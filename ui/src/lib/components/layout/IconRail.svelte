@@ -32,15 +32,6 @@
 
 <aside class="flex h-full w-[72px] shrink-0 flex-col items-center justify-between border-r border-border bg-card py-4">
 	<div class="flex flex-col items-center gap-3">
-		<!-- Brand Mark -->
-		<a
-			href="/_/collections"
-			title="Microbase"
-			class="mb-3 flex h-11 w-11 items-center justify-center rounded-lg border-2 border-primary bg-card font-mono text-sm font-bold tracking-tighter text-primary transition hover:bg-muted"
-		>
-			MB
-		</a>
-
 		<!-- Left Navigation Icons -->
 		<nav class="flex flex-col items-center gap-2">
 			{#each navItems as item (item.href)}
