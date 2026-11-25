@@ -7,6 +7,7 @@
 		Calendar,
 		CalendarCheck,
 		FileImage,
+		GripVertical,
 		Hash,
 		Link2,
 		List,
@@ -152,7 +153,13 @@
 </script>
 
 <div class="{stacked ? 'bg-muted/35 hover:bg-muted/55' : 'rounded-md border border-border bg-background/80'} transition">
-	<div class="flex items-center gap-2 px-3 py-2">
+	<div class="flex items-center gap-2 px-2.5 py-2">
+		<span
+			title="Drag to reorder field"
+			class="flex h-6 w-4 shrink-0 cursor-grab items-center justify-center text-muted-foreground/45 transition hover:text-foreground active:cursor-grabbing"
+		>
+			<GripVertical class="h-3.5 w-3.5" />
+		</span>
 		<div
 			class="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-muted text-muted-foreground"
 			title={field.type}

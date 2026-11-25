@@ -51,6 +51,22 @@
 	let indexes = $state<IndexDef[]>([]);
 	let apiRules = $state<Record<string, string>>({});
 	let showRulesInfo = $state(false);
+	let dragFromIdx = $state<number | null>(null);
+	let dragOverIdx = $state<number | null>(null);
+
+	function handleFieldDrop(targetIdx: number) {
+		if (dragFromIdx === null || dragFromIdx === targetIdx) {
+			dragFromIdx = null;
+			dragOverIdx = null;
+			return;
+		}
+		const next = [...fields];
+		const [moved] = next.splice(dragFromIdx, 1);
+		next.splice(targetIdx, 0, moved);
+		fields = next;
+		dragFromIdx = null;
+		dragOverIdx = null;
+	}
 	let initialSnapshot = $state('');
 
 	function buildSnapshot(): string {
@@ -639,14 +655,44 @@
 					{/each}
 
 					{#each fields as field, i (i)}
-						<FieldRowInput
-							bind:field={fields[i]}
-							isExisting={Boolean(field.original_name)}
-							{availableCollections}
-							stacked={true}
-							onRemove={() => removeField(i)}
-							onDuplicate={() => duplicateField(i)}
-						/>
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<div
+							draggable="true"
+							ondragstart={(e) => {
+								dragFromIdx = i;
+								if (e.dataTransfer) {
+									e.dataTransfer.effectAllowed = 'move';
+									e.dataTransfer.setData('text/plain', String(i));
+								}
+							}}
+							ondragover={(e) => {
+								e.preventDefault();
+								if (dragFromIdx !== null && dragFromIdx !== i) {
+									dragOverIdx = i;
+								}
+							}}
+							ondragleave={() => {
+								if (dragOverIdx === i) dragOverIdx = null;
+							}}
+							ondrop={(e) => {
+								e.preventDefault();
+								handleFieldDrop(i);
+							}}
+							ondragend={() => {
+								dragFromIdx = null;
+								dragOverIdx = null;
+							}}
+							class="transition {dragFromIdx === i ? 'opacity-45' : ''} {dragOverIdx === i ? 'ring-2 ring-inset ring-foreground/50' : ''}"
+						>
+							<FieldRowInput
+								bind:field={fields[i]}
+								isExisting={Boolean(field.original_name)}
+								{availableCollections}
+								stacked={true}
+								onRemove={() => removeField(i)}
+								onDuplicate={() => duplicateField(i)}
+							/>
+						</div>
 					{/each}
 
 					<div class="flex items-center justify-between px-3 py-2.5 text-muted-foreground">
