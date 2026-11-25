@@ -1,6 +1,6 @@
 {
   "name": "@techasit5415/microbase-sdk",
-  "version": "0.10.62",
+  "version": "0.10.63",
   "description": "Zero-dependency TypeScript/JavaScript SDK for Microbase (PostgreSQL + pgvector BaaS)",
   "type": "module",
   "main": "./src/index.ts",
