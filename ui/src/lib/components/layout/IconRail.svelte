@@ -22,9 +22,9 @@
 		<a
 			href="/_/collections"
 			title="Microbase"
-			class="mb-3 flex h-11 w-11 items-center justify-center rounded-lg border-2 border-foreground bg-card text-foreground transition hover:bg-muted"
+			class="mb-3 flex h-11 w-11 items-center justify-center rounded-lg border-2 border-foreground bg-card font-mono text-sm font-bold tracking-tighter text-foreground transition hover:bg-muted"
 		>
-			<Database class="h-5 w-5" />
+			MB
 		</a>
 
 		<!-- Left Navigation Icons -->
