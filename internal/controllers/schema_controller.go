@@ -1,6 +1,9 @@
 package controllers
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
 	"net/http"
 
 	"github.com/labstack/echo/v4"
@@ -29,10 +32,27 @@ func (h *SchemaController) Export(c echo.Context) error {
 }
 
 // Import handles POST /api/schema/import.
+// Accepts both Microbase SchemaExport objects ({"collections":[...]}) and PocketBase pb_schema.json arrays ([...]).
 func (h *SchemaController) Import(c echo.Context) error {
-	var payload models.SchemaExport
-	if err := c.Bind(&payload); err != nil {
+	raw, err := io.ReadAll(c.Request().Body)
+	if err != nil {
+		return response.Error(c, http.StatusBadRequest, "INVALID_JSON", "failed to read request body")
+	}
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
 		return response.Error(c, http.StatusBadRequest, "INVALID_JSON", "invalid schema export payload")
+	}
+
+	var payload models.SchemaExport
+	if trimmed[0] == '[' {
+		payload, err = services.ParsePocketBaseSchema(trimmed)
+		if err != nil {
+			return response.Error(c, http.StatusBadRequest, "INVALID_JSON", "invalid PocketBase schema payload: "+err.Error())
+		}
+	} else {
+		if err := json.Unmarshal(trimmed, &payload); err != nil {
+			return response.Error(c, http.StatusBadRequest, "INVALID_JSON", "invalid schema export payload")
+		}
 	}
 
 	created, skipped, err := h.service.ImportSchema(c.Request().Context(), payload)

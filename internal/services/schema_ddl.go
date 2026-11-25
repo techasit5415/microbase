@@ -16,6 +16,10 @@ var reservedColumns = map[string]bool{
 
 // buildCreateTableSQL validates identifiers and constructs a safe PostgreSQL DDL statement.
 func buildCreateTableSQL(req models.CreateCollectionRequest) (string, error) {
+	return buildCreateTableSQLWithTargets(req, nil)
+}
+
+func buildCreateTableSQLWithTargets(req models.CreateCollectionRequest, targetIDTypes map[string]string) (string, error) {
 	if !models.IsValidIdentifier(req.Name) {
 		return "", fmt.Errorf("invalid collection name %q", req.Name)
 	}
@@ -48,7 +52,7 @@ func buildCreateTableSQL(req models.CreateCollectionRequest) (string, error) {
 		}
 		seen[f.Name] = true
 
-		pgType, err := f.ToPostgresType()
+		pgType, err := resolveFieldPostgresType(f, targetIDTypes)
 		if err != nil {
 			return "", err
 		}
@@ -81,6 +85,10 @@ func buildCreateTableSQL(req models.CreateCollectionRequest) (string, error) {
 
 // buildAlterTableStatements computes ADD, DROP, RENAME, and NOT NULL DDL statements safely.
 func buildAlterTableStatements(tableName string, oldFields, newFields []models.FieldDef) ([]string, []models.FieldDef, error) {
+	return buildAlterTableStatementsWithTargets(tableName, oldFields, newFields, nil)
+}
+
+func buildAlterTableStatementsWithTargets(tableName string, oldFields, newFields []models.FieldDef, targetIDTypes map[string]string) ([]string, []models.FieldDef, error) {
 	oldMap := make(map[string]models.FieldDef, len(oldFields))
 	for _, f := range oldFields {
 		oldMap[f.Name] = f
@@ -124,7 +132,7 @@ func buildAlterTableStatements(tableName string, oldFields, newFields []models.F
 				}
 			}
 		} else {
-			pgType, err := f.ToPostgresType()
+			pgType, err := resolveFieldPostgresType(f, targetIDTypes)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -276,4 +284,15 @@ func buildCreateViewSQL(name, viewQuery string) (string, error) {
 		return "", fmt.Errorf("view query must start with SELECT or WITH")
 	}
 	return fmt.Sprintf(`CREATE OR REPLACE VIEW "%s" AS %s;`, name, q), nil
+}
+
+// resolveFieldPostgresType resolves a field's PostgreSQL column type, matching TEXT vs BIGINT for single relations.
+func resolveFieldPostgresType(f models.FieldDef, targetIDTypes map[string]string) (string, error) {
+	if f.Type == "relation" && f.MaxSelect <= 1 {
+		if targetIDTypes != nil && targetIDTypes[f.CollectionName] == "text" {
+			return "TEXT", nil
+		}
+		return "BIGINT", nil
+	}
+	return f.ToPostgresType()
 }

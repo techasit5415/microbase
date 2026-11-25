@@ -61,7 +61,8 @@ func (s *CollectionService) Create(ctx context.Context, req models.CreateCollect
 		req.Fields = []models.FieldDef{}
 		req.Indexes = []models.IndexDef{}
 	} else {
-		ddl, err = buildCreateTableSQL(req)
+		targetIDTypes := s.loadTargetIDTypes(ctx)
+		ddl, err = buildCreateTableSQLWithTargets(req, targetIDTypes)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %v", ErrInvalidSchema, err)
 		}
@@ -271,7 +272,8 @@ func (s *CollectionService) Update(ctx context.Context, name string, newFields [
 		newIndexes = []models.IndexDef{}
 	} else {
 		tableName := physicalTableName(existing.Name)
-		alterStmts, cleanedFields, err = buildAlterTableStatements(tableName, existing.Fields, newFields)
+		targetIDTypes := s.loadTargetIDTypes(ctx)
+		alterStmts, cleanedFields, err = buildAlterTableStatementsWithTargets(tableName, existing.Fields, newFields, targetIDTypes)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %v", ErrInvalidSchema, err)
 		}
@@ -370,4 +372,20 @@ func (s *CollectionService) Duplicate(ctx context.Context, sourceName, newName s
 		Fields:                src.Fields,
 		APIRules:              src.APIRules,
 	})
+}
+
+func (s *CollectionService) loadTargetIDTypes(ctx context.Context) map[string]string {
+	result := map[string]string{"users": "serial"}
+	rows, err := s.pool.Query(ctx, `SELECT name, id_type FROM _collections`)
+	if err != nil {
+		return result
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name, idType string
+		if rows.Scan(&name, &idType) == nil {
+			result[name] = idType
+		}
+	}
+	return result
 }

@@ -6,9 +6,14 @@ import (
 )
 
 func TestIdentifierValidation(t *testing.T) {
-	for _, name := range []string{"_users", "foo;drop table x", "Upper", "", strings.Repeat("a", 64)} {
+	for _, name := range []string{"_users", "foo;drop table x", "123abc", "", strings.Repeat("a", 64)} {
 		if IsValidIdentifier(name) {
 			t.Error(name)
+		}
+	}
+	for _, valid := range []string{"posts_123", "Logs", "Total_Quota", "bookerName", "IP"} {
+		if !IsValidIdentifier(valid) {
+			t.Fatalf("valid name rejected: %s", valid)
 		}
 	}
 	if !IsValidIdentifier("posts_123") {

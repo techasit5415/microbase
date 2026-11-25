@@ -8,7 +8,7 @@ import (
 
 // identifierRegex enforces PostgreSQL-safe lowercase identifiers up to 63 bytes.
 // Leading underscores are disallowed to reserve system tables (e.g., _collections, _users).
-var identifierRegex = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
+var identifierRegex = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]{0,62}$`)
 
 // FieldDef defines the schema and PocketBase-compatible options for a single column within a collection.
 type FieldDef struct {
