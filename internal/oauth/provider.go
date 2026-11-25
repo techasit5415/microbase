@@ -18,7 +18,8 @@ type ProviderConfig struct {
 	TokenURL     string            `json:"token_url,omitempty"`
 	UserInfoURL  string            `json:"userinfo_url,omitempty"`
 	Scopes       string            `json:"scopes,omitempty"`
-	FieldMapping map[string]string `json:"field_mapping,omitempty"`
+	FieldMapping  map[string]string   `json:"field_mapping,omitempty"`
+	AllowedClaims map[string][]string `json:"allowed_claims,omitempty"`
 }
 
 // ExternalUser represents normalized identity data + mapped custom claims returned by an external IdP.
@@ -27,6 +28,7 @@ type ExternalUser struct {
 	ProviderUserID string
 	Email          string
 	ExtraFields    map[string]any
+	RawClaims      map[string]any
 }
 
 // Provider defines the contract implemented by Google, Discord, and Generic OIDC / Custom IAM.

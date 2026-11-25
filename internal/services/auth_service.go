@@ -27,7 +27,9 @@ var (
 type AuthClaims struct {
 	UserID int64  `json:"user_id"`
 	Email  string `json:"email"`
-	Role   string `json:"role"`
+	Role       string `json:"role"`
+	RecordID   string `json:"record_id,omitempty"`
+	Collection string `json:"collection,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -422,4 +424,28 @@ func (s *AuthService) UpdateUser(ctx context.Context, id int64, email, role, new
 		rec[col] = vals[i]
 	}
 	return rec, nil
+}
+
+
+// GenerateCollectionToken signs a JWT for a record in any Auth collection (e.g. "users", "staff", "students").
+func (s *AuthService) GenerateCollectionToken(collection, recordID, email, role string) (string, error) {
+	if len(s.jwtSecret) == 0 {
+		return "", ErrMissingJWTSecret
+	}
+	if role == "" {
+		role = "user"
+	}
+	now := time.Now()
+	claims := AuthClaims{
+		RecordID:   recordID,
+		Collection: collection,
+		Email:      email,
+		Role:       role,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   recordID,
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(tokenTTL)),
+		},
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(s.jwtSecret)
 }

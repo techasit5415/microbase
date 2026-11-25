@@ -153,6 +153,7 @@ func (o *OIDCProvider) ExchangeUser(ctx context.Context, code string) (*External
 		ProviderUserID: sub,
 		Email:          email,
 		ExtraFields:    extra,
+		RawClaims:      claimsMap,
 	}, nil
 }
 
@@ -189,4 +190,34 @@ func valueToString(v any) string {
 		return ""
 	}
 	return strings.TrimSpace(fmt.Sprint(v))
+}
+
+
+// ErrClaimNotAllowed is returned when an OIDC/IAM user does not satisfy the provider's allowed_claims restrictions.
+var ErrClaimNotAllowed = fmt.Errorf("access denied: user does not match allowed claim restrictions")
+
+// CheckAllowedClaims verifies that the user's raw IAM/OIDC claims match every configured allowed_claims rule.
+// Each key is a dot-separated JSON path (e.g. "department.name") and the value is a list of permitted values.
+func CheckAllowedClaims(allowed map[string][]string, raw map[string]any) error {
+	if len(allowed) == 0 {
+		return nil
+	}
+	for path, allowedVals := range allowed {
+		path = strings.TrimSpace(path)
+		if path == "" || len(allowedVals) == 0 {
+			continue
+		}
+		actual := strings.TrimSpace(valueToString(extractJSONPath(raw, path)))
+		matched := false
+		for _, want := range allowedVals {
+			if strings.EqualFold(actual, strings.TrimSpace(want)) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return fmt.Errorf("%w (%s=%q)", ErrClaimNotAllowed, path, actual)
+		}
+	}
+	return nil
 }

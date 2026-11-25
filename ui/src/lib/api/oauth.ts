@@ -12,6 +12,7 @@ export interface OAuthProvider {
 	userinfo_url?: string;
 	scopes?: string;
 	field_mapping?: Record<string, string>;
+	allowed_claims?: Record<string, string[]>;
 }
 
 export async function listOAuthProviders(): Promise<OAuthProvider[]> {
@@ -32,6 +33,7 @@ export async function updateOAuthProvider(
 		userinfo_url?: string;
 		scopes?: string;
 		field_mapping?: Record<string, string>;
+		allowed_claims?: Record<string, string[]>;
 	}
 ): Promise<OAuthProvider> {
 	return apiRequest<OAuthProvider>(`/api/oauth/providers/${encodeURIComponent(name)}`, {

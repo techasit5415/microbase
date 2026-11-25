@@ -40,7 +40,8 @@ type UpdateProviderRequest struct {
 	TokenURL     string            `json:"token_url"`
 	UserInfoURL  string            `json:"userinfo_url"`
 	Scopes       string            `json:"scopes"`
-	FieldMapping map[string]string `json:"field_mapping"`
+	FieldMapping  map[string]string   `json:"field_mapping"`
+	AllowedClaims map[string][]string `json:"allowed_claims"`
 }
 
 // AuthMethodProvider describes an enabled OAuth2/OIDC provider for client discovery.
@@ -86,7 +87,7 @@ func NewOAuthService(pool *pgxpool.Pool, c cache.CacheStore, authSvc *AuthServic
 func (s *OAuthService) ListProviders(ctx context.Context) ([]oauth.ProviderConfig, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT name, display_name, enabled, client_id, client_secret, issuer_url,
-		       auth_url, token_url, userinfo_url, scopes, field_mapping
+		       auth_url, token_url, userinfo_url, scopes, field_mapping, allowed_claims
 		FROM _oauth_providers
 		ORDER BY name ASC`)
 	if err != nil {
@@ -98,12 +99,13 @@ func (s *OAuthService) ListProviders(ctx context.Context) ([]oauth.ProviderConfi
 	for rows.Next() {
 		var p oauth.ProviderConfig
 		var secret string
-		var rawMap []byte
-		if err := rows.Scan(&p.Name, &p.DisplayName, &p.Enabled, &p.ClientID, &secret, &p.IssuerURL, &p.AuthURL, &p.TokenURL, &p.UserInfoURL, &p.Scopes, &rawMap); err != nil {
+		var rawMap, rawAllowed []byte
+		if err := rows.Scan(&p.Name, &p.DisplayName, &p.Enabled, &p.ClientID, &secret, &p.IssuerURL, &p.AuthURL, &p.TokenURL, &p.UserInfoURL, &p.Scopes, &rawMap, &rawAllowed); err != nil {
 			return nil, err
 		}
 		p.HasSecret = secret != ""
 		_ = json.Unmarshal(rawMap, &p.FieldMapping)
+		_ = json.Unmarshal(rawAllowed, &p.AllowedClaims)
 		list = append(list, p)
 	}
 	return list, rows.Err()
@@ -113,6 +115,15 @@ func (s *OAuthService) ListProviders(ctx context.Context) ([]oauth.ProviderConfi
 func (s *OAuthService) UpdateProvider(ctx context.Context, name string, req UpdateProviderRequest) (*oauth.ProviderConfig, error) {
 	var p oauth.ProviderConfig
 	var secret string
+	var rawMap, rawAllowed []byte
+	if req.FieldMapping == nil {
+		req.FieldMapping = map[string]string{}
+	}
+	if req.AllowedClaims == nil {
+		req.AllowedClaims = map[string][]string{}
+	}
+	mapJSON, _ := json.Marshal(req.FieldMapping)
+	allowedJSON, _ := json.Marshal(req.AllowedClaims)
 
 	err := s.pool.QueryRow(ctx, `
 		UPDATE _oauth_providers
@@ -120,11 +131,21 @@ func (s *OAuthService) UpdateProvider(ctx context.Context, name string, req Upda
 			client_id = $3,
 			client_secret = CASE WHEN $4 <> '' THEN $4 ELSE client_secret END,
 			issuer_url = $5,
+			auth_url = $6,
+			token_url = $7,
+			userinfo_url = $8,
+			scopes = CASE WHEN $9 <> '' THEN $9 ELSE scopes END,
+			field_mapping = $10,
+			allowed_claims = $11,
 			updated_at = NOW()
 		WHERE name = $1
-		RETURNING name, display_name, enabled, client_id, client_secret, issuer_url`,
-		name, req.Enabled, strings.TrimSpace(req.ClientID), strings.TrimSpace(req.ClientSecret), strings.TrimSpace(req.IssuerURL),
-	).Scan(&p.Name, &p.DisplayName, &p.Enabled, &p.ClientID, &secret, &p.IssuerURL)
+		RETURNING name, display_name, enabled, client_id, client_secret, issuer_url, auth_url, token_url, userinfo_url, scopes, field_mapping, allowed_claims`,
+		name, req.Enabled, strings.TrimSpace(req.ClientID), strings.TrimSpace(req.ClientSecret),
+		strings.TrimSpace(req.IssuerURL), strings.TrimSpace(req.AuthURL), strings.TrimSpace(req.TokenURL),
+		strings.TrimSpace(req.UserInfoURL), strings.TrimSpace(req.Scopes), mapJSON, allowedJSON,
+	).Scan(&p.Name, &p.DisplayName, &p.Enabled, &p.ClientID, &secret, &p.IssuerURL, &p.AuthURL, &p.TokenURL, &p.UserInfoURL, &p.Scopes, &rawMap, &rawAllowed)
+	_ = json.Unmarshal(rawMap, &p.FieldMapping)
+	_ = json.Unmarshal(rawAllowed, &p.AllowedClaims)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrProviderNotFound
 	}
@@ -219,6 +240,18 @@ func (s *OAuthService) HandleCallback(ctx context.Context, providerName, code, s
 		return nil, err
 	}
 
+	if err := oauth.CheckAllowedClaims(cfg.AllowedClaims, extUser.RawClaims); err != nil {
+		if stateData.RedirectTo != "" {
+			u, _ := url.Parse(stateData.RedirectTo)
+			q := u.Query()
+			q.Set("error", "access_denied")
+			q.Set("reason", "claim_not_allowed")
+			u.RawQuery = q.Encode()
+			return &OAuthCallbackResult{RedirectURL: u.String()}, nil
+		}
+		return nil, fmt.Errorf("%w: %v", ErrForbidden, err)
+	}
+
 	user, err := s.findOrCreateUser(ctx, extUser)
 	if err != nil {
 		return nil, err
@@ -270,13 +303,13 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, code string) (*models.A
 
 func (s *OAuthService) getProviderConfig(ctx context.Context, name string) (*oauth.ProviderConfig, error) {
 	var p oauth.ProviderConfig
-	var rawMap []byte
+	var rawMap, rawAllowed []byte
 	err := s.pool.QueryRow(ctx, `
 		SELECT name, display_name, enabled, client_id, client_secret, issuer_url,
-		       auth_url, token_url, userinfo_url, scopes, field_mapping
+		       auth_url, token_url, userinfo_url, scopes, field_mapping, allowed_claims
 		FROM _oauth_providers
 		WHERE name = $1`, name,
-	).Scan(&p.Name, &p.DisplayName, &p.Enabled, &p.ClientID, &p.ClientSecret, &p.IssuerURL, &p.AuthURL, &p.TokenURL, &p.UserInfoURL, &p.Scopes, &rawMap)
+	).Scan(&p.Name, &p.DisplayName, &p.Enabled, &p.ClientID, &p.ClientSecret, &p.IssuerURL, &p.AuthURL, &p.TokenURL, &p.UserInfoURL, &p.Scopes, &rawMap, &rawAllowed)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrProviderNotFound
 	}
@@ -285,6 +318,7 @@ func (s *OAuthService) getProviderConfig(ctx context.Context, name string) (*oau
 	}
 	p.HasSecret = p.ClientSecret != ""
 	_ = json.Unmarshal(rawMap, &p.FieldMapping)
+	_ = json.Unmarshal(rawAllowed, &p.AllowedClaims)
 	return &p, nil
 }
 

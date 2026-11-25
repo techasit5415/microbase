@@ -27,6 +27,7 @@
 	let userInfoUrl = $state('');
 	let scopes = $state('openid email profile');
 	let mappingRows = $state<{ col: string; path: string }[]>([]);
+	let allowedRows = $state<{ path: string; values: string }[]>([]);
 	let saving = $state(false);
 	let copied = $state(false);
 	let errorMsg = $state('');
@@ -78,6 +79,7 @@
 		userInfoUrl = p.userinfo_url ?? '';
 		scopes = p.scopes || 'openid email profile';
 		mappingRows = Object.entries(p.field_mapping ?? {}).map(([col, path]) => ({ col, path }));
+		allowedRows = Object.entries(p.allowed_claims ?? {}).map(([path, vals]) => ({ path, values: vals.join(', ') }));
 		errorMsg = '';
 	}
 
@@ -93,11 +95,27 @@
 		saving = true;
 		errorMsg = '';
 		try {
+			const field_mapping: Record<string, string> = {};
+			for (const row of mappingRows) {
+				if (row.col.trim() && row.path.trim()) field_mapping[row.col.trim()] = row.path.trim();
+			}
+			const allowed_claims: Record<string, string[]> = {};
+			for (const row of allowedRows) {
+				const vals = row.values.split(',').map((v) => v.trim()).filter(Boolean);
+				if (row.path.trim() && vals.length > 0) allowed_claims[row.path.trim()] = vals;
+			}
 			const updated = await updateOAuthProvider(editingProvider.name, {
+				display_name: displayName.trim() || undefined,
 				enabled,
 				client_id: clientId,
 				client_secret: clientSecret,
-				issuer_url: issuerUrl
+				issuer_url: issuerUrl,
+				auth_url: authUrl,
+				token_url: tokenUrl,
+				userinfo_url: userInfoUrl,
+				scopes,
+				field_mapping,
+				allowed_claims
 			});
 			providers = providers.map((p) => (p.name === updated.name ? updated : p));
 			editingProvider = updated;
@@ -289,6 +307,32 @@
 														<span class="text-xs text-muted-foreground">&larr;</span>
 														<input type="text" bind:value={row.path} placeholder="IAM path (e.g. firstname_th)" class="w-1/2 rounded border border-input bg-background px-2.5 py-1 font-mono text-xs outline-none focus:border-ring" />
 														<button type="button" onclick={() => (mappingRows = mappingRows.filter((_, i) => i !== idx))} class="cursor-pointer rounded p-1 text-muted-foreground hover:text-destructive">
+															<Trash2 class="h-3.5 w-3.5" />
+														</button>
+													</div>
+												{/each}
+											</div>
+										{/if}
+									</div>
+
+									<!-- Access Restriction / Allowed Claims (e.g., Lock by Department) -->
+									<div class="border-t border-border pt-3">
+										<div class="mb-2 flex items-center justify-between">
+											<span class="text-xs font-semibold">Access Restriction (Allowed IAM Claims — e.g. Lock by Department)</span>
+											<button type="button" onclick={() => (allowedRows = [...allowedRows, { path: 'department.name', values: '' }])} class="inline-flex cursor-pointer items-center gap-1 rounded border border-border bg-card px-2 py-0.5 text-xs font-medium hover:bg-muted">
+												<Plus class="h-3 w-3" /> Add rule
+											</button>
+										</div>
+										{#if allowedRows.length === 0}
+											<p class="text-xs text-muted-foreground">Leave empty to allow all users from this IdP. Example: <code>department.name</code> &isin; <code>Computer Science, วิทยาการคอมพิวเตอร์</code></p>
+										{:else}
+											<div class="space-y-1.5">
+												{#each allowedRows as row, idx (idx)}
+													<div class="flex items-center gap-2">
+														<input type="text" bind:value={row.path} placeholder="IAM path (e.g. department.name)" class="w-5/12 rounded border border-input bg-background px-2.5 py-1 font-mono text-xs outline-none focus:border-ring" />
+														<span class="text-xs text-muted-foreground">&isin;</span>
+														<input type="text" bind:value={row.values} placeholder="Allowed values (comma-separated)" class="w-7/12 rounded border border-input bg-background px-2.5 py-1 text-xs outline-none focus:border-ring" />
+														<button type="button" onclick={() => (allowedRows = allowedRows.filter((_, i) => i !== idx))} class="cursor-pointer rounded p-1 text-muted-foreground hover:text-destructive">
 															<Trash2 class="h-3.5 w-3.5" />
 														</button>
 													</div>

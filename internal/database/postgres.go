@@ -84,6 +84,7 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		`ALTER TABLE _oauth_providers ADD COLUMN IF NOT EXISTS userinfo_url TEXT NOT NULL DEFAULT '';`,
 		`ALTER TABLE _oauth_providers ADD COLUMN IF NOT EXISTS scopes TEXT NOT NULL DEFAULT 'openid email profile';`,
 		`ALTER TABLE _oauth_providers ADD COLUMN IF NOT EXISTS field_mapping JSONB NOT NULL DEFAULT '{}'::jsonb;`,
+		`ALTER TABLE _oauth_providers ADD COLUMN IF NOT EXISTS allowed_claims JSONB NOT NULL DEFAULT '{}'::jsonb;`,
 		`UPDATE _collections SET type = 'auth' WHERE name = 'users';`,
 		`ALTER TABLE _users ADD COLUMN IF NOT EXISTS verified BOOLEAN NOT NULL DEFAULT FALSE;`,
 		`ALTER TABLE _users ADD COLUMN IF NOT EXISTS email_visibility BOOLEAN NOT NULL DEFAULT FALSE;`,
