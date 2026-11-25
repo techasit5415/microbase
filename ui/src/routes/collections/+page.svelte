@@ -45,7 +45,7 @@
 			: usersCollection;
 		const others = userCollections
 			.filter((c) => c.name !== 'users')
-			.map((c) => ({ ...c, type: 'base' as const }));
+			.map((c) => ({ ...c, type: (c.type || 'base') as 'base' | 'view' | 'auth' }));
 		return [authCol, ...others];
 	});
 	let allLookup = $derived([...mainCollections, ...systemTables]);
@@ -184,7 +184,7 @@
 		onOpenEditCollection={openEditCollection}
 		onOpenApiPreview={() => (showApiPreview = true)}
 		onOpenCreateRecord={() => {
-			if (activeCol.type !== 'system' || activeCol.name === '_superusers') {
+			if ((activeCol.type !== 'system' && activeCol.type !== 'view') || activeCol.name === '_superusers') {
 				editingRec = null;
 				showCreateRec = true;
 			}
@@ -195,7 +195,7 @@
 		collection={activeCol}
 		{items}
 		{loading}
-		readOnly={activeCol.type === 'system' && activeCol.name !== '_superusers'}
+		readOnly={(activeCol.type === 'system' && activeCol.name !== '_superusers') || activeCol.type === 'view'}
 		onSelect={(row) => {
 			if (activeCol.type === 'base' || activeCol.type === 'auth' || activeCol.name === '_superusers') {
 				editingRec = row;
@@ -222,7 +222,7 @@
 	availableCollections={mainCollections.map((c) => c.name)}
 	onClose={() => (showColDrawer = false)}
 	onSaved={(col, isEdit) => {
-		const typed: Collection = { ...col, type: col.name === 'users' ? 'auth' : 'base' };
+		const typed: Collection = { ...col, type: col.name === 'users' ? 'auth' : (col.type || 'base') };
 		if (isEdit) {
 			userCollections = userCollections.map((c) => (c.name === typed.name ? typed : c));
 			toast.success(`Updated collection "${typed.name}"`);

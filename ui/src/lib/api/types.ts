@@ -64,7 +64,8 @@ export interface IndexDef {
 export interface Collection {
 	id: number;
 	name: string;
-	type?: 'auth' | 'base' | 'system';
+	type?: 'auth' | 'base' | 'view' | 'system';
+	view_query?: string;
 	fields: FieldDef[];
 	api_rules?: Record<string, string>;
 	indexes?: IndexDef[];

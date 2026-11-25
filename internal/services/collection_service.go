@@ -22,48 +22,65 @@ var (
 	ErrCollectionNotFound = errors.New("collection not found")
 )
 
-// CollectionService manages dynamic PostgreSQL tables and their metadata in _collections.
 type CollectionService struct {
 	pool  *pgxpool.Pool
 	cache cache.CacheStore
 }
 
-// NewCollectionService constructs a CollectionService backed by PostgreSQL and CacheStore.
 func NewCollectionService(pool *pgxpool.Pool, c cache.CacheStore) *CollectionService {
-	return &CollectionService{
-		pool:  pool,
-		cache: c,
+	return &CollectionService{pool: pool, cache: c}
+}
+
+func normalizeCollectionType(t string) string {
+	switch t {
+	case "view", "auth":
+		return t
+	default:
+		return "base"
 	}
 }
 
-// Create validates the schema, executes CREATE TABLE + CREATE INDEX, and registers metadata atomically.
 func (s *CollectionService) Create(ctx context.Context, req models.CreateCollectionRequest) (*models.Collection, error) {
-	ddl, err := buildCreateTableSQL(req)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalidSchema, err)
-	}
+	req.Type = normalizeCollectionType(req.Type)
 
-	indexStmts := make([]string, 0, len(req.Indexes))
-	for _, idx := range req.Indexes {
-		stmt, err := buildCreateIndexSQL(req.Name, idx)
+	var ddl string
+	var err error
+	var indexStmts []string
+
+	if req.Type == "view" {
+		ddl, err = buildCreateViewSQL(req.Name, req.ViewQuery)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %v", ErrInvalidSchema, err)
 		}
-		indexStmts = append(indexStmts, stmt)
+		req.Fields = []models.FieldDef{}
+		req.Indexes = []models.IndexDef{}
+	} else {
+		ddl, err = buildCreateTableSQL(req)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrInvalidSchema, err)
+		}
+		for _, idx := range req.Indexes {
+			stmt, idxErr := buildCreateIndexSQL(req.Name, idx)
+			if idxErr != nil {
+				return nil, fmt.Errorf("%w: %v", ErrInvalidSchema, idxErr)
+			}
+			indexStmts = append(indexStmts, stmt)
+		}
 	}
 
-	fieldsJSON, err := json.Marshal(req.Fields)
-	if err != nil {
-		return nil, fmt.Errorf("marshal fields: %w", err)
+	if req.Fields == nil {
+		req.Fields = []models.FieldDef{}
 	}
-	indexes := req.Indexes
-	if indexes == nil {
-		indexes = []models.IndexDef{}
+	fieldsJSON, _ := json.Marshal(req.Fields)
+	if req.Indexes == nil {
+		req.Indexes = []models.IndexDef{}
 	}
-	indexesJSON, err := json.Marshal(indexes)
-	if err != nil {
-		return nil, fmt.Errorf("marshal indexes: %w", err)
+	indexesJSON, _ := json.Marshal(req.Indexes)
+	apiRules := req.APIRules
+	if apiRules == nil {
+		apiRules = map[string]string{}
 	}
+	rulesJSON, _ := json.Marshal(apiRules)
 
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -71,41 +88,31 @@ func (s *CollectionService) Create(ctx context.Context, req models.CreateCollect
 	}
 	defer tx.Rollback(ctx)
 
-	// 1. Create the physical PostgreSQL table.
 	if _, err := tx.Exec(ctx, ddl); err != nil {
 		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "42P07" { // duplicate_table
+		if errors.As(err, &pgErr) && pgErr.Code == "42P07" {
 			return nil, ErrCollectionExists
 		}
-		return nil, fmt.Errorf("execute create table: %w", err)
+		return nil, fmt.Errorf("execute create %s: %w", req.Type, err)
 	}
 
-	// 2. Create any configured indexes / unique constraints.
 	for _, stmt := range indexStmts {
 		if _, err := tx.Exec(ctx, stmt); err != nil {
 			return nil, fmt.Errorf("create index: %w", err)
 		}
 	}
 
-	apiRules := req.APIRules
-	if apiRules == nil {
-		apiRules = map[string]string{}
-	}
-	rulesJSON, _ := json.Marshal(apiRules)
-
-	// 3. Register schema metadata in _collections.
 	var col models.Collection
 	var rawFields, rawRules, rawIndexes []byte
-	insertSQL := `
-		INSERT INTO _collections (name, fields, api_rules, indexes)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id, name, fields, api_rules, indexes, created_at, updated_at`
-
-	err = tx.QueryRow(ctx, insertSQL, req.Name, fieldsJSON, rulesJSON, indexesJSON).
-		Scan(&col.ID, &col.Name, &rawFields, &rawRules, &rawIndexes, &col.CreatedAt, &col.UpdatedAt)
+	err = tx.QueryRow(ctx, `
+		INSERT INTO _collections (name, type, view_query, fields, api_rules, indexes)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, name, type, view_query, fields, api_rules, indexes, created_at, updated_at`,
+		req.Name, req.Type, req.ViewQuery, fieldsJSON, rulesJSON, indexesJSON,
+	).Scan(&col.ID, &col.Name, &col.Type, &col.ViewQuery, &rawFields, &rawRules, &rawIndexes, &col.CreatedAt, &col.UpdatedAt)
 	if err != nil {
 		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" { // unique_violation
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return nil, ErrCollectionExists
 		}
 		return nil, fmt.Errorf("insert _collections: %w", err)
@@ -122,10 +129,9 @@ func (s *CollectionService) Create(ctx context.Context, req models.CreateCollect
 	return &col, nil
 }
 
-// List returns all registered collections ordered by ID.
 func (s *CollectionService) List(ctx context.Context) ([]models.Collection, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, name, fields, api_rules, indexes, created_at, updated_at
+		SELECT id, name, type, view_query, fields, api_rules, indexes, created_at, updated_at
 		FROM _collections
 		ORDER BY id ASC`)
 	if err != nil {
@@ -137,7 +143,7 @@ func (s *CollectionService) List(ctx context.Context) ([]models.Collection, erro
 	for rows.Next() {
 		var col models.Collection
 		var rawFields, rawRules, rawIndexes []byte
-		if err := rows.Scan(&col.ID, &col.Name, &rawFields, &rawRules, &rawIndexes, &col.CreatedAt, &col.UpdatedAt); err != nil {
+		if err := rows.Scan(&col.ID, &col.Name, &col.Type, &col.ViewQuery, &rawFields, &rawRules, &rawIndexes, &col.CreatedAt, &col.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan collection: %w", err)
 		}
 		_ = json.Unmarshal(rawFields, &col.Fields)
@@ -148,7 +154,6 @@ func (s *CollectionService) List(ctx context.Context) ([]models.Collection, erro
 	return result, rows.Err()
 }
 
-// GetByName fetches a collection schema, checking CacheStore before querying PostgreSQL.
 func (s *CollectionService) GetByName(ctx context.Context, name string) (*models.Collection, error) {
 	if !models.IsValidIdentifier(name) {
 		return nil, ErrCollectionNotFound
@@ -164,10 +169,10 @@ func (s *CollectionService) GetByName(ctx context.Context, name string) (*models
 	var col models.Collection
 	var rawFields, rawRules, rawIndexes []byte
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, name, fields, api_rules, indexes, created_at, updated_at
+		SELECT id, name, type, view_query, fields, api_rules, indexes, created_at, updated_at
 		FROM _collections
 		WHERE name = $1`, name).
-		Scan(&col.ID, &col.Name, &rawFields, &rawRules, &rawIndexes, &col.CreatedAt, &col.UpdatedAt)
+		Scan(&col.ID, &col.Name, &col.Type, &col.ViewQuery, &rawFields, &rawRules, &rawIndexes, &col.CreatedAt, &col.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrCollectionNotFound
 	}
@@ -184,13 +189,17 @@ func (s *CollectionService) GetByName(ctx context.Context, name string) (*models
 	return &col, nil
 }
 
-// Delete drops the collection's PostgreSQL table and removes its metadata atomically.
 func (s *CollectionService) Delete(ctx context.Context, name string) error {
 	if !models.IsValidIdentifier(name) {
 		return ErrCollectionNotFound
 	}
 	if name == "users" {
 		return fmt.Errorf("%w: built-in auth collection users cannot be deleted", ErrInvalidSchema)
+	}
+
+	existing, err := s.GetByName(ctx, name)
+	if err != nil {
+		return err
 	}
 
 	tx, err := s.pool.Begin(ctx)
@@ -208,8 +217,11 @@ func (s *CollectionService) Delete(ctx context.Context, name string) error {
 	}
 
 	dropSQL := fmt.Sprintf(`DROP TABLE IF EXISTS "%s" CASCADE`, name)
+	if existing.Type == "view" {
+		dropSQL = fmt.Sprintf(`DROP VIEW IF EXISTS "%s" CASCADE`, name)
+	}
 	if _, err := tx.Exec(ctx, dropSQL); err != nil {
-		return fmt.Errorf("drop table: %w", err)
+		return fmt.Errorf("drop %s: %w", existing.Type, err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -231,34 +243,45 @@ func schemaCacheKey(name string) string {
 	return "schema:" + name
 }
 
-// Update alters the collection's PostgreSQL columns & indexes and updates metadata in _collections atomically.
-func (s *CollectionService) Update(ctx context.Context, name string, newFields []models.FieldDef, apiRules map[string]string, newIndexes []models.IndexDef) (*models.Collection, error) {
+func (s *CollectionService) Update(ctx context.Context, name string, newFields []models.FieldDef, apiRules map[string]string, newIndexes []models.IndexDef, viewQuery string) (*models.Collection, error) {
 	existing, err := s.GetByName(ctx, name)
 	if err != nil {
 		return nil, err
 	}
 
-	tableName := physicalTableName(existing.Name)
-	alterStmts, cleanedFields, err := buildAlterTableStatements(tableName, existing.Fields, newFields)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalidSchema, err)
-	}
+	var alterStmts, indexStmts []string
+	var cleanedFields []models.FieldDef
 
-	if newIndexes == nil {
-		newIndexes = existing.Indexes
-	}
-	if newIndexes == nil {
+	if existing.Type == "view" {
+		if viewQuery == "" {
+			viewQuery = existing.ViewQuery
+		}
+		viewDDL, vErr := buildCreateViewSQL(existing.Name, viewQuery)
+		if vErr != nil {
+			return nil, fmt.Errorf("%w: %v", ErrInvalidSchema, vErr)
+		}
+		alterStmts = []string{viewDDL}
+		cleanedFields = []models.FieldDef{}
 		newIndexes = []models.IndexDef{}
-	}
-	indexStmts, err := buildIndexDiffStatements(tableName, existing.Indexes, newIndexes)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalidSchema, err)
+	} else {
+		tableName := physicalTableName(existing.Name)
+		alterStmts, cleanedFields, err = buildAlterTableStatements(tableName, existing.Fields, newFields)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrInvalidSchema, err)
+		}
+		if newIndexes == nil {
+			newIndexes = existing.Indexes
+		}
+		if newIndexes == nil {
+			newIndexes = []models.IndexDef{}
+		}
+		indexStmts, err = buildIndexDiffStatements(tableName, existing.Indexes, newIndexes)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrInvalidSchema, err)
+		}
 	}
 
-	fieldsJSON, err := json.Marshal(cleanedFields)
-	if err != nil {
-		return nil, fmt.Errorf("marshal fields: %w", err)
-	}
+	fieldsJSON, _ := json.Marshal(cleanedFields)
 	if apiRules == nil {
 		apiRules = existing.APIRules
 	}
@@ -276,7 +299,7 @@ func (s *CollectionService) Update(ctx context.Context, name string, newFields [
 
 	for _, stmt := range alterStmts {
 		if _, err := tx.Exec(ctx, stmt); err != nil {
-			return nil, fmt.Errorf("alter table: %w", err)
+			return nil, fmt.Errorf("alter %s: %w", existing.Type, err)
 		}
 	}
 	for _, stmt := range indexStmts {
@@ -289,11 +312,11 @@ func (s *CollectionService) Update(ctx context.Context, name string, newFields [
 	var rawFields, rawRules, rawIndexes []byte
 	err = tx.QueryRow(ctx, `
 		UPDATE _collections
-		SET fields = $2, api_rules = $3, indexes = $4, updated_at = NOW()
+		SET view_query = $2, fields = $3, api_rules = $4, indexes = $5, updated_at = NOW()
 		WHERE name = $1
-		RETURNING id, name, fields, api_rules, indexes, created_at, updated_at`,
-		existing.Name, fieldsJSON, rulesJSON, indexesJSON,
-	).Scan(&updated.ID, &updated.Name, &rawFields, &rawRules, &rawIndexes, &updated.CreatedAt, &updated.UpdatedAt)
+		RETURNING id, name, type, view_query, fields, api_rules, indexes, created_at, updated_at`,
+		existing.Name, viewQuery, fieldsJSON, rulesJSON, indexesJSON,
+	).Scan(&updated.ID, &updated.Name, &updated.Type, &updated.ViewQuery, &rawFields, &rawRules, &rawIndexes, &updated.CreatedAt, &updated.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("update _collections: %w", err)
 	}

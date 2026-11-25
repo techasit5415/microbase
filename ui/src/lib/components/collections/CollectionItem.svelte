@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Folder, Trash2, Users } from '@lucide/svelte';
+	import { Folder, Table2, Trash2, Users } from '@lucide/svelte';
 	import type { Collection } from '#lib/api/types.ts';
 
 	interface Props {

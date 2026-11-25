@@ -79,15 +79,16 @@ func (h *CollectionController) Delete(c echo.Context) error {
 // Update handles PATCH /api/collections/:name to add or remove fields.
 func (h *CollectionController) Update(c echo.Context) error {
 	var req struct {
-		Fields   []models.FieldDef  `json:"fields"`
-		APIRules map[string]string  `json:"api_rules"`
-		Indexes  []models.IndexDef  `json:"indexes"`
+		Fields    []models.FieldDef `json:"fields"`
+		APIRules  map[string]string `json:"api_rules"`
+		Indexes   []models.IndexDef `json:"indexes"`
+		ViewQuery string            `json:"view_query"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return response.Error(c, http.StatusBadRequest, "INVALID_JSON", "invalid request body")
 	}
 
-	col, err := h.service.Update(c.Request().Context(), c.Param("name"), req.Fields, req.APIRules, req.Indexes)
+	col, err := h.service.Update(c.Request().Context(), c.Param("name"), req.Fields, req.APIRules, req.Indexes, req.ViewQuery)
 	if errors.Is(err, services.ErrCollectionNotFound) {
 		return response.Error(c, http.StatusNotFound, "NOT_FOUND", "collection not found")
 	}

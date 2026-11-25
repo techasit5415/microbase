@@ -21,6 +21,15 @@ func buildCreateTableSQL(req models.CreateCollectionRequest) (string, error) {
 	}
 
 	columns := []string{`"id" BIGSERIAL PRIMARY KEY`}
+	if req.Type == "auth" {
+		columns = append(columns,
+			`"email" TEXT UNIQUE NOT NULL`,
+			`"password_hash" TEXT`,
+			`"verified" BOOLEAN NOT NULL DEFAULT FALSE`,
+			`"email_visibility" BOOLEAN NOT NULL DEFAULT FALSE`,
+			`"role" TEXT NOT NULL DEFAULT 'user'`,
+		)
+	}
 	seen := make(map[string]bool)
 
 	for _, f := range req.Fields {
@@ -244,4 +253,23 @@ func relationConstraintSQL(f models.FieldDef) (string, error) {
 		onDelete = "ON DELETE CASCADE"
 	}
 	return fmt.Sprintf(` REFERENCES "%s"(id) %s`, targetTable, onDelete), nil
+}
+
+// buildCreateViewSQL validates a read-only SELECT/WITH query and builds CREATE OR REPLACE VIEW.
+func buildCreateViewSQL(name, viewQuery string) (string, error) {
+	if !models.IsValidIdentifier(name) {
+		return "", fmt.Errorf("invalid view collection name %q", name)
+	}
+	q := strings.TrimSpace(strings.TrimRight(strings.TrimSpace(viewQuery), ";"))
+	if q == "" {
+		return "", fmt.Errorf("view collection %q requires a SELECT query", name)
+	}
+	if strings.Contains(q, ";") {
+		return "", fmt.Errorf("view query must be a single SELECT statement without semicolons")
+	}
+	upper := strings.ToUpper(q)
+	if !strings.HasPrefix(upper, "SELECT ") && !strings.HasPrefix(upper, "WITH ") {
+		return "", fmt.Errorf("view query must start with SELECT or WITH")
+	}
+	return fmt.Sprintf(`CREATE OR REPLACE VIEW "%s" AS %s;`, name, q), nil
 }

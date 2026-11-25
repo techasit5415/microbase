@@ -10,11 +10,20 @@ export async function createCollection(
 	name: string,
 	fields: FieldDef[],
 	indexes: IndexDef[] = [],
-	apiRules: Record<string, string> = {}
+	apiRules: Record<string, string> = {},
+	type: 'base' | 'view' | 'auth' = 'base',
+	viewQuery = ''
 ): Promise<Collection> {
 	return apiRequest<Collection>('/api/collections', {
 		method: 'POST',
-		body: JSON.stringify({ name, fields, indexes, api_rules: apiRules })
+		body: JSON.stringify({
+			name,
+			type,
+			view_query: viewQuery,
+			fields,
+			indexes,
+			api_rules: apiRules
+		})
 	});
 }
 
@@ -22,11 +31,17 @@ export async function updateCollection(
 	name: string,
 	fields: FieldDef[],
 	apiRules?: Record<string, string>,
-	indexes?: IndexDef[]
+	indexes?: IndexDef[],
+	viewQuery?: string
 ): Promise<Collection> {
 	return apiRequest<Collection>(`/api/collections/${encodeURIComponent(name)}`, {
 		method: 'PATCH',
-		body: JSON.stringify({ fields, api_rules: apiRules, indexes })
+		body: JSON.stringify({
+			fields,
+			api_rules: apiRules,
+			indexes,
+			view_query: viewQuery
+		})
 	});
 }
 

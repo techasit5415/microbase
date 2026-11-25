@@ -60,6 +60,8 @@ type IndexDef struct {
 type Collection struct {
 	ID        int64             `json:"id"`
 	Name      string            `json:"name"`
+	Type      string            `json:"type"` // base, view, auth
+	ViewQuery string            `json:"view_query,omitempty"`
 	Fields    []FieldDef        `json:"fields"`
 	APIRules  map[string]string `json:"api_rules,omitempty"`
 	Indexes   []IndexDef        `json:"indexes,omitempty"`
@@ -69,7 +71,9 @@ type Collection struct {
 
 // CreateCollectionRequest is the payload accepted by POST /api/collections.
 type CreateCollectionRequest struct {
-	Name     string            `json:"name"`
+	Name      string            `json:"name"`
+	Type      string            `json:"type,omitempty"` // base, view, auth
+	ViewQuery string            `json:"view_query,omitempty"`
 	Fields   []FieldDef        `json:"fields"`
 	APIRules map[string]string `json:"api_rules,omitempty"`
 	Indexes  []IndexDef        `json:"indexes,omitempty"`

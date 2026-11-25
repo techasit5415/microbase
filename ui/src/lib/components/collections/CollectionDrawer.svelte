@@ -1,13 +1,17 @@
 <script lang="ts">
 	import {
 		CalendarCheck,
+		ChevronDown,
+		Folder,
 		Lock,
 		LockOpen,
 		Mail,
 		Plus,
 		Settings2,
+		Table2,
 		ToggleLeft,
 		Type,
+		Users,
 		X
 	} from '@lucide/svelte';
 	import { createCollection, updateCollection } from '#lib/api/collections.ts';
@@ -30,18 +34,29 @@
 
 	let { open, editing = null, availableCollections = [], onClose, onSaved }: Props = $props();
 
-	let activeTab = $state<'fields' | 'rules' | 'options'>('fields');
+	let colType = $state<'base' | 'view' | 'auth'>('base');
+	let typeMenuOpen = $state(false);
+	let activeTab = $state<'fields' | 'query' | 'rules' | 'options'>('fields');
 	let name = $state('');
+	let viewQuery = $state('');
 	let fields = $state<FieldDef[]>([]);
 	let indexes = $state<IndexDef[]>([]);
 	let apiRules = $state<Record<string, string>>({});
+	let showRulesInfo = $state(false);
 	let errorMsg = $state('');
 	let saving = $state(false);
 
 	let showIndexModal = $state(false);
 	let editingIndexPos = $state<number | null>(null);
 
-	let isAuth = $derived(editing?.type === 'auth' || editing?.name === 'users');
+	let isAuth = $derived(colType === 'auth');
+	let isView = $derived(colType === 'view');
+
+	const typeChoices: { value: 'base' | 'view' | 'auth'; label: string; short: string }[] = [
+		{ value: 'base', label: 'Base collection', short: 'Base' },
+		{ value: 'view', label: 'View collection', short: 'View' },
+		{ value: 'auth', label: 'Auth collection', short: 'Auth' }
+	];
 
 	const authSystemFields = [
 		{ name: 'id', icon: 'text', badges: ['Required'] },
@@ -64,7 +79,7 @@
 		return Array.from(new Set([...sysCols, ...userCols]));
 	});
 
-	const ruleKeys = [
+	const allRuleKeys = [
 		{ key: 'list', label: 'List/Search rule' },
 		{ key: 'view', label: 'View rule' },
 		{ key: 'create', label: 'Create rule' },
@@ -72,12 +87,23 @@
 		{ key: 'delete', label: 'Delete rule' }
 	];
 
+	let visibleRuleKeys = $derived(isView ? allRuleKeys.slice(0, 2) : allRuleKeys);
+
 	$effect(() => {
 		if (open) {
 			errorMsg = '';
-			activeTab = 'fields';
+			typeMenuOpen = false;
+			showRulesInfo = false;
 			if (editing) {
 				name = editing.name;
+				colType =
+					editing.name === 'users' || editing.type === 'auth'
+						? 'auth'
+						: editing.type === 'view'
+							? 'view'
+							: 'base';
+				activeTab = colType === 'view' ? 'query' : 'fields';
+				viewQuery = editing.view_query ?? '';
 				fields = (editing.fields ?? [])
 					.filter((f) => !(editing.name === 'users' && ['email', 'role'].includes(f.name)))
 					.map((f) => ({
@@ -94,12 +120,27 @@
 				apiRules = { ...(editing.api_rules ?? {}) };
 			} else {
 				name = '';
+				colType = 'base';
+				activeTab = 'fields';
+				viewQuery = '';
 				fields = [{ name: 'title', type: 'text', required: true, unique: false }];
 				indexes = [];
 				apiRules = {};
 			}
 		}
 	});
+
+	function selectCollectionType(next: 'base' | 'view' | 'auth') {
+		colType = next;
+		typeMenuOpen = false;
+		if (next === 'view') {
+			activeTab = 'query';
+		} else if (activeTab === 'query') {
+			activeTab = 'fields';
+		} else if (next !== 'auth' && activeTab === 'options') {
+			activeTab = 'fields';
+		}
+	}
 
 	function generateDefaultFieldName(base: string): string {
 		const existing = new Set([
@@ -154,57 +195,75 @@
 	async function handleSubmit(e: SubmitEvent) {
 		e.preventDefault();
 		errorMsg = '';
-		const validationErr = validateCollectionForm(name, fields, indexes, Boolean(editing));
-		if (validationErr) {
-			errorMsg = validationErr;
-			toast.error(validationErr);
-			return;
+
+		if (isView) {
+			if (!editing && !/^[a-z][a-z0-9_]{0,62}$/.test(name.trim())) {
+				errorMsg = 'View collection name must start with a lowercase letter (a-z, 0-9, _).';
+				toast.error(errorMsg);
+				return;
+			}
+			const q = viewQuery.trim();
+			if (!q || (!q.toUpperCase().startsWith('SELECT ') && !q.toUpperCase().startsWith('WITH '))) {
+				errorMsg = 'View collection requires a valid SQL SELECT query.';
+				toast.error(errorMsg);
+				return;
+			}
+		} else {
+			const validationErr = validateCollectionForm(name, fields, indexes, Boolean(editing));
+			if (validationErr) {
+				errorMsg = validationErr;
+				toast.error(validationErr);
+				return;
+			}
 		}
+
 		saving = true;
 		try {
-			const cleanFields = fields.map((f) => ({
-				name: f.name.trim(),
-				original_name: f.original_name,
-				type: f.type,
-				required: Boolean(f.required),
-				unique: Boolean(f.unique),
-				presentable: Boolean(f.presentable),
-				hidden: Boolean(f.hidden),
-				help_text: f.help_text?.trim() || undefined,
-				collection_name: f.type === 'relation' ? f.collection_name?.trim() || undefined : undefined,
-				cascade_delete: f.type === 'relation' ? Boolean(f.cascade_delete) : undefined,
-				max_select:
-					f.type === 'file' || f.type === 'relation' || f.type === 'select'
-						? Number(f.max_select || 1)
-						: undefined,
-				values: f.type === 'select' && f.values?.length ? f.values : undefined,
-				mime_types: f.type === 'file' && f.mime_types?.length ? f.mime_types : undefined,
-				thumbs: f.type === 'file' && f.thumbs?.length ? f.thumbs : undefined,
-				max_size:
-					(f.type === 'file' || f.type === 'editor' || f.type === 'json') && f.max_size
-						? Number(f.max_size)
-						: undefined,
-				protected: f.type === 'file' ? Boolean(f.protected) : undefined,
-				min: f.min !== undefined ? Number(f.min) : undefined,
-				max: f.max !== undefined ? Number(f.max) : undefined,
-				pattern: f.type === 'text' && f.pattern?.trim() ? f.pattern.trim() : undefined,
-				only_int: f.type === 'number' || f.type === 'float' ? Boolean(f.only_int) : undefined,
-				only_domains:
-					(f.type === 'email' || f.type === 'url') && f.only_domains?.length
-						? f.only_domains
-						: undefined,
-				except_domains:
-					(f.type === 'email' || f.type === 'url') && f.except_domains?.length
-						? f.except_domains
-						: undefined,
-				on_create: f.type === 'autodate' ? f.on_create !== false : undefined,
-				on_update: f.type === 'autodate' ? Boolean(f.on_update) : undefined,
-				dimension: f.type === 'vector' ? Number(f.dimension || 768) : undefined
-			}));
+			const cleanFields = isView
+				? []
+				: fields.map((f) => ({
+						name: f.name.trim(),
+						original_name: f.original_name,
+						type: f.type,
+						required: Boolean(f.required),
+						unique: Boolean(f.unique),
+						presentable: Boolean(f.presentable),
+						hidden: Boolean(f.hidden),
+						help_text: f.help_text?.trim() || undefined,
+						collection_name: f.type === 'relation' ? f.collection_name?.trim() || undefined : undefined,
+						cascade_delete: f.type === 'relation' ? Boolean(f.cascade_delete) : undefined,
+						max_select:
+							f.type === 'file' || f.type === 'relation' || f.type === 'select'
+								? Number(f.max_select || 1)
+								: undefined,
+						values: f.type === 'select' && f.values?.length ? f.values : undefined,
+						mime_types: f.type === 'file' && f.mime_types?.length ? f.mime_types : undefined,
+						thumbs: f.type === 'file' && f.thumbs?.length ? f.thumbs : undefined,
+						max_size:
+							(f.type === 'file' || f.type === 'editor' || f.type === 'json') && f.max_size
+								? Number(f.max_size)
+								: undefined,
+						protected: f.type === 'file' ? Boolean(f.protected) : undefined,
+						min: f.min !== undefined ? Number(f.min) : undefined,
+						max: f.max !== undefined ? Number(f.max) : undefined,
+						pattern: f.type === 'text' && f.pattern?.trim() ? f.pattern.trim() : undefined,
+						only_int: f.type === 'number' || f.type === 'float' ? Boolean(f.only_int) : undefined,
+						only_domains:
+							(f.type === 'email' || f.type === 'url') && f.only_domains?.length
+								? f.only_domains
+								: undefined,
+						except_domains:
+							(f.type === 'email' || f.type === 'url') && f.except_domains?.length
+								? f.except_domains
+								: undefined,
+						on_create: f.type === 'autodate' ? f.on_create !== false : undefined,
+						on_update: f.type === 'autodate' ? Boolean(f.on_update) : undefined,
+						dimension: f.type === 'vector' ? Number(f.dimension || 768) : undefined
+					}));
 
 			const result = editing
-				? await updateCollection(editing.name, cleanFields, apiRules, indexes)
-				: await createCollection(name.trim(), cleanFields, indexes, apiRules);
+				? await updateCollection(editing.name, cleanFields, apiRules, indexes, viewQuery)
+				: await createCollection(name.trim(), cleanFields, indexes, apiRules, colType, viewQuery);
 
 			onSaved(result, Boolean(editing));
 			onClose();
@@ -220,7 +279,7 @@
 <Drawer {open} {onClose} maxWidth="max-w-2xl">
 	<div class="flex items-center justify-between px-6 pt-5 pb-3">
 		<h2 class="text-base font-normal text-foreground">
-			{editing ? 'Edit ' : 'New '}<strong class="font-semibold">{editing ? editing.name : 'collection'}</strong>{editing ? ' collection' : ''}
+			{editing ? 'Edit ' : 'Create '}<strong class="font-semibold">{editing ? editing.name : 'collection'}</strong>{editing ? ' collection' : ''}
 		</h2>
 		<button
 			type="button"
@@ -231,8 +290,9 @@
 		</button>
 	</div>
 
+	<!-- Name + PocketBase Type Dropdown -->
 	<div class="px-6 pb-4">
-		<div class="flex items-center justify-between rounded-md bg-muted/75 px-3.5 py-2.5">
+		<div class="flex items-center justify-between gap-3 rounded-md bg-muted/75 px-3.5 py-2.5">
 			<div class="min-w-0 flex-1">
 				<label for="col-name" class="block text-xs font-medium text-muted-foreground">
 					Name <span class="text-destructive">*</span>
@@ -243,27 +303,75 @@
 					required
 					disabled={Boolean(editing)}
 					bind:value={name}
-					placeholder="e.g. products"
+					placeholder="e.g. posts"
 					class="w-full bg-transparent pt-0.5 font-mono text-sm font-medium text-foreground outline-none disabled:opacity-85"
 				/>
 			</div>
-			<span class="ml-3 shrink-0 text-xs font-medium text-muted-foreground">
-				Type: <strong class="text-foreground">{isAuth ? 'Auth' : 'Base'}</strong>
-			</span>
+
+			<!-- PocketBase Type: Base / View / Auth dropdown -->
+			<div class="relative shrink-0">
+				<button
+					type="button"
+					disabled={Boolean(editing)}
+					onclick={() => (typeMenuOpen = !typeMenuOpen)}
+					class="inline-flex items-center gap-1.5 rounded-md border border-foreground/70 bg-card px-3 py-1.5 text-xs font-semibold text-foreground transition hover:bg-muted disabled:cursor-default disabled:border-border disabled:bg-transparent disabled:text-muted-foreground"
+				>
+					<span>Type: {typeChoices.find((t) => t.value === colType)?.short}</span>
+					{#if !editing}
+						<ChevronDown class="h-3.5 w-3.5" />
+					{/if}
+				</button>
+
+				{#if typeMenuOpen && !editing}
+					<div class="animate-modal-in absolute right-0 z-30 mt-1.5 w-48 rounded-lg border border-border bg-card p-1.5 shadow-xl">
+						{#each typeChoices as tc (tc.value)}
+							<button
+								type="button"
+								onclick={() => selectCollectionType(tc.value)}
+								class="flex w-full cursor-pointer items-center gap-2.5 rounded-md px-3 py-2 text-left text-xs font-medium transition {colType === tc.value
+									? 'bg-muted text-foreground'
+									: 'text-foreground/85 hover:bg-muted/60'}"
+							>
+								{#if tc.value === 'view'}
+									<Table2 class="h-4 w-4 text-muted-foreground" />
+								{:else if tc.value === 'auth'}
+									<Users class="h-4 w-4 text-muted-foreground" />
+								{:else}
+									<Folder class="h-4 w-4 text-muted-foreground" />
+								{/if}
+								<span>{tc.label}</span>
+							</button>
+						{/each}
+					</div>
+				{/if}
+			</div>
 		</div>
 	</div>
 
-	<!-- PocketBase-style Tabs -->
+	<!-- Dynamic PocketBase Tabs -->
 	<div class="grid border-b border-border px-6 {isAuth ? 'grid-cols-3' : 'grid-cols-2'}">
-		<button
-			type="button"
-			onclick={() => (activeTab = 'fields')}
-			class="cursor-pointer rounded-t-md border border-b-0 py-2.5 text-xs font-medium transition {activeTab === 'fields'
-				? 'border-border bg-card text-foreground'
-				: 'border-transparent text-muted-foreground hover:text-foreground'}"
-		>
-			Fields
-		</button>
+		{#if isView}
+			<button
+				type="button"
+				onclick={() => (activeTab = 'query')}
+				class="cursor-pointer rounded-t-md border border-b-0 py-2.5 text-xs font-medium transition {activeTab === 'query'
+					? 'border-border bg-card text-foreground'
+					: 'border-transparent text-muted-foreground hover:text-foreground'}"
+			>
+				Query
+			</button>
+		{:else}
+			<button
+				type="button"
+				onclick={() => (activeTab = 'fields')}
+				class="cursor-pointer rounded-t-md border border-b-0 py-2.5 text-xs font-medium transition {activeTab === 'fields'
+					? 'border-border bg-card text-foreground'
+					: 'border-transparent text-muted-foreground hover:text-foreground'}"
+			>
+				Fields
+			</button>
+		{/if}
+
 		<button
 			type="button"
 			onclick={() => (activeTab = 'rules')}
@@ -273,6 +381,7 @@
 		>
 			API rules
 		</button>
+
 		{#if isAuth}
 			<button
 				type="button"
@@ -288,10 +397,33 @@
 
 	<form onsubmit={handleSubmit} class="flex min-h-0 flex-1 flex-col">
 		<div class="flex-1 overflow-y-auto px-6 py-5">
-			{#if activeTab === 'fields'}
+			{#if activeTab === 'query' && isView}
+				<div class="space-y-3">
+					<div class="flex items-center justify-between">
+						<label for="view-sql" class="text-xs font-semibold text-foreground">
+							Select query <span class="text-destructive">*</span>
+						</label>
+						<span class="text-xs text-muted-foreground">PostgreSQL VIEW (read-only)</span>
+					</div>
+					<textarea
+						id="view-sql"
+						rows="8"
+						value={viewQuery}
+						oninput={(e) => (viewQuery = e.currentTarget.value)}
+						placeholder={'SELECT id, title, created_at FROM posts WHERE published = true'}
+						class="w-full rounded-md border border-input bg-muted/50 p-3.5 font-mono text-xs leading-relaxed outline-none focus:border-ring focus:bg-card"
+					></textarea>
+					<div class="rounded-md border border-border bg-muted/35 p-3 text-xs text-muted-foreground">
+						<div class="mb-1 font-semibold text-foreground">Query caveats:</div>
+						<ul class="list-disc space-y-1 pl-4">
+							<li>Must be a single <code class="rounded bg-muted px-1">SELECT</code> or <code class="rounded bg-muted px-1">WITH</code> statement without semicolons.</li>
+							<li>Include a unique <code class="rounded bg-muted px-1">id</code> column (or use <code class="rounded bg-muted px-1">(ROW_NUMBER() OVER()) AS id</code>).</li>
+						</ul>
+					</div>
+				</div>
+			{:else if activeTab === 'fields' && !isView}
 				<!-- PocketBase Stacked Fields Table -->
-				<div class="overflow-hidden rounded-md border border-border divide-y divide-border bg-muted/45">
-					<!-- Built-in System Fields (top, muted, just like PocketBase) -->
+				<div class="divide-y divide-border overflow-hidden rounded-md border border-border bg-muted/45">
 					{#each systemFieldsList as sf (sf.name)}
 						<div class="flex items-center justify-between px-3 py-2.5 text-muted-foreground">
 							<div class="flex items-center gap-2.5">
@@ -325,7 +457,6 @@
 						</div>
 					{/each}
 
-					<!-- Editable Custom Fields (for BOTH Auth users & Base collections!) -->
 					{#each fields as field, i (i)}
 						<FieldRowInput
 							bind:field={fields[i]}
@@ -336,7 +467,6 @@
 						/>
 					{/each}
 
-					<!-- Built-in Timestamps at bottom (just like PocketBase created / updated) -->
 					<div class="flex items-center justify-between px-3 py-2.5 text-muted-foreground">
 						<div class="flex items-center gap-2.5">
 							<div class="flex h-6 w-6 items-center justify-center text-muted-foreground/80">
@@ -402,45 +532,65 @@
 				</div>
 			{:else if activeTab === 'rules'}
 				<div class="space-y-3">
-					<p class="text-xs text-muted-foreground">
-						By default, locked rules allow <strong>Superusers only</strong>. Click <strong>Unlock</strong> to allow public access or write a rule like <code class="rounded bg-muted px-1">auth</code>, <code class="rounded bg-muted px-1">admin</code>, or <code class="rounded bg-muted px-1">@request.auth.id != ''</code>.
-					</p>
-					{#each ruleKeys as r (r.key)}
+					<div class="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+						<span>All rules follow PocketBase filter syntax.</span>
+						<button
+							type="button"
+							onclick={() => (showRulesInfo = !showRulesInfo)}
+							class="cursor-pointer font-semibold text-foreground underline-offset-2 hover:underline"
+						>
+							{showRulesInfo ? 'Hide available fields' : 'Show available fields'}
+						</button>
+					</div>
+
+					{#if showRulesInfo}
+						<div class="animate-fade-in space-y-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs">
+							<div class="font-medium text-foreground">Available fields:</div>
+							<div class="flex flex-wrap gap-1.5">
+								{#each availableIndexCols as col (col)}
+									<code class="rounded bg-card px-1.5 py-0.5 font-mono text-xs">{col}</code>
+								{/each}
+							</div>
+							<div class="pt-1 text-muted-foreground">
+								Request variables: <code class="rounded bg-card px-1">@request.auth.id</code>, <code class="rounded bg-card px-1">@request.auth.role</code>, <code class="rounded bg-card px-1">auth</code>, <code class="rounded bg-card px-1">admin</code>
+							</div>
+						</div>
+					{/if}
+
+					{#each visibleRuleKeys as r (r.key)}
 						{@const unlocked = Object.prototype.hasOwnProperty.call(apiRules, r.key)}
-						<div class="rounded-md border border-border bg-muted/35 p-3">
+						<div class="rounded-md border border-border bg-card px-4 py-3 transition hover:border-ring/60">
 							<div class="flex items-center justify-between gap-2">
-								<div class="flex items-center gap-2">
-									{#if unlocked}
-										<LockOpen class="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-									{:else}
-										<Lock class="h-4 w-4 text-muted-foreground" />
+								<label for="rule-{r.key}" class="text-xs font-medium text-muted-foreground">
+									{r.label}
+									{#if !unlocked}
+										<span class="font-normal"> (Superusers only)</span>
 									{/if}
-									<label for="rule-{r.key}" class="text-xs font-medium text-foreground">{r.label}</label>
-								</div>
+								</label>
 
 								{#if unlocked}
 									<button
 										type="button"
+										title="Set Superusers only"
 										onclick={() => {
 											const next = { ...apiRules };
 											delete next[r.key];
 											apiRules = next;
 										}}
-										class="inline-flex cursor-pointer items-center gap-1 rounded border border-border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
+										class="cursor-pointer rounded-md p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"
 									>
-										<Lock class="h-3 w-3" />
-										Set Superusers only
+										<LockOpen class="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
 									</button>
 								{:else}
 									<button
 										type="button"
+										title="Unlock rule"
 										onclick={() => {
 											apiRules = { ...apiRules, [r.key]: '' };
 										}}
-										class="inline-flex cursor-pointer items-center gap-1 rounded border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground transition hover:bg-accent"
+										class="cursor-pointer rounded-md p-1.5 text-emerald-600 transition hover:bg-emerald-500/10 dark:text-emerald-400"
 									>
-										<LockOpen class="h-3 w-3" />
-										Unlock
+										<Lock class="h-4 w-4" />
 									</button>
 								{/if}
 							</div>
@@ -453,13 +603,9 @@
 									oninput={(e) => {
 										apiRules = { ...apiRules, [r.key]: e.currentTarget.value };
 									}}
-									placeholder="Leave empty for anyone, or e.g. @request.auth.id != ''"
-									class="mt-2 w-full rounded-md border border-input bg-card px-3 py-2 font-mono text-xs outline-none focus:border-ring"
+									placeholder="Leave empty to grant everyone access, or e.g. @request.auth.id != ''"
+									class="mt-2 w-full rounded-md bg-muted/65 px-3 py-2 font-mono text-xs outline-none focus:bg-accent/70"
 								/>
-							{:else}
-								<div class="mt-1.5 text-xs text-muted-foreground">
-									Locked — only <code class="rounded bg-muted px-1">_superusers</code> can access this endpoint.
-								</div>
 							{/if}
 						</div>
 					{/each}
@@ -481,7 +627,7 @@
 				onclick={onClose}
 				class="cursor-pointer rounded-md px-4 py-2 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
 			>
-				Cancel
+				Close
 			</button>
 			<button
 				type="submit"
