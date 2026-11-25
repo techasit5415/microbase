@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Database, GitBranch, Play, Terminal } from '@lucide/svelte';
+	import { GitBranch, Play, Terminal } from '@lucide/svelte';
+	import ErdCanvas from '#lib/components/erd/ErdCanvas.svelte';
 	import { apiRequest } from '#lib/api/client.ts';
 	import { listCollections } from '#lib/api/collections.ts';
 	import type { Collection } from '#lib/api/types.ts';
@@ -166,57 +167,6 @@
 			{/if}
 		</div>
 	{:else}
-		<!-- ERD Schema Overview -->
-		<div class="flex-1 overflow-auto p-6">
-			<div class="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
-				{#each collections as col (col.name)}
-					<div class="overflow-hidden rounded-lg border border-border bg-card shadow-xs">
-						<div class="flex items-center justify-between border-b border-border bg-muted/50 px-4 py-3">
-							<div class="flex items-center gap-2">
-								<Database class="h-4 w-4 text-muted-foreground" />
-								<span class="font-mono text-sm font-semibold text-foreground">{col.name}</span>
-							</div>
-							<span class="rounded border border-border bg-card px-2 py-0.5 text-xs font-medium uppercase text-muted-foreground">
-								{col.type || 'base'}
-							</span>
-						</div>
-						<div class="divide-y divide-border font-mono text-xs">
-							<div class="flex items-center justify-between px-4 py-2">
-								<span class="font-semibold">id</span>
-								<span class="rounded bg-amber-500/15 px-1.5 py-0.5 text-xs text-amber-700 dark:text-amber-400">PK bigserial</span>
-							</div>
-							{#if col.type === 'auth' || col.name === 'users'}
-								<div class="flex items-center justify-between px-4 py-2 text-muted-foreground">
-									<span>email</span>
-									<span>text UNIQUE</span>
-								</div>
-								<div class="flex items-center justify-between px-4 py-2 text-muted-foreground">
-									<span>role</span>
-									<span>text</span>
-								</div>
-							{/if}
-							{#each col.fields ?? [] as f (f.name)}
-								<div class="flex items-center justify-between gap-2 px-4 py-2">
-									<span class="truncate">
-										{f.name}{#if f.required}<span class="text-destructive">*</span>{/if}
-									</span>
-									{#if f.type === 'relation' && f.collection_name}
-										<span class="rounded bg-emerald-500/15 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-400">
-											FK &rarr; {f.collection_name}
-										</span>
-									{:else}
-										<span class="text-muted-foreground">{f.type}</span>
-									{/if}
-								</div>
-							{/each}
-							<div class="flex items-center justify-between px-4 py-2 text-muted-foreground">
-								<span>created_at / updated_at</span>
-								<span>timestamptz</span>
-							</div>
-						</div>
-					</div>
-				{/each}
-			</div>
-		</div>
+		<ErdCanvas {collections} />
 	{/if}
 </main>
