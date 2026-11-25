@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, type Snippet } from 'svelte';
-	import { Database, KeyRound, Lock, LogIn, User } from '@lucide/svelte';
+	import { Database, Eye, EyeOff, KeyRound, Lock, LogIn, User } from '@lucide/svelte';
 	import { ADMIN_TOKEN_KEY, apiRequest } from '#lib/api/client.ts';
 	import { toast } from '#lib/stores/toast.svelte.ts';
 
@@ -25,6 +25,7 @@
 	let password = $state('');
 	let confirmPassword = $state('');
 	let otp = $state('');
+	let showPassword = $state(false);
 	let submitting = $state(false);
 	let errorMsg = $state('');
 
@@ -50,6 +51,14 @@
 	async function handleSubmit(e: SubmitEvent) {
 		e.preventDefault();
 		errorMsg = '';
+		const form = e.currentTarget as HTMLFormElement | null;
+		if (form) {
+			const fd = new FormData(form);
+			const fEmail = String(fd.get('email') ?? '');
+			const fPass = String(fd.get('password') ?? '');
+			if (fEmail) email = fEmail;
+			if (fPass) password = fPass;
+		}
 
 		if (!hasSuperuser && password !== confirmPassword) {
 			errorMsg = 'Passwords do not match';
@@ -144,6 +153,8 @@
 							<User class="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
 							<input
 								id="su-email"
+								name="email"
+								autocomplete="username"
 								type="email"
 								required
 								value={email}
@@ -162,14 +173,28 @@
 							<Lock class="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
 							<input
 								id="su-pass"
-								type="password"
+								name="password"
+								autocomplete={hasSuperuser ? 'current-password' : 'new-password'}
+								type={showPassword ? 'text' : 'password'}
 								required
 								minlength="8"
 								value={password}
 								oninput={(e) => (password = e.currentTarget.value)}
 								placeholder="••••••••"
-								class="w-full rounded-md border border-input bg-muted/30 py-2.5 pr-3.5 pl-10 text-sm outline-none transition focus:border-ring focus:bg-background"
+								class="w-full rounded-md border border-input bg-muted/30 py-2.5 pr-10 pl-10 text-sm outline-none transition focus:border-ring focus:bg-background"
 							/>
+							<button
+								type="button"
+								onclick={() => (showPassword = !showPassword)}
+								title={showPassword ? 'Hide password' : 'Show password'}
+								class="absolute top-1/2 right-2.5 -translate-y-1/2 cursor-pointer rounded p-1 text-muted-foreground hover:text-foreground"
+							>
+								{#if showPassword}
+									<EyeOff class="h-4 w-4" />
+								{:else}
+									<Eye class="h-4 w-4" />
+								{/if}
+							</button>
 						</div>
 					</div>
 
