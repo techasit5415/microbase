@@ -3,27 +3,27 @@ package controllers
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"path/filepath"
 
 	"github.com/labstack/echo/v4"
 	"github.com/techasit5415/microbase/internal/response"
+	"github.com/techasit5415/microbase/internal/storage"
 )
 
-const maxUploadBytes = 10 << 20 // 10 MiB
+const maxUploadBytes = 20 << 20 // 20 MiB hard ceiling
 
-// FileController handles local file uploads and downloads.
+// FileController handles file uploads and downloads via Local or S3 storage.
 type FileController struct {
-	storageDir string
+	storage *storage.SwitchableStorage
 }
 
-// NewFileController constructs a FileController and ensures storageDir exists.
-func NewFileController(storageDir string) *FileController {
-	_ = os.MkdirAll(storageDir, 0o755)
-	return &FileController{storageDir: storageDir}
+// NewFileController constructs a FileController backed by SwitchableStorage.
+func NewFileController(store *storage.SwitchableStorage) *FileController {
+	return &FileController{storage: store}
 }
 
 // Upload handles POST /api/files (multipart/form-data with field "file").
@@ -33,7 +33,7 @@ func (h *FileController) Upload(c echo.Context) error {
 		return response.Error(c, http.StatusBadRequest, "MISSING_FILE", "form field 'file' is required")
 	}
 	if fileHeader.Size > maxUploadBytes {
-		return response.Error(c, http.StatusRequestEntityTooLarge, "FILE_TOO_LARGE", "file exceeds 10MB limit")
+		return response.Error(c, http.StatusRequestEntityTooLarge, "FILE_TOO_LARGE", "file exceeds 20MB limit")
 	}
 
 	src, err := fileHeader.Open()
@@ -42,27 +42,33 @@ func (h *FileController) Upload(c echo.Context) error {
 	}
 	defer src.Close()
 
-	// Generate a random prefix and strip directory components to prevent path traversal.
+	data, err := io.ReadAll(io.LimitReader(src, maxUploadBytes+1))
+	if err != nil {
+		return response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+	}
+	if int64(len(data)) > maxUploadBytes {
+		return response.Error(c, http.StatusRequestEntityTooLarge, "FILE_TOO_LARGE", "file exceeds 20MB limit")
+	}
+
+	contentType := fileHeader.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = http.DetectContentType(data)
+	}
+
 	prefix := randomHex(8)
 	safeName := filepath.Base(fileHeader.Filename)
 	storedName := fmt.Sprintf("%s_%s", prefix, safeName)
-	dstPath := filepath.Join(h.storageDir, storedName)
 
-	dst, err := os.Create(dstPath)
-	if err != nil {
-		return response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
-	}
-	defer dst.Close()
-
-	written, err := io.Copy(dst, io.LimitReader(src, maxUploadBytes+1))
-	if err != nil {
-		return response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+	if err := h.storage.Save(c.Request().Context(), storedName, contentType, data); err != nil {
+		return response.Error(c, http.StatusInternalServerError, "STORAGE_ERROR", err.Error())
 	}
 
 	return response.Created(c, map[string]any{
-		"filename": storedName,
-		"url":      "/api/files/" + storedName,
-		"size":     written,
+		"filename":     storedName,
+		"url":          "/api/files/" + storedName,
+		"size":         len(data),
+		"content_type": contentType,
+		"backend":      h.storage.Backend(),
 	})
 }
 
@@ -73,11 +79,16 @@ func (h *FileController) Serve(c echo.Context) error {
 		return response.Error(c, http.StatusBadRequest, "INVALID_FILENAME", "invalid filename")
 	}
 
-	fullPath := filepath.Join(h.storageDir, safeName)
-	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+	rc, contentType, err := h.storage.Open(c.Request().Context(), safeName)
+	if errors.Is(err, storage.ErrFileNotFound) {
 		return response.Error(c, http.StatusNotFound, "FILE_NOT_FOUND", "file not found")
 	}
-	return c.File(fullPath)
+	if err != nil {
+		return response.Error(c, http.StatusInternalServerError, "STORAGE_ERROR", err.Error())
+	}
+	defer rc.Close()
+
+	return c.Stream(http.StatusOK, contentType, rc)
 }
 
 func randomHex(n int) string {

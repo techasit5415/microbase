@@ -3,6 +3,7 @@
 	import { Bell, Database, Download, Plus, Trash2, Upload } from '@lucide/svelte';
 	import { apiRequest } from '#lib/api/client.ts';
 	import { getSchemaExportURL } from '#lib/api/collections.ts';
+	import S3StorageCard from '#lib/components/settings/S3StorageCard.svelte';
 	import Select from '#lib/components/ui/Select.svelte';
 	import { toast } from '#lib/stores/toast.svelte.ts';
 

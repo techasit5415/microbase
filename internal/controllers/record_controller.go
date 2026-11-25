@@ -52,6 +52,9 @@ func (h *RecordController) List(c echo.Context) error {
 	if err != nil {
 		return handleRecordError(c, err)
 	}
+	for i := range result.Items {
+		result.Items[i] = h.maskHidden(c, result.Items[i])
+	}
 	return response.OK(c, result)
 }
 
@@ -69,7 +72,7 @@ func (h *RecordController) Get(c echo.Context) error {
 	if err != nil {
 		return handleRecordError(c, err)
 	}
-	return response.OK(c, rec)
+	return response.OK(c, h.maskHidden(c, rec))
 }
 
 // Create handles POST /api/collections/:name/records.
@@ -109,7 +112,7 @@ func (h *RecordController) Update(c echo.Context) error {
 	if err != nil {
 		return handleRecordError(c, err)
 	}
-	return response.OK(c, rec)
+	return response.OK(c, h.maskHidden(c, rec))
 }
 
 // Delete handles DELETE /api/collections/:name/records/:id.
@@ -166,4 +169,22 @@ func (h *RecordController) enforceRule(c echo.Context, action string) error {
 		return err
 	}
 	return services.CheckAPIRule(col, action, middlewares.GetAuthClaims(c))
+}
+
+// maskHidden removes fields marked Hidden=true unless the requester is an authenticated superuser.
+func (h *RecordController) maskHidden(c echo.Context, rec models.Record) models.Record {
+	claims := middlewares.GetAuthClaims(c)
+	if claims != nil && claims.Role == "superuser" {
+		return rec
+	}
+	col, err := h.collections.GetByName(c.Request().Context(), c.Param("name"))
+	if err != nil || col == nil {
+		return rec
+	}
+	for _, f := range col.Fields {
+		if f.Hidden {
+			delete(rec, f.Name)
+		}
+	}
+	return rec
 }

@@ -23,7 +23,15 @@ export interface FieldDef {
 	type: FieldType;
 	required?: boolean;
 	unique?: boolean;
+	presentable?: boolean;
+	hidden?: boolean;
+	help_text?: string;
 	dimension?: number;
+	max_select?: number;
+	mime_types?: string[];
+	thumbs?: string[];
+	max_size?: number;
+	protected?: boolean;
 }
 
 export interface IndexDef {

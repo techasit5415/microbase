@@ -1,6 +1,8 @@
 package routes
 
 import (
+	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -12,6 +14,7 @@ import (
 	"github.com/techasit5415/microbase/internal/middlewares"
 	"github.com/techasit5415/microbase/internal/realtime"
 	"github.com/techasit5415/microbase/internal/services"
+	"github.com/techasit5415/microbase/internal/storage"
 	"github.com/techasit5415/microbase/ui"
 )
 
@@ -44,11 +47,20 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStor
 		superCtrl := controllers.NewSuperuserController(superService)
 		oauthCtrl := controllers.NewOAuthController(oauthService)
 		realtimeCtrl := controllers.NewRealtimeController(hub)
-		fileCtrl := controllers.NewFileController("./storage")
+		var savedS3 *storage.S3Config
+		var rawS3 string
+		if err := pool.QueryRow(context.Background(), `SELECT value FROM _settings WHERE key = 's3_config'`).Scan(&rawS3); err == nil && rawS3 != "" {
+			var cfg storage.S3Config
+			if json.Unmarshal([]byte(rawS3), &cfg) == nil {
+				savedS3 = &cfg
+			}
+		}
+		fileStorage := storage.NewSwitchableStorage("./storage", savedS3)
+		fileCtrl := controllers.NewFileController(fileStorage)
 		systemCtrl := controllers.NewSystemController(pool)
 		webhookCtrl := controllers.NewWebhookController(webhookService)
 		openapiCtrl := controllers.NewOpenAPIController(colService)
-		settingsCtrl := controllers.NewSettingsController(pool, cacheStore)
+		settingsCtrl := controllers.NewSettingsController(pool, cacheStore, fileStorage)
 
 		api := e.Group("/api", middlewares.RateLimit(cacheStore, 100, time.Minute))
 
@@ -56,6 +68,8 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStor
 		api.GET("/openapi.json", openapiCtrl.Spec)
 		api.GET("/settings/redis", settingsCtrl.GetRedis)
 		api.PUT("/settings/redis", settingsCtrl.UpdateRedis)
+		api.GET("/settings/s3", settingsCtrl.GetS3)
+		api.PUT("/settings/s3", settingsCtrl.UpdateS3)
 
 		// Auth, Superusers & OAuth2/OIDC endpoints.
 		api.GET("/auth/methods", oauthCtrl.AuthMethods)

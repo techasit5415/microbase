@@ -1,6 +1,6 @@
 # Compiled binaries
 microbase
-server
+/server
 bin/
 *.exe
 *.out
@@ -10,7 +10,7 @@ bin/
 .env.local
 
 # Local uploaded files
-storage/
+/storage/
 
 # Test & coverage
 *.test

@@ -126,7 +126,15 @@
 					type: f.type,
 					required: Boolean(f.required),
 					unique: Boolean(f.unique),
-					dimension: f.type === 'vector' ? Number(f.dimension || 768) : undefined
+					presentable: Boolean(f.presentable),
+					hidden: Boolean(f.hidden),
+					help_text: f.help_text?.trim() || undefined,
+					dimension: f.type === 'vector' ? Number(f.dimension || 768) : undefined,
+					max_select: f.type === 'file' ? Number(f.max_select || 1) : undefined,
+					mime_types: f.type === 'file' && f.mime_types?.length ? f.mime_types : undefined,
+					thumbs: f.type === 'file' && f.thumbs?.length ? f.thumbs : undefined,
+					max_size: f.type === 'file' && f.max_size ? Number(f.max_size) : undefined,
+					protected: f.type === 'file' ? Boolean(f.protected) : undefined
 				}));
 
 			const result = editing

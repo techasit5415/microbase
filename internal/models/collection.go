@@ -12,12 +12,20 @@ var identifierRegex = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
 
 // FieldDef defines the schema for a single column within a collection.
 type FieldDef struct {
-	Name         string `json:"name"`
-	OriginalName string `json:"original_name,omitempty"` // Used on PATCH to rename an existing column
-	Type         string `json:"type"`                    // text, editor, number, integer, float, boolean, email, url, datetime, timestamptz, autodate, file, relation, select, json, geopoint, vector
-	Required     bool   `json:"required,omitempty"`      // Maps to NOT NULL
-	Unique       bool   `json:"unique,omitempty"`        // Maps to UNIQUE
-	Dimension    int    `json:"dimension,omitempty"`     // Vector dimensions (1..4096), used when Type == "vector"
+	Name         string   `json:"name"`
+	OriginalName string   `json:"original_name,omitempty"` // Used on PATCH to rename an existing column
+	Type         string   `json:"type"`                    // text, editor, number, integer, float, boolean, email, url, datetime, timestamptz, autodate, file, relation, select, json, geopoint, vector
+	Required     bool     `json:"required,omitempty"`      // Maps to NOT NULL
+	Unique       bool     `json:"unique,omitempty"`        // Maps to UNIQUE
+	Presentable  bool     `json:"presentable,omitempty"`   // Display label in relations & previews
+	Hidden       bool     `json:"hidden,omitempty"`        // Omitted from non-superuser API responses
+	HelpText     string   `json:"help_text,omitempty"`     // Helper description shown under form input
+	Dimension    int      `json:"dimension,omitempty"`     // Vector dimensions (1..4096), used when Type == "vector"
+	MaxSelect    int      `json:"max_select,omitempty"`    // 1 = Single, >1 = Multiple (for file/relation/select)
+	MimeTypes    []string `json:"mime_types,omitempty"`    // Allowed MIME types for file fields
+	Thumbs       []string `json:"thumbs,omitempty"`        // Thumbnail sizes e.g. ["50x50", "480x720"]
+	MaxSize      int64    `json:"max_size,omitempty"`      // Max file size in bytes (0 = default 5MB)
+	Protected    bool     `json:"protected,omitempty"`     // Require View rule / auth to download file
 }
 
 // IndexDef represents a PostgreSQL B-Tree or UNIQUE index on one or more columns.
