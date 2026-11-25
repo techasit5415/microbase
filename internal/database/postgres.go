@@ -115,6 +115,19 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 			('discord', 'Discord'),
 			('oidc', 'OpenID Connect (OIDC)')
 		ON CONFLICT (name) DO NOTHING;`,
+		`CREATE TABLE IF NOT EXISTS _crons (
+			id          TEXT PRIMARY KEY,
+			expression  TEXT NOT NULL,
+			kind        TEXT NOT NULL DEFAULT 'http',
+			target      TEXT NOT NULL DEFAULT '',
+			method      TEXT NOT NULL DEFAULT 'POST',
+			payload     TEXT NOT NULL DEFAULT '',
+			description TEXT NOT NULL DEFAULT '',
+			enabled     BOOLEAN NOT NULL DEFAULT TRUE,
+			last_run_at TIMESTAMPTZ,
+			last_status TEXT NOT NULL DEFAULT '',
+			created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);`,
 		`CREATE TABLE IF NOT EXISTS _webhooks (
 			id         BIGSERIAL PRIMARY KEY,
 			collection TEXT NOT NULL,

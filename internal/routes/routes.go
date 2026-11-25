@@ -34,6 +34,7 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStor
 	if pool != nil {
 		middlewares.SetLogPool(pool)
 		services.LoadAppSettingsFromDB(context.Background(), pool)
+		services.StartCronScheduler(pool)
 		hub := realtime.NewHub()
 		webhookService := services.NewWebhookService(pool)
 		colService := services.NewCollectionService(pool, cacheStore)
@@ -94,6 +95,9 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStor
 		api.POST("/backups/upload", opsCtrl.UploadBackup, adminOnly)
 		api.POST("/backups/:name/restore", opsCtrl.RestoreBackup, adminOnly)
 		api.GET("/crons", opsCtrl.ListCrons, adminOnly)
+		api.POST("/crons", opsCtrl.CreateCron, adminOnly)
+		api.PATCH("/crons/:id", opsCtrl.UpdateCron, adminOnly)
+		api.DELETE("/crons/:id", opsCtrl.DeleteCron, adminOnly)
 		api.POST("/crons/:id/run", opsCtrl.RunCron, adminOnly)
 		api.GET("/settings/ratelimits", opsCtrl.GetRateLimits, adminOnly)
 		api.PUT("/settings/ratelimits", opsCtrl.UpdateRateLimits, adminOnly)

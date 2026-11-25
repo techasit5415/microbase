@@ -199,15 +199,121 @@ func (h *OpsController) DeleteBackup(c echo.Context) error {
 
 // ListCrons handles GET /api/crons.
 func (h *OpsController) ListCrons(c echo.Context) error {
-	return response.OK(c, map[string]any{
-		"items": []map[string]string{
-			{"id": "__mbLogsPrune__", "expression": "0 3 * * *", "description": "Prune _logs older than 7 days (keep latest 5,000 rows)"},
-			{"id": "__mbAutoBackup__", "expression": "0 2 * * *", "description": "Create PostgreSQL SQL snapshot via pg_dump"},
+	items := []services.CronJob{
+		{
+			ID:          "__mbLogsPrune__",
+			Expression:  "0 3 * * *",
+			Kind:        "system",
+			Description: "Prune _logs older than 7 days (keep latest 5,000 rows)",
+			Enabled:     true,
+			IsSystem:    true,
 		},
-	})
+		{
+			ID:          "__mbAutoBackup__",
+			Expression:  "0 2 * * *",
+			Kind:        "system",
+			Description: "Create PostgreSQL SQL snapshot via pg_dump",
+			Enabled:     true,
+			IsSystem:    true,
+		},
+	}
+
+	rows, err := h.pool.Query(c.Request().Context(), `
+		SELECT id, expression, kind, target, method, payload, description, enabled, last_run_at, last_status
+		FROM _crons ORDER BY created_at DESC`)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var j services.CronJob
+			if err := rows.Scan(&j.ID, &j.Expression, &j.Kind, &j.Target, &j.Method, &j.Payload, &j.Description, &j.Enabled, &j.LastRunAt, &j.LastStatus); err == nil {
+				items = append(items, j)
+			}
+		}
+	}
+	return response.OK(c, map[string]any{"items": items})
 }
 
-// RunCron handles POST /api/crons/:id/run.
+// CreateCron handles POST /api/crons (creates a custom HTTP or SQL cron job).
+func (h *OpsController) CreateCron(c echo.Context) error {
+	var req services.CronJob
+	if err := c.Bind(&req); err != nil {
+		return response.Error(c, http.StatusBadRequest, "INVALID_JSON", "invalid cron payload")
+	}
+	req.ID = strings.TrimSpace(req.ID)
+	req.Expression = strings.TrimSpace(req.Expression)
+	req.Kind = strings.ToLower(strings.TrimSpace(req.Kind))
+	req.Target = strings.TrimSpace(req.Target)
+	req.Method = strings.ToUpper(strings.TrimSpace(req.Method))
+	if req.ID == "" || strings.HasPrefix(req.ID, "__mb") {
+		return response.Error(c, http.StatusBadRequest, "INVALID_ID", "cron id is required and cannot start with __mb")
+	}
+	if err := services.ValidateCronExpr(req.Expression); err != nil {
+		return response.Error(c, http.StatusBadRequest, "INVALID_CRON", err.Error())
+	}
+	if req.Kind != "http" && req.Kind != "sql" {
+		return response.Error(c, http.StatusBadRequest, "INVALID_KIND", "kind must be 'http' or 'sql'")
+	}
+	if req.Target == "" {
+		return response.Error(c, http.StatusBadRequest, "INVALID_TARGET", "target URL or SQL query is required")
+	}
+	if req.Kind == "http" && req.Method == "" {
+		req.Method = http.MethodPost
+	}
+
+	_, err := h.pool.Exec(c.Request().Context(), `
+		INSERT INTO _crons (id, expression, kind, target, method, payload, description, enabled)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		req.ID, req.Expression, req.Kind, req.Target, req.Method, req.Payload, req.Description, req.Enabled,
+	)
+	if err != nil {
+		return response.Error(c, http.StatusConflict, "CRON_EXISTS", err.Error())
+	}
+	return response.Created(c, req)
+}
+
+// UpdateCron handles PATCH /api/crons/:id (toggle enabled or update schedule/target).
+func (h *OpsController) UpdateCron(c echo.Context) error {
+	id := c.Param("id")
+	var req struct {
+		Enabled    *bool   `json:"enabled"`
+		Expression *string `json:"expression"`
+		Target     *string `json:"target"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return response.Error(c, http.StatusBadRequest, "INVALID_JSON", "invalid payload")
+	}
+	if req.Expression != nil {
+		if err := services.ValidateCronExpr(*req.Expression); err != nil {
+			return response.Error(c, http.StatusBadRequest, "INVALID_CRON", err.Error())
+		}
+		_, _ = h.pool.Exec(c.Request().Context(), `UPDATE _crons SET expression = $2 WHERE id = $1`, id, strings.TrimSpace(*req.Expression))
+	}
+	if req.Target != nil {
+		_, _ = h.pool.Exec(c.Request().Context(), `UPDATE _crons SET target = $2 WHERE id = $1`, id, strings.TrimSpace(*req.Target))
+	}
+	if req.Enabled != nil {
+		_, _ = h.pool.Exec(c.Request().Context(), `UPDATE _crons SET enabled = $2 WHERE id = $1`, id, *req.Enabled)
+	}
+	return response.OK(c, map[string]any{"updated": id})
+}
+
+// DeleteCron handles DELETE /api/crons/:id.
+func (h *OpsController) DeleteCron(c echo.Context) error {
+	id := c.Param("id")
+	if strings.HasPrefix(id, "__mb") {
+		return response.Error(c, http.StatusForbidden, "SYSTEM_CRON", "built-in system crons cannot be deleted")
+	}
+	tag, err := h.pool.Exec(c.Request().Context(), `DELETE FROM _crons WHERE id = $1`, id)
+	if err != nil {
+		return response.Error(c, http.StatusInternalServerError, "DB_ERROR", err.Error())
+	}
+	if tag.RowsAffected() == 0 {
+		return response.Error(c, http.StatusNotFound, "CRON_NOT_FOUND", "cron job not found")
+	}
+	return response.OK(c, map[string]any{"deleted": id})
+}
+
+// RunCron handles POST /api/crons/:id/run (supports both built-in and custom HTTP/SQL crons).
 func (h *OpsController) RunCron(c echo.Context) error {
 	id := c.Param("id")
 	switch id {
@@ -216,11 +322,23 @@ func (h *OpsController) RunCron(c echo.Context) error {
 		if err != nil {
 			return response.Error(c, http.StatusInternalServerError, "CRON_FAILED", err.Error())
 		}
-		return response.OK(c, map[string]any{"id": id, "pruned": tag.RowsAffected()})
+		return response.OK(c, map[string]any{"id": id, "result": fmt.Sprintf("pruned %d rows", tag.RowsAffected())})
 	case "__mbAutoBackup__":
 		return h.CreateBackup(c)
 	default:
-		return response.Error(c, http.StatusNotFound, "CRON_NOT_FOUND", "cron job not found")
+		var job services.CronJob
+		err := h.pool.QueryRow(c.Request().Context(), `
+			SELECT id, expression, kind, target, method, payload, description, enabled
+			FROM _crons WHERE id = $1`, id,
+		).Scan(&job.ID, &job.Expression, &job.Kind, &job.Target, &job.Method, &job.Payload, &job.Description, &job.Enabled)
+		if err != nil {
+			return response.Error(c, http.StatusNotFound, "CRON_NOT_FOUND", "cron job not found")
+		}
+		msg, runErr := services.ExecuteCustomCron(c.Request().Context(), h.pool, job)
+		if runErr != nil {
+			return response.Error(c, http.StatusBadGateway, "CRON_FAILED", msg)
+		}
+		return response.OK(c, map[string]any{"id": id, "result": msg})
 	}
 }
 
