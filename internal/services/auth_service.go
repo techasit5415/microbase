@@ -47,23 +47,54 @@ func NewAuthService(pool *pgxpool.Pool, jwtSecret string) *AuthService {
 
 // Register creates a new user with an Argon2id password hash and returns a signed JWT.
 func (s *AuthService) Register(ctx context.Context, req models.RegisterRequest) (*models.AuthResponse, error) {
-	email := strings.ToLower(strings.TrimSpace(req.Email))
-	if !strings.Contains(email, "@") || len(req.Password) < 8 {
+	return s.RegisterWithExtras(ctx, req.Email, req.Password, nil, nil)
+}
+
+// RegisterWithExtras creates a new user with email, password, and optional role/verified/email_visibility/custom _users fields.
+func (s *AuthService) RegisterWithExtras(ctx context.Context, rawEmail, password string, extras map[string]any, claims *AuthClaims) (*models.AuthResponse, error) {
+	email := strings.ToLower(strings.TrimSpace(rawEmail))
+	if !strings.Contains(email, "@") || len(password) < 8 {
 		return nil, fmt.Errorf("%w: valid email and password (min 8 chars) required", ErrInvalidInput)
 	}
 
-	hash, err := HashPassword(req.Password)
+	hash, err := HashPassword(password)
 	if err != nil {
 		return nil, err
 	}
 
-	var user models.User
-	err = s.pool.QueryRow(ctx, `
-		INSERT INTO _users (email, password_hash)
-		VALUES ($1, $2)
+	cols := []string{"email", "password_hash"}
+	placeholders := []string{"$1", "$2"}
+	args := []any{email, hash}
+	idx := 3
+
+	isPrivileged := claims != nil && (claims.Role == "superuser" || claims.Role == "admin")
+	for k, v := range extras {
+		if !models.IsValidIdentifier(k) || k == "id" || k == "email" || k == "password" || k == "password_hash" || k == "created_at" || k == "updated_at" {
+			continue
+		}
+		if k == "role" && !isPrivileged {
+			continue
+		}
+		if k == "verified" && !isPrivileged {
+			continue
+		}
+		if v == nil {
+			continue
+		}
+		cols = append(cols, fmt.Sprintf(`"%s"`, k))
+		placeholders = append(placeholders, fmt.Sprintf("$%d", idx))
+		args = append(args, v)
+		idx++
+	}
+
+	query := fmt.Sprintf(`
+		INSERT INTO _users (%s)
+		VALUES (%s)
 		RETURNING id, email, password_hash, role, created_at, updated_at`,
-		email, hash,
-	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.Role, &user.CreatedAt, &user.UpdatedAt)
+		strings.Join(cols, ", "), strings.Join(placeholders, ", "))
+
+	var user models.User
+	err = s.pool.QueryRow(ctx, query, args...).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.Role, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {

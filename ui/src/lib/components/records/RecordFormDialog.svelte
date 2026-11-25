@@ -26,6 +26,8 @@
 	let uploadingField = $state<string | null>(null);
 	let email = $state('');
 	let role = $state('user');
+	let verified = $state(false);
+	let emailVisibility = $state(false);
 	let password = $state('');
 	let confirmPassword = $state('');
 	let errorMsg = $state('');
@@ -35,7 +37,7 @@
 	let isSuperuser = $derived(collection.name === '_superusers');
 	let isAuth = $derived(collection.type === 'auth' || isSuperuser);
 	let customFields = $derived(
-		(collection.fields ?? []).filter((f) => !(isAuth && ['email', 'role'].includes(f.name)))
+		(collection.fields ?? []).filter((f) => !(isAuth && ['email', 'role', 'verified', 'email_visibility'].includes(f.name)))
 	);
 
 	async function loadRelationChoices(fields: FieldDef[]) {
@@ -78,6 +80,8 @@
 			boolValues = nextBools;
 			email = editingRecord && editingRecord.email ? String(editingRecord.email) : '';
 			role = editingRecord && editingRecord.role ? String(editingRecord.role) : 'user';
+			verified = Boolean(editingRecord?.verified);
+			emailVisibility = Boolean(editingRecord?.email_visibility);
 			password = '';
 			confirmPassword = '';
 			errorMsg = '';
@@ -159,26 +163,35 @@
 					await createSuperuser(email.trim(), password);
 				}
 			} else if (isAuth) {
+				const { payload: customPayload, error: customErr } = buildAndValidateRecordPayload(
+					customFields,
+					values,
+					boolValues
+				);
+				if (customErr) {
+					errorMsg = customErr;
+					toast.error(customErr);
+					saving = false;
+					return;
+				}
 				if (editingRecord && typeof editingRecord.id === 'number') {
-					const { payload: customPayload, error: customErr } = buildAndValidateRecordPayload(
-						customFields,
-						values,
-						boolValues
-					);
-					if (customErr) {
-						errorMsg = customErr;
-						toast.error(customErr);
-						saving = false;
-						return;
-					}
 					await updateUser(editingRecord.id, {
 						...(customPayload ?? {}),
 						email: email.trim(),
 						role: role.trim() || 'user',
+						verified,
+						email_visibility: emailVisibility,
 						password: password || undefined
 					});
 				} else {
-					await createUser(email.trim(), password);
+					await createUser({
+						...(customPayload ?? {}),
+						email: email.trim(),
+						password,
+						role: role.trim() || 'user',
+						verified,
+						email_visibility: emailVisibility
+					});
 				}
 			} else {
 				const { payload, error } = buildAndValidateRecordPayload(
@@ -245,7 +258,23 @@
 						class="w-full rounded-md border border-input bg-card px-3.5 py-2.5 text-sm outline-none focus:border-ring"
 					/>
 				</div>
-				{#if !isSuperuser && editingRecord}
+				{#if !isSuperuser}
+					<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+						<div class="flex items-center justify-between rounded-md border border-border bg-muted/35 px-3.5 py-2.5">
+							<div>
+								<div class="text-xs font-medium">verified</div>
+								<div class="text-[11px] text-muted-foreground">Email verified status</div>
+							</div>
+							<Switch checked={verified} onChange={(v) => (verified = v)} />
+						</div>
+						<div class="flex items-center justify-between rounded-md border border-border bg-muted/35 px-3.5 py-2.5">
+							<div>
+								<div class="text-xs font-medium">email_visibility</div>
+								<div class="text-[11px] text-muted-foreground">Expose email in API</div>
+							</div>
+							<Switch checked={emailVisibility} onChange={(v) => (emailVisibility = v)} />
+						</div>
+					</div>
 					<div>
 						<label for="u-role" class="mb-1.5 block text-xs font-medium">role</label>
 						<input
@@ -294,7 +323,7 @@
 				</div>
 			{/if}
 
-			{#if !isSuperuser && (!isAuth || editingRecord)}
+			{#if !isSuperuser}
 				{#each customFields as field (field.name)}
 					{#if field.type === 'boolean'}
 						<div class="flex items-center justify-between rounded-md border border-border bg-muted/35 px-3.5 py-2.5">

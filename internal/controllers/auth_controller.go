@@ -62,9 +62,8 @@ func (h *AuthController) Register(c echo.Context) error {
 
 	email, _ := raw["email"].(string)
 	password, _ := raw["password"].(string)
-	req := models.RegisterRequest{Email: email, Password: password}
 
-	res, err := h.service.Register(c.Request().Context(), req)
+	res, err := h.service.RegisterWithExtras(c.Request().Context(), email, password, raw, claims)
 	if errors.Is(err, services.ErrInvalidInput) {
 		return response.Error(c, http.StatusBadRequest, "INVALID_INPUT", err.Error())
 	}

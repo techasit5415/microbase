@@ -15,10 +15,10 @@ export async function listUsers(params?: {
 	return apiRequest<ListResult>(`/api/users${query}`);
 }
 
-export async function createUser(email: string, password: string): Promise<void> {
+export async function createUser(payload: Record<string, unknown>): Promise<void> {
 	await apiRequest('/api/auth/register', {
 		method: 'POST',
-		body: JSON.stringify({ email, password })
+		body: JSON.stringify(payload)
 	});
 }
 
