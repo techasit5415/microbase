@@ -245,6 +245,24 @@
 		}
 	}
 
+	let importFileInput = $state<HTMLInputElement | null>(null);
+
+	async function handleImportFileSelect(e: Event) {
+		const input = e.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		try {
+			const text = await file.text();
+			JSON.parse(text); // Validate JSON syntax immediately
+			importJson = text;
+			toast.success(`Loaded "${file.name}"`);
+		} catch (err) {
+			toast.error(err, `Invalid JSON file "${file.name}"`);
+		} finally {
+			input.value = '';
+		}
+	}
+
 	async function handleImport() {
 		if (!importJson.trim()) return;
 		importing = true;
@@ -546,12 +564,30 @@
 						</div>
 					{:else if activeSection === 'import'}
 						<div class="rounded-md border border-border bg-card p-5">
-							<h2 class="mb-1 text-sm font-semibold">Import Collections Schema</h2>
-							<p class="mb-3 text-xs text-muted-foreground">Paste an exported Microbase schema JSON to recreate collections in this environment.</p>
+							<div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+								<div>
+									<h2 class="text-sm font-semibold">Import Collections Schema</h2>
+									<p class="mt-0.5 text-xs text-muted-foreground">Upload or paste a Microbase schema JSON or PocketBase <code class="rounded bg-muted px-1">pb_schema.json</code>.</p>
+								</div>
+								<input
+									bind:this={importFileInput}
+									type="file"
+									accept=".json,application/json"
+									onchange={handleImportFileSelect}
+									class="hidden"
+								/>
+								<button
+									type="button"
+									onclick={() => importFileInput?.click()}
+									class="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-background px-3.5 py-2 text-xs font-medium text-foreground transition hover:bg-muted"
+								>
+									<Upload class="h-3.5 w-3.5" /> Load from JSON file
+								</button>
+							</div>
 							<textarea
-								rows="8"
+								rows="10"
 								bind:value={importJson}
-								placeholder={'{"version":"1.0","collections":[...]}'}
+								placeholder={'{"version":"1.0","collections":[...]} or PocketBase [...]'}
 								class="w-full rounded-md border border-input bg-background p-3 font-mono text-xs outline-none focus:border-ring"
 							></textarea>
 							<div class="mt-3 flex justify-end">
