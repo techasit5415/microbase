@@ -6,6 +6,8 @@
 		Braces,
 		Calendar,
 		CloudUpload,
+		Eye,
+		EyeOff,
 		FileImage,
 		Hash,
 		KeyRound,
@@ -439,16 +441,30 @@
 									{#if !editingRecord}<span class="text-destructive">*</span>{/if}
 								</span>
 							</label>
-							<input
-								id="u-pass"
-								type={showPassword ? 'text' : 'password'}
-								required={!editingRecord}
-								minlength={password ? 8 : undefined}
-								value={password}
-								oninput={(e) => (password = e.currentTarget.value)}
-								placeholder={editingRecord ? 'Leave blank to keep' : 'Min 8 characters'}
-								class="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/60"
-							/>
+							<div class="flex items-center gap-1.5">
+								<input
+									id="u-pass"
+									type={showPassword ? 'text' : 'password'}
+									required={!editingRecord}
+									minlength={password ? 8 : undefined}
+									value={password}
+									oninput={(e) => (password = e.currentTarget.value)}
+									placeholder={editingRecord ? 'Leave blank to keep' : 'Min 8 characters'}
+									class="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/60"
+								/>
+								<button
+									type="button"
+									onclick={() => (showPassword = !showPassword)}
+									title={showPassword ? 'Hide password' : 'Show password'}
+									class="cursor-pointer rounded p-1 text-muted-foreground transition hover:bg-background/60 hover:text-foreground"
+								>
+									{#if showPassword}
+										<EyeOff class="h-4 w-4" />
+									{:else}
+										<Eye class="h-4 w-4" />
+									{/if}
+								</button>
+							</div>
 						</div>
 						<div class="px-3.5 py-2.5">
 							<label for="u-pass-confirm" class="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
@@ -458,16 +474,30 @@
 									{#if !editingRecord || password}<span class="text-destructive">*</span>{/if}
 								</span>
 							</label>
-							<input
-								id="u-pass-confirm"
-								type={showPassword ? 'text' : 'password'}
-								required={!editingRecord || Boolean(password)}
-								minlength={password ? 8 : undefined}
-								value={confirmPassword}
-								oninput={(e) => (confirmPassword = e.currentTarget.value)}
-								placeholder={editingRecord ? 'Leave blank to keep' : 'Retype password'}
-								class="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/60"
-							/>
+							<div class="flex items-center gap-1.5">
+								<input
+									id="u-pass-confirm"
+									type={showPassword ? 'text' : 'password'}
+									required={!editingRecord || Boolean(password)}
+									minlength={password ? 8 : undefined}
+									value={confirmPassword}
+									oninput={(e) => (confirmPassword = e.currentTarget.value)}
+									placeholder={editingRecord ? 'Leave blank to keep' : 'Retype password'}
+									class="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/60"
+								/>
+								<button
+									type="button"
+									onclick={() => (showPassword = !showPassword)}
+									title={showPassword ? 'Hide password' : 'Show password'}
+									class="cursor-pointer rounded p-1 text-muted-foreground transition hover:bg-background/60 hover:text-foreground"
+								>
+									{#if showPassword}
+										<EyeOff class="h-4 w-4" />
+									{:else}
+										<Eye class="h-4 w-4" />
+									{/if}
+								</button>
+							</div>
 						</div>
 					</div>
 					<div class="mt-1.5 flex items-center justify-between px-0.5">
@@ -478,15 +508,7 @@
 						>
 							Generate and set random password
 						</button>
-						{#if password}
-							<button
-								type="button"
-								onclick={() => (showPassword = !showPassword)}
-								class="cursor-pointer text-xs text-muted-foreground hover:text-foreground"
-							>
-								{showPassword ? 'Hide' : 'Show'}
-							</button>
-						{/if}
+
 					</div>
 				</div>
 

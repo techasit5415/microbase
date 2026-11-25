@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { Database, LogOut, ScrollText, Settings, Terminal } from '@lucide/svelte';
 	import { ADMIN_TOKEN_KEY } from '#lib/api/client.ts';
@@ -10,6 +11,18 @@
 		{ href: '/_/sql', label: 'SQL Console & ERD', icon: Terminal, match: '/_/sql' },
 		{ href: '/_/settings', label: 'Settings', icon: Settings, match: '/_/settings' }
 	];
+
+	let version = $state('');
+
+	onMount(async () => {
+		try {
+			const res = await fetch('/health');
+			const json = await res.json();
+			version = json?.data?.version || json?.version || '';
+		} catch {
+			// ignore
+		}
+	});
 
 	function handleLogout() {
 		localStorage.removeItem(ADMIN_TOKEN_KEY);
@@ -56,5 +69,13 @@
 		>
 			<LogOut class="h-4.5 w-4.5" />
 		</button>
+		{#if version}
+			<span
+				title="Microbase {version}"
+				class="mt-1 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground"
+			>
+				{version}
+			</span>
+		{/if}
 	</div>
 </aside>

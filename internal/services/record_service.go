@@ -136,6 +136,17 @@ func (s *RecordService) Create(ctx context.Context, colName string, data models.
 	if data == nil {
 		data = models.Record{}
 	}
+	// Auto-generate PocketBase-style random string ID for text-ID collections.
+	if col.IDType == "text" {
+		allowed["id"] = models.FieldDef{Name: "id", Type: "text"}
+		if rawID, exists := data["id"]; !exists || rawID == nil || strings.TrimSpace(fmt.Sprint(rawID)) == "" {
+			pattern := col.IDAutogeneratePattern
+			if strings.TrimSpace(pattern) == "" {
+				pattern = "[a-z0-9]{15}"
+			}
+			data["id"] = GenerateFromPattern(pattern)
+		}
+	}
 	// Apply PocketBase-style AutogeneratePattern on missing text fields before required checks.
 	for _, f := range col.Fields {
 		if f.Type == "text" && f.AutogeneratePattern != "" {
