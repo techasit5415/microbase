@@ -3,9 +3,9 @@
 	import { Bell, Database, Download, Plus, Trash2, Upload } from '@lucide/svelte';
 	import { apiRequest } from '#lib/api/client.ts';
 	import { getSchemaExportURL } from '#lib/api/collections.ts';
-	import BackupsCard from '#lib/components/settings/BackupsCard.svelte';
-	import DatabaseCard from '#lib/components/settings/DatabaseCard.svelte';
+		import BackupsCard from '#lib/components/settings/BackupsCard.svelte';
 	import CronsCard from '#lib/components/settings/CronsCard.svelte';
+	import DatabaseCard from '#lib/components/settings/DatabaseCard.svelte';
 	import MailSettingsCard from '#lib/components/settings/MailSettingsCard.svelte';
 	import RateLimitsCard from '#lib/components/settings/RateLimitsCard.svelte';
 	import S3StorageCard from '#lib/components/settings/S3StorageCard.svelte';
@@ -152,7 +152,7 @@
 	<div class="mx-auto max-w-4xl space-y-6">
 		<div>
 			<h1 class="text-xl font-semibold">Settings</h1>
-			<p class="mt-1 text-sm text-muted-foreground">Cache backend, notification hooks (Discord / FCM), and schema portability.</p>
+			<p class="mt-1 text-sm text-muted-foreground">Database connection, Redis cache, S3 storage, SMTP mail, backups, crons, rate limits, webhooks, and schema portability.</p>
 		</div>
 
 		<!-- System Status -->
@@ -205,6 +205,22 @@
 				</button>
 			</form>
 		</section>
+
+		<!-- PostgreSQL Database Connection -->
+		<DatabaseCard />
+
+		<!-- Files Storage (S3 / R2 / MinIO) -->
+		<S3StorageCard />
+
+		<!-- Mail Settings (SMTP) -->
+		<MailSettingsCard />
+
+		<!-- Backups & Crons -->
+		<BackupsCard />
+		<CronsCard />
+
+		<!-- Per-Route Rate Limits -->
+		<RateLimitsCard />
 
 		<!-- Notification Hooks (Discord / Firebase FCM / Generic HTTP) -->
 		<section class="space-y-4 rounded-md border border-border bg-card p-5">
