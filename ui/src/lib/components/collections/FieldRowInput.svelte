@@ -153,15 +153,15 @@
 </script>
 
 <div class="{stacked ? 'bg-muted/35 hover:bg-muted/55' : 'rounded-md border border-border bg-background/80'} transition">
-	<div class="group flex items-center gap-2 px-2.5 py-2">
+	<div class="group relative flex items-center gap-2.5 px-3 py-2">
 		<span
 			title="Drag to reorder field"
-			class="flex h-6 w-4 shrink-0 cursor-grab items-center justify-center text-muted-foreground/60 opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-foreground active:cursor-grabbing"
+			class="absolute top-1/2 -left-5 flex h-8 w-5 -translate-y-1/2 cursor-grab items-center justify-center text-muted-foreground/60 opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-foreground active:cursor-grabbing"
 		>
 			<GripVertical class="h-3.5 w-3.5" />
 		</span>
 		<div
-			class="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-muted text-muted-foreground"
+			class="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-muted text-muted-foreground"
 			title={field.type}
 		>
 			{#if field.type === 'editor'}
