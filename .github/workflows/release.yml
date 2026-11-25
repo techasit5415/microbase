@@ -33,7 +33,7 @@ jobs:
       - name: Build Admin UI
         working-directory: ui
         run: |
-          npm ci
+          npm install --no-audit --no-fund
           npm run build
 
       - name: Build all PocketBase-style zip archives & checksums

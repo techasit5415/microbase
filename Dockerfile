@@ -2,7 +2,7 @@
 FROM --platform=$BUILDPLATFORM node:22-alpine AS ui-builder
 WORKDIR /src/ui
 COPY ui/package.json ui/package-lock.json ./
-RUN npm ci
+RUN npm install --no-audit --no-fund
 COPY ui/ ./
 RUN npm run build
 
