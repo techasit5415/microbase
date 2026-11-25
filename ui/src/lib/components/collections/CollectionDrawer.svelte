@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { cubicOut } from 'svelte/easing';
 	import { fade, fly, slide } from 'svelte/transition';
 	import {
@@ -169,7 +170,7 @@
 				indexes = [];
 				apiRules = {};
 			}
-			initialSnapshot = buildSnapshot();
+			initialSnapshot = untrack(() => buildSnapshot());
 		}
 	});
 

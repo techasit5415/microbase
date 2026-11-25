@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { Upload, X } from '@lucide/svelte';
 	import { ADMIN_TOKEN_KEY, apiRequest } from '#lib/api/client.ts';
 	import { createRecord, listRecords, updateRecord } from '#lib/api/records.ts';
@@ -106,7 +107,7 @@
 			confirmPassword = '';
 			errorMsg = '';
 			impersonateToken = '';
-			initialSnapshot = buildSnapshot();
+			initialSnapshot = untrack(() => buildSnapshot());
 			loadRelationChoices(collection.fields ?? []);
 		}
 	});
