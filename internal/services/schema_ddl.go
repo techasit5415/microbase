@@ -47,6 +47,14 @@ func buildCreateTableSQL(req models.CreateCollectionRequest) (string, error) {
 		if f.Unique {
 			colDef += " UNIQUE"
 		}
+		if f.Type == "select" && len(f.Values) == 0 {
+			return "", fmt.Errorf("select field %q must define at least one option value", f.Name)
+		}
+		if fkSQL, fkErr := relationConstraintSQL(f); fkErr != nil {
+			return "", fkErr
+		} else if fkSQL != "" {
+			colDef += fkSQL
+		}
 		columns = append(columns, colDef)
 	}
 
@@ -110,6 +118,14 @@ func buildAlterTableStatements(tableName string, oldFields, newFields []models.F
 			colDef := fmt.Sprintf(`"%s" %s`, f.Name, pgType)
 			if f.Unique {
 				colDef += " UNIQUE"
+			}
+			if f.Type == "select" && len(f.Values) == 0 {
+				return nil, nil, fmt.Errorf("select field %q must define at least one option value", f.Name)
+			}
+			if fkSQL, fkErr := relationConstraintSQL(f); fkErr != nil {
+				return nil, nil, fkErr
+			} else if fkSQL != "" {
+				colDef += fkSQL
 			}
 			stmts = append(stmts, fmt.Sprintf(`ALTER TABLE "%s" ADD COLUMN %s;`, tableName, colDef))
 		}
@@ -204,4 +220,28 @@ func buildIndexDiffStatements(tableName string, oldIndexes, newIndexes []models.
 	}
 
 	return stmts, nil
+}
+
+// relationConstraintSQL builds a PostgreSQL REFERENCES clause for single-value relation fields.
+func relationConstraintSQL(f models.FieldDef) (string, error) {
+	if f.Type != "relation" {
+		return "", nil
+	}
+	if f.CollectionName == "" {
+		return "", fmt.Errorf("relation field %q must specify a target collection_name", f.Name)
+	}
+	targetTable := f.CollectionName
+	if targetTable == "users" {
+		targetTable = "_users"
+	} else if !models.IsValidIdentifier(targetTable) {
+		return "", fmt.Errorf("invalid target collection %q for relation field %q", f.CollectionName, f.Name)
+	}
+	if f.MaxSelect > 1 {
+		return "", nil // Multi-relation stored as JSONB array of IDs
+	}
+	onDelete := "ON DELETE SET NULL"
+	if f.CascadeDelete {
+		onDelete = "ON DELETE CASCADE"
+	}
+	return fmt.Sprintf(` REFERENCES "%s"(id) %s`, targetTable, onDelete), nil
 }

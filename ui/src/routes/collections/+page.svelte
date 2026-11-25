@@ -210,6 +210,7 @@
 <CollectionDrawer
 	open={showColDrawer}
 	editing={editingCol}
+	availableCollections={mainCollections.map((c) => c.name)}
 	onClose={() => (showColDrawer = false)}
 	onSaved={(col, isEdit) => {
 		const typed: Collection = { ...col, type: 'base' };

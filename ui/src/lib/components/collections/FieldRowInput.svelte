@@ -25,12 +25,31 @@
 	interface Props {
 		field: FieldDef;
 		isExisting?: boolean;
+		availableCollections?: string[];
 		onRemove: () => void;
 	}
 
-	let { field = $bindable(), isExisting = false, onRemove }: Props = $props();
+	let {
+		field = $bindable(),
+		isExisting = false,
+		availableCollections = [],
+		onRemove
+	}: Props = $props();
+
 	let expanded = $state(false);
+
+	$effect(() => {
+		if (
+			!isExisting &&
+			((field.type === 'relation' && !field.collection_name) ||
+				(field.type === 'select' && (!field.values || field.values.length === 0)) ||
+				field.type === 'vector')
+		) {
+			expanded = true;
+		}
+	});
 	let customMime = $state('');
+	let newChoice = $state('');
 
 	const mimePresets: Record<string, string[]> = {
 		Images: ['image/jpeg', 'image/png', 'image/svg+xml', 'image/gif', 'image/webp'],
@@ -44,13 +63,16 @@
 		{ value: '99', label: 'Multiple' }
 	];
 
+	let collectionOptions = $derived([
+		{ value: '', label: 'Select collection *' },
+		...availableCollections.map((c) => ({ value: c, label: c }))
+	]);
+
 	function addMime(mime: string) {
 		const clean = mime.trim().toLowerCase();
 		if (!clean) return;
 		const current = field.mime_types ?? [];
-		if (!current.includes(clean)) {
-			field.mime_types = [...current, clean];
-		}
+		if (!current.includes(clean)) field.mime_types = [...current, clean];
 	}
 
 	function removeMime(mime: string) {
@@ -61,6 +83,21 @@
 		const current = new Set(field.mime_types ?? []);
 		for (const m of mimePresets[key] ?? []) current.add(m);
 		field.mime_types = Array.from(current);
+	}
+
+	function addChoice(raw: string) {
+		const parts = raw
+			.split(',')
+			.map((p) => p.trim())
+			.filter(Boolean);
+		if (parts.length === 0) return;
+		const current = new Set(field.values ?? []);
+		for (const p of parts) current.add(p);
+		field.values = Array.from(current);
+	}
+
+	function removeChoice(choice: string) {
+		field.values = (field.values ?? []).filter((v) => v !== choice);
 	}
 
 	function mimeShortExt(m: string): string {
@@ -122,7 +159,14 @@
 			class="min-w-0 flex-1 bg-transparent px-1.5 py-1 font-mono text-xs outline-none focus:rounded focus:bg-muted/50"
 		/>
 
-		{#if field.type === 'file'}
+		{#if field.type === 'relation'}
+			<div class="w-36 shrink-0">
+				<Select
+					bind:value={() => field.collection_name ?? '', (v) => (field.collection_name = v)}
+					options={collectionOptions}
+					disabled={isExisting}
+				/>
+			</div>
 			<div class="w-24 shrink-0">
 				<Select
 					bind:value={
@@ -130,8 +174,24 @@
 						(v) => (field.max_select = Number(v))
 					}
 					options={selectModeOptions}
+					disabled={isExisting}
 				/>
 			</div>
+		{:else if field.type === 'file' || field.type === 'select'}
+			<div class="w-24 shrink-0">
+				<Select
+					bind:value={
+						() => String((field.max_select ?? 1) > 1 ? 99 : 1),
+						(v) => (field.max_select = Number(v))
+					}
+					options={selectModeOptions}
+					disabled={isExisting}
+				/>
+			</div>
+		{:else if field.type === 'autodate'}
+			<span class="rounded bg-muted px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
+				{field.on_update ? 'Create/Update' : 'Create'}
+			</span>
 		{:else}
 			<span class="rounded bg-muted px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
 				{field.type}
@@ -170,10 +230,74 @@
 		</button>
 	</div>
 
-	{#if expanded || field.type === 'vector'}
+	{#if expanded}
 		<div class="space-y-3.5 border-t border-border/60 bg-muted/20 px-4 py-3.5">
+			{#if field.type === 'relation'}
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+					<div>
+						<div class="mb-1 text-[11px] font-medium text-muted-foreground">
+							Target collection <span class="text-destructive">*</span>
+						</div>
+						<Select
+							bind:value={() => field.collection_name ?? '', (v) => (field.collection_name = v)}
+							options={collectionOptions}
+							disabled={isExisting}
+						/>
+					</div>
+					<div class="flex items-end pb-1.5">
+						<Switch
+							checked={Boolean(field.cascade_delete)}
+							onChange={(v) => (field.cascade_delete = v)}
+							label="Cascade delete (ON DELETE CASCADE)"
+							disabled={isExisting}
+						/>
+					</div>
+				</div>
+			{/if}
+
+			{#if field.type === 'select'}
+				<div>
+					<div class="mb-1.5 text-[11px] font-medium text-muted-foreground">
+						Choices <span class="text-destructive">*</span>
+					</div>
+					<div class="flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-background p-2">
+						{#each field.values ?? [] as choice (choice)}
+							<span class="inline-flex items-center gap-1 rounded border border-border bg-muted/60 px-2 py-0.5 font-mono text-[11px]">
+								{choice}
+								<button
+									type="button"
+									onclick={() => removeChoice(choice)}
+									class="ml-0.5 cursor-pointer rounded p-0.5 hover:bg-black/10"
+								>
+									<X class="h-2.5 w-2.5" />
+								</button>
+							</span>
+						{/each}
+						<input
+							type="text"
+							value={newChoice}
+							oninput={(e) => (newChoice = e.currentTarget.value)}
+							onkeydown={(e) => {
+								if (e.key === 'Enter' || e.key === ',') {
+									e.preventDefault();
+									addChoice(newChoice);
+									newChoice = '';
+								}
+							}}
+							onblur={() => {
+								if (newChoice.trim()) {
+									addChoice(newChoice);
+									newChoice = '';
+								}
+							}}
+							placeholder="Type choice + Enter (e.g. draft, published)..."
+							class="min-w-[180px] flex-1 bg-transparent px-1 py-0.5 font-mono text-[11px] outline-none"
+						/>
+					</div>
+				</div>
+			{/if}
+
 			{#if field.type === 'file'}
-				<!-- Allowed MIME types -->
 				<div>
 					<div class="mb-1.5 text-[11px] font-medium text-muted-foreground">Allowed mime types</div>
 					<div class="flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-background p-2">
@@ -230,7 +354,6 @@
 					</div>
 				</div>
 
-				<!-- Thumb sizes & Max size -->
 				<div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
 					<div class="sm:col-span-2">
 						<div class="mb-1 text-[11px] font-medium text-muted-foreground">Thumb sizes</div>
@@ -246,10 +369,9 @@
 							placeholder="e.g. 50x50, 480x720"
 							class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring"
 						/>
-						<p class="mt-1 text-[10px] text-muted-foreground">Use comma as separator.</p>
 					</div>
 					<div>
-						<div class="mb-1 text-[11px] font-medium text-muted-foreground">Max size</div>
+						<div class="mb-1 text-[11px] font-medium text-muted-foreground">Max size (bytes)</div>
 						<input
 							type="number"
 							min="0"
@@ -261,17 +383,165 @@
 							placeholder="~5MB default"
 							class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring"
 						/>
-						<p class="mt-1 text-[10px] text-muted-foreground">In bytes.</p>
 					</div>
 				</div>
 
-				<!-- Protected switch -->
 				<div class="flex items-center gap-2.5">
 					<Switch checked={Boolean(field.protected)} onChange={(v) => (field.protected = v)} />
 					<span class="text-xs text-foreground">
 						<strong>Protected</strong>
 						<span class="text-muted-foreground"> File download requests will need to satisfy the View API rule.</span>
 					</span>
+				</div>
+			{/if}
+
+			{#if field.type === 'text'}
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+					<div>
+						<div class="mb-1 text-[11px] font-medium text-muted-foreground">Min length</div>
+						<input
+							type="number"
+							min="0"
+							value={field.min ?? ''}
+							oninput={(e) => {
+								const n = parseInt(e.currentTarget.value, 10);
+								field.min = Number.isNaN(n) ? undefined : n;
+							}}
+							placeholder="No min"
+							class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring"
+						/>
+					</div>
+					<div>
+						<div class="mb-1 text-[11px] font-medium text-muted-foreground">Max length</div>
+						<input
+							type="number"
+							min="0"
+							value={field.max ?? ''}
+							oninput={(e) => {
+								const n = parseInt(e.currentTarget.value, 10);
+								field.max = Number.isNaN(n) ? undefined : n;
+							}}
+							placeholder="No max"
+							class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring"
+						/>
+					</div>
+					<div>
+						<div class="mb-1 text-[11px] font-medium text-muted-foreground">Validation pattern</div>
+						<input
+							type="text"
+							value={field.pattern ?? ''}
+							oninput={(e) => (field.pattern = e.currentTarget.value)}
+							placeholder="e.g. ^[a-z0-9-]+$"
+							class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring"
+						/>
+					</div>
+				</div>
+			{/if}
+
+			{#if field.type === 'number' || field.type === 'integer' || field.type === 'float'}
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+					<div>
+						<div class="mb-1 text-[11px] font-medium text-muted-foreground">Min</div>
+						<input
+							type="number"
+							step="any"
+							value={field.min ?? ''}
+							oninput={(e) => {
+								const n = parseFloat(e.currentTarget.value);
+								field.min = Number.isNaN(n) ? undefined : n;
+							}}
+							placeholder="No min"
+							class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring"
+						/>
+					</div>
+					<div>
+						<div class="mb-1 text-[11px] font-medium text-muted-foreground">Max</div>
+						<input
+							type="number"
+							step="any"
+							value={field.max ?? ''}
+							oninput={(e) => {
+								const n = parseFloat(e.currentTarget.value);
+								field.max = Number.isNaN(n) ? undefined : n;
+							}}
+							placeholder="No max"
+							class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring"
+						/>
+					</div>
+					<div class="flex items-end pb-1.5">
+						<Switch
+							checked={Boolean(field.only_int)}
+							onChange={(v) => (field.only_int = v)}
+							label="Only integers"
+						/>
+					</div>
+				</div>
+			{/if}
+
+			{#if field.type === 'email' || field.type === 'url'}
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+					<div>
+						<div class="mb-1 text-[11px] font-medium text-muted-foreground">Only domains</div>
+						<input
+							type="text"
+							value={(field.only_domains ?? []).join(', ')}
+							oninput={(e) => {
+								field.only_domains = e.currentTarget.value
+									.split(',')
+									.map((d) => d.trim().toLowerCase())
+									.filter(Boolean);
+							}}
+							placeholder="e.g. kmitl.ac.th, company.com"
+							class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring"
+						/>
+					</div>
+					<div>
+						<div class="mb-1 text-[11px] font-medium text-muted-foreground">Except domains</div>
+						<input
+							type="text"
+							value={(field.except_domains ?? []).join(', ')}
+							oninput={(e) => {
+								field.except_domains = e.currentTarget.value
+									.split(',')
+									.map((d) => d.trim().toLowerCase())
+									.filter(Boolean);
+							}}
+							placeholder="e.g. spam.com"
+							class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring"
+						/>
+					</div>
+				</div>
+			{/if}
+
+			{#if field.type === 'autodate'}
+				<div class="flex items-center gap-5">
+					<Switch
+						checked={field.on_create !== false}
+						onChange={(v) => (field.on_create = v)}
+						label="Autodate on create"
+					/>
+					<Switch
+						checked={Boolean(field.on_update)}
+						onChange={(v) => (field.on_update = v)}
+						label="Autodate on update"
+					/>
+				</div>
+			{/if}
+
+			{#if field.type === 'editor' || field.type === 'json'}
+				<div>
+					<div class="mb-1 text-[11px] font-medium text-muted-foreground">Max size (bytes)</div>
+					<input
+						type="number"
+						min="0"
+						value={field.max_size ?? ''}
+						oninput={(e) => {
+							const n = parseInt(e.currentTarget.value, 10);
+							field.max_size = Number.isNaN(n) ? undefined : n;
+						}}
+						placeholder="Default"
+						class="w-40 rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring"
+					/>
 				</div>
 			{/if}
 
@@ -302,7 +572,7 @@
 				/>
 			</div>
 
-			<!-- Bottom flags: Required / Presentable / Hidden / Unique -->
+			<!-- Bottom flags -->
 			<div class="flex flex-wrap items-center gap-5 pt-1">
 				<Switch
 					checked={Boolean(field.required)}

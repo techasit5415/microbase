@@ -13,11 +13,12 @@
 	interface Props {
 		open: boolean;
 		editing?: Collection | null;
+		availableCollections?: string[];
 		onClose: () => void;
 		onSaved: (col: Collection, isEdit: boolean) => void;
 	}
 
-	let { open, editing = null, onClose, onSaved }: Props = $props();
+	let { open, editing = null, availableCollections = [], onClose, onSaved }: Props = $props();
 
 	let activeTab = $state<'fields' | 'rules' | 'options'>('fields');
 	let name = $state('');
@@ -144,12 +145,35 @@
 					presentable: Boolean(f.presentable),
 					hidden: Boolean(f.hidden),
 					help_text: f.help_text?.trim() || undefined,
-					dimension: f.type === 'vector' ? Number(f.dimension || 768) : undefined,
-					max_select: f.type === 'file' ? Number(f.max_select || 1) : undefined,
+					collection_name: f.type === 'relation' ? f.collection_name?.trim() || undefined : undefined,
+					cascade_delete: f.type === 'relation' ? Boolean(f.cascade_delete) : undefined,
+					max_select:
+						f.type === 'file' || f.type === 'relation' || f.type === 'select'
+							? Number(f.max_select || 1)
+							: undefined,
+					values: f.type === 'select' && f.values?.length ? f.values : undefined,
 					mime_types: f.type === 'file' && f.mime_types?.length ? f.mime_types : undefined,
 					thumbs: f.type === 'file' && f.thumbs?.length ? f.thumbs : undefined,
-					max_size: f.type === 'file' && f.max_size ? Number(f.max_size) : undefined,
-					protected: f.type === 'file' ? Boolean(f.protected) : undefined
+					max_size:
+						(f.type === 'file' || f.type === 'editor' || f.type === 'json') && f.max_size
+							? Number(f.max_size)
+							: undefined,
+					protected: f.type === 'file' ? Boolean(f.protected) : undefined,
+					min: f.min !== undefined ? Number(f.min) : undefined,
+					max: f.max !== undefined ? Number(f.max) : undefined,
+					pattern: f.type === 'text' && f.pattern?.trim() ? f.pattern.trim() : undefined,
+					only_int: f.type === 'number' || f.type === 'float' ? Boolean(f.only_int) : undefined,
+					only_domains:
+						(f.type === 'email' || f.type === 'url') && f.only_domains?.length
+							? f.only_domains
+							: undefined,
+					except_domains:
+						(f.type === 'email' || f.type === 'url') && f.except_domains?.length
+							? f.except_domains
+							: undefined,
+					on_create: f.type === 'autodate' ? f.on_create !== false : undefined,
+					on_update: f.type === 'autodate' ? Boolean(f.on_update) : undefined,
+					dimension: f.type === 'vector' ? Number(f.dimension || 768) : undefined
 				}));
 
 			const result = editing
@@ -256,6 +280,7 @@
 							<FieldRowInput
 								bind:field={fields[i]}
 								isExisting={Boolean(field.original_name)}
+								{availableCollections}
 								onRemove={() => removeField(i)}
 							/>
 						{/each}

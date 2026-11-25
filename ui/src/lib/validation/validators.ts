@@ -1,7 +1,19 @@
 import type { FieldDef, IndexDef } from '#lib/api/types.ts';
 
 const IDENT_RE = /^[a-z][a-z0-9_]{0,62}$/;
-const RESERVED_COLLECTIONS = new Set(['users', 'superusers', 'system', 'logs', 'settings', 'health', 'files', 'auth', 'oauth', 'webhooks', 'schema']);
+const RESERVED_COLLECTIONS = new Set([
+	'users',
+	'superusers',
+	'system',
+	'logs',
+	'settings',
+	'health',
+	'files',
+	'auth',
+	'oauth',
+	'webhooks',
+	'schema'
+]);
 const RESERVED_COLUMNS = new Set(['id', 'created_at', 'updated_at']);
 
 /** Validates a collection schema before POST / PATCH and returns an error string or null if valid. */
@@ -40,14 +52,34 @@ export function validateCollectionForm(
 		}
 		seenFields.add(fn);
 
+		if (f.type === 'relation' && !f.collection_name?.trim()) {
+			return `Relation field "${fn}" must select a target collection.`;
+		}
+		if (f.type === 'select' && (!f.values || f.values.length === 0)) {
+			return `Select field "${fn}" must have at least one option choice.`;
+		}
 		if (f.type === 'vector') {
 			const dim = Number(f.dimension);
 			if (!Number.isInteger(dim) || dim < 1 || dim > 4096) {
 				return `Vector field "${fn}" must have a dimension between 1 and 4096.`;
 			}
 		}
-		if (f.type === 'file' && f.max_size !== undefined && (Number.isNaN(Number(f.max_size)) || Number(f.max_size) < 0)) {
-			return `File field "${fn}" max size must be a positive number of bytes.`;
+		if (f.min !== undefined && f.max !== undefined && Number(f.min) > Number(f.max)) {
+			return `Field "${fn}" min (${f.min}) cannot be greater than max (${f.max}).`;
+		}
+		if (f.type === 'text' && f.pattern) {
+			try {
+				new RegExp(f.pattern);
+			} catch {
+				return `Field "${fn}" has an invalid regex pattern: ${f.pattern}`;
+			}
+		}
+		if (
+			(f.type === 'file' || f.type === 'editor' || f.type === 'json') &&
+			f.max_size !== undefined &&
+			(Number.isNaN(Number(f.max_size)) || Number(f.max_size) < 0)
+		) {
+			return `Field "${fn}" max size must be a positive number of bytes.`;
 		}
 	}
 
@@ -96,16 +128,49 @@ export function buildAndValidateRecordPayload(
 			continue;
 		}
 
-		if (field.type === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {
-			return { error: `Field "${field.name}" must be a valid email address.` };
-		}
-		if (field.type === 'url' && !/^https?:\/\/.+/.test(raw)) {
-			return { error: `Field "${field.name}" must be a valid URL starting with http:// or https://.` };
-		}
-		if (field.type === 'integer' || field.type === 'relation') {
+		if (field.type === 'text') {
+			if (field.min !== undefined && raw.length < field.min) {
+				return { error: `Field "${field.name}" must be at least ${field.min} characters.` };
+			}
+			if (field.max !== undefined && raw.length > field.max) {
+				return { error: `Field "${field.name}" must be at most ${field.max} characters.` };
+			}
+			if (field.pattern && !new RegExp(field.pattern).test(raw)) {
+				return { error: `Field "${field.name}" does not match pattern /${field.pattern}/.` };
+			}
+			payload[field.name] = raw;
+		} else if (field.type === 'email') {
+			if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {
+				return { error: `Field "${field.name}" must be a valid email address.` };
+			}
+			const domain = raw.split('@')[1]?.toLowerCase() ?? '';
+			if (field.only_domains?.length && !field.only_domains.includes(domain)) {
+				return { error: `Email domain "${domain}" is not allowed for "${field.name}".` };
+			}
+			if (field.except_domains?.length && field.except_domains.includes(domain)) {
+				return { error: `Email domain "${domain}" is blocked for "${field.name}".` };
+			}
+			payload[field.name] = raw;
+		} else if (field.type === 'url') {
+			if (!/^https?:\/\/.+/.test(raw)) {
+				return { error: `Field "${field.name}" must be a valid URL starting with http:// or https://.` };
+			}
+			payload[field.name] = raw;
+		} else if (field.type === 'select') {
+			if (field.values?.length && (field.max_select ?? 1) <= 1 && !field.values.includes(raw)) {
+				return { error: `Field "${field.name}" must be one of: ${field.values.join(', ')}.` };
+			}
+			payload[field.name] = raw;
+		} else if (field.type === 'integer' || (field.type === 'relation' && (field.max_select ?? 1) <= 1)) {
 			const n = Number(raw);
 			if (!Number.isInteger(n)) {
-				return { error: `Field "${field.name}" must be a valid integer.` };
+				return { error: `Field "${field.name}" must be a valid integer ID.` };
+			}
+			if (field.min !== undefined && n < field.min) {
+				return { error: `Field "${field.name}" must be >= ${field.min}.` };
+			}
+			if (field.max !== undefined && n > field.max) {
+				return { error: `Field "${field.name}" must be <= ${field.max}.` };
 			}
 			payload[field.name] = n;
 		} else if (field.type === 'float' || field.type === 'number') {
@@ -113,8 +178,17 @@ export function buildAndValidateRecordPayload(
 			if (Number.isNaN(n)) {
 				return { error: `Field "${field.name}" must be a valid number.` };
 			}
+			if (field.only_int && !Number.isInteger(n)) {
+				return { error: `Field "${field.name}" only allows integer values.` };
+			}
+			if (field.min !== undefined && n < field.min) {
+				return { error: `Field "${field.name}" must be >= ${field.min}.` };
+			}
+			if (field.max !== undefined && n > field.max) {
+				return { error: `Field "${field.name}" must be <= ${field.max}.` };
+			}
 			payload[field.name] = n;
-		} else if (field.type === 'json' || field.type === 'geopoint') {
+		} else if (field.type === 'json' || field.type === 'geopoint' || (field.type === 'relation' && (field.max_select ?? 1) > 1)) {
 			try {
 				payload[field.name] = JSON.parse(raw);
 			} catch {

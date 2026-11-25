@@ -26,12 +26,33 @@ export interface FieldDef {
 	presentable?: boolean;
 	hidden?: boolean;
 	help_text?: string;
-	dimension?: number;
+
+	// Relation options
+	collection_name?: string;
+	cascade_delete?: boolean;
+
+	// Select / File / Relation multiplicity
 	max_select?: number;
+	values?: string[];
+
+	// File options
 	mime_types?: string[];
 	thumbs?: string[];
 	max_size?: number;
 	protected?: boolean;
+
+	// Text / Number / Email / URL / Autodate options
+	min?: number;
+	max?: number;
+	pattern?: string;
+	only_int?: boolean;
+	only_domains?: string[];
+	except_domains?: string[];
+	on_create?: boolean;
+	on_update?: boolean;
+
+	// Vector options
+	dimension?: number;
 }
 
 export interface IndexDef {
@@ -51,15 +72,18 @@ export interface Collection {
 	updated_at: string;
 }
 
-export type RecordRow = Record<string, unknown> & {
-	id?: number;
-	created_at?: string;
-	updated_at?: string;
-};
+export type RecordRow = Record<string, unknown>;
 
-export interface ListResult {
+export interface RecordListResponse {
 	page: number;
 	per_page: number;
 	total_items: number;
 	items: RecordRow[];
+}
+
+export interface ListResult<T = RecordRow> {
+	page: number;
+	per_page: number;
+	total_items: number;
+	items: T[];
 }
