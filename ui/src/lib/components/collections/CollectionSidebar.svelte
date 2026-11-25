@@ -87,7 +87,7 @@
 		<button
 			type="button"
 			onclick={onOpenCreate}
-			class="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-md border-2 border-foreground/80 bg-transparent px-3 py-2 text-xs font-semibold text-foreground transition hover:bg-foreground hover:text-background"
+			class="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-md border-2 border-primary/80 bg-transparent px-3 py-2 text-xs font-semibold text-primary transition hover:bg-primary hover:text-primary-foreground"
 		>
 			<Plus class="h-3.5 w-3.5" />
 			New collection

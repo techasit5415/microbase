@@ -96,17 +96,18 @@
 						id="app-accent"
 						type="color"
 						bind:value={form.accent_color}
+						oninput={() => appSettings.applyBranding(form)}
 						class="absolute inset-0 h-full w-full cursor-pointer opacity-0"
 					/>
 				</label>
 			</div>
-			<div class="mt-2 flex items-center gap-1">
+			<div class="mt-2 flex flex-wrap items-center gap-1.5">
 				{#each accentPresets as c (c)}
 					<button
 						type="button"
 						aria-label="Set accent {c}"
-						onclick={() => (form.accent_color = c)}
-						class="h-4 w-4 cursor-pointer rounded-full border border-white/40 transition hover:scale-110 {form.accent_color === c ? 'ring-2 ring-foreground ring-offset-1' : ''}"
+						onclick={() => { form.accent_color = c; appSettings.applyBranding(form); }}
+						class="h-4 w-4 shrink-0 cursor-pointer rounded-full border border-white/40 transition hover:scale-110 {form.accent_color === c ? 'ring-2 ring-foreground ring-offset-1' : ''}"
 						style="background-color: {c};"
 					></button>
 				{/each}

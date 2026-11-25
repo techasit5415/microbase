@@ -866,7 +866,7 @@
 			<button
 				type="submit"
 				disabled={saving}
-				class="cursor-pointer rounded-md bg-foreground px-6 py-2 text-xs font-semibold text-background transition hover:opacity-90 disabled:opacity-50"
+				class="cursor-pointer rounded-md bg-primary px-6 py-2 text-xs font-semibold text-primary-foreground transition hover:opacity-90 disabled:opacity-50"
 			>
 				{saving ? 'Saving...' : editingRecord ? 'Save changes' : 'Create'}
 			</button>

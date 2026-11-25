@@ -36,7 +36,7 @@
 		<a
 			href="/_/collections"
 			title="Microbase"
-			class="mb-3 flex h-11 w-11 items-center justify-center rounded-lg border-2 border-foreground bg-card font-mono text-sm font-bold tracking-tighter text-foreground transition hover:bg-muted"
+			class="mb-3 flex h-11 w-11 items-center justify-center rounded-lg border-2 border-primary bg-card font-mono text-sm font-bold tracking-tighter text-primary transition hover:bg-muted"
 		>
 			MB
 		</a>
@@ -49,7 +49,7 @@
 					href={item.href}
 					title={item.label}
 					class="flex h-11 w-11 items-center justify-center rounded-lg border transition {active
-						? 'border-foreground bg-foreground text-background shadow-xs'
+						? 'border-primary bg-primary text-primary-foreground shadow-xs'
 						: 'border-transparent text-muted-foreground hover:bg-muted hover:text-foreground'}"
 				>
 					<item.icon class="h-5 w-5" />
