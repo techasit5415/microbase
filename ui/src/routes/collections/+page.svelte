@@ -226,6 +226,12 @@
 		{items}
 		{loading}
 		readOnly={(activeCol.type === 'system' && activeCol.name !== '_superusers') || activeCol.type === 'view'}
+		{sort}
+		onSortChange={(next) => {
+			sort = next;
+			currentPage = 1;
+			refreshRecords();
+		}}
 		onSelect={(row) => {
 			if (activeCol.type === 'base' || activeCol.type === 'auth' || activeCol.name === '_superusers') {
 				editingRec = row;
