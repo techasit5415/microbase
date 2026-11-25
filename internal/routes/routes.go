@@ -34,6 +34,7 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStor
 	if pool != nil {
 		middlewares.SetLogPool(pool)
 		services.LoadAppSettingsFromDB(context.Background(), pool)
+		middlewares.LoadRateLimitConfigFromDB(context.Background(), pool)
 		services.StartCronScheduler(pool)
 		hub := realtime.NewHub()
 		webhookService := services.NewWebhookService(pool)

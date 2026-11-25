@@ -3,14 +3,16 @@
 	import { cubicOut } from 'svelte/easing';
 	import { slide } from 'svelte/transition';
 	import { Activity, ArrowUpDown, ChevronDown, Layers, ShieldCheck } from '@lucide/svelte';
+	import { apiRequest } from '#lib/api/client.ts';
 	import RateLimitsCard from '#lib/components/settings/RateLimitsCard.svelte';
 	import Switch from '#lib/components/ui/Switch.svelte';
 	import { appSettings, type AppSettingsData } from '#lib/stores/appSettings.svelte.ts';
 	import { toast } from '#lib/stores/toast.svelte.ts';
 
 	let form = $state<AppSettingsData>(JSON.parse(JSON.stringify(appSettings.data)));
-	let proxyHeadersText = $state('X-Forwarded-For, X-Real-IP');
-	let superuserIPsText = $state('127.0.0.1, ::1');
+	let proxyHeadersText = $state((appSettings.data.trusted_proxy.headers ?? []).join(', '));
+	let superuserIPsText = $state((appSettings.data.superuser_ips.allowed_ips ?? []).join(', '));
+	let rateLimitEnabled = $state<boolean | null>(null);
 	let openAccordion = $state<'batch' | 'proxy' | 'ratelimit' | 'ips' | null>(null);
 	let saving = $state(false);
 
@@ -25,6 +27,12 @@
 	onMount(async () => {
 		if (!appSettings.loaded) await appSettings.load();
 		syncFromStore();
+		try {
+			const rl = await apiRequest<{ enabled: boolean }>('/api/settings/ratelimits');
+			rateLimitEnabled = rl.enabled;
+		} catch {
+			rateLimitEnabled = null;
+		}
 	});
 
 	function toggleAccordion(key: 'batch' | 'proxy' | 'ratelimit' | 'ips') {
@@ -209,15 +217,19 @@
 					Rate limiting
 				</span>
 				<span class="flex items-center gap-2.5">
-					<span class="rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
-						Active
+					<span
+						class="rounded px-2 py-0.5 text-xs font-medium {rateLimitEnabled
+							? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'
+							: 'bg-muted text-muted-foreground'}"
+					>
+						{rateLimitEnabled === null ? '...' : rateLimitEnabled ? 'Enabled' : 'Disabled'}
 					</span>
 					<ChevronDown class="h-4 w-4 text-muted-foreground transition-transform {openAccordion === 'ratelimit' ? 'rotate-180' : ''}" />
 				</span>
 			</button>
 			{#if openAccordion === 'ratelimit'}
 				<div transition:slide={{ duration: 180, easing: cubicOut }} class="border-t border-border bg-muted/20 p-4">
-					<RateLimitsCard />
+					<RateLimitsCard onStatusChange={(v) => (rateLimitEnabled = v)} />
 				</div>
 			{/if}
 		</div>

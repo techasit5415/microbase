@@ -386,27 +386,34 @@ func (h *OpsController) RestoreBackup(c echo.Context) error {
 
 // GetRateLimits handles GET /api/settings/ratelimits.
 func (h *OpsController) GetRateLimits(c echo.Context) error {
-	var raw string
-	_ = h.pool.QueryRow(c.Request().Context(), `SELECT value FROM _settings WHERE key = 'rate_limit_rules'`).Scan(&raw)
-	if raw != "" {
-		var saved []middlewares.RateLimitRule
-		if json.Unmarshal([]byte(raw), &saved) == nil {
-			middlewares.SetRateLimitRules(saved)
-		}
-	}
-	return response.OK(c, map[string]any{"rules": middlewares.GetRateLimitRules()})
+	middlewares.LoadRateLimitConfigFromDB(c.Request().Context(), h.pool)
+	return response.OK(c, middlewares.GetRateLimitConfig())
 }
 
-// UpdateRateLimits handles PUT /api/settings/ratelimits and hot-swaps rules live.
+// UpdateRateLimits handles PUT /api/settings/ratelimits and hot-swaps enabled/rules live.
 func (h *OpsController) UpdateRateLimits(c echo.Context) error {
 	var req struct {
-		Rules []middlewares.RateLimitRule `json:"rules"`
+		Enabled *bool                       `json:"enabled"`
+		Rules   []middlewares.RateLimitRule `json:"rules"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return response.Error(c, http.StatusBadRequest, "INVALID_JSON", "invalid request body")
 	}
-	middlewares.SetRateLimitRules(req.Rules)
-	encoded, _ := json.Marshal(req.Rules)
+	current := middlewares.GetRateLimitConfig()
+	enabled := current.Enabled
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	rules := req.Rules
+	if rules == nil {
+		rules = current.Rules
+	}
+	cfg := middlewares.RateLimitConfig{
+		Enabled: enabled,
+		Rules:   rules,
+	}
+	middlewares.SetRateLimitConfig(cfg)
+	encoded, _ := json.Marshal(cfg)
 	_, err := h.pool.Exec(c.Request().Context(), `
 		INSERT INTO _settings (key, value, updated_at)
 		VALUES ('rate_limit_rules', $1, NOW())
@@ -416,7 +423,7 @@ func (h *OpsController) UpdateRateLimits(c echo.Context) error {
 	if err != nil {
 		return response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 	}
-	return response.OK(c, map[string]any{"rules": req.Rules})
+	return response.OK(c, cfg)
 }
 
 // GetLogSettings handles GET /api/settings/logs.
