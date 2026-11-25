@@ -1,0 +1,149 @@
+name: Release & Publish Packages
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release-binaries:
+    name: Build & Publish GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build Admin UI
+        working-directory: ui
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build cross-platform binaries & checksums
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          OUT="dist/${VERSION}"
+          mkdir -p "${OUT}"
+          LDFLAGS="-s -w -X github.com/techasit5415/microbase/internal/config.Version=${VERSION}"
+
+          for target in "linux amd64" "linux arm64" "windows amd64" "darwin amd64" "darwin arm64"; do
+            set -- $target
+            GOOS=$1
+            GOARCH=$2
+            BIN="microbase"
+            [ "$GOOS" = "windows" ] && BIN="microbase.exe"
+            STAGE="${OUT}/stage_${GOOS}_${GOARCH}"
+            mkdir -p "${STAGE}"
+            echo "Building ${GOOS}/${GOARCH}..."
+            CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="${LDFLAGS}" -o "${STAGE}/${BIN}" ./cmd/server
+            [ -f README.md ] && cp README.md "${STAGE}/"
+            [ -f .env.example ] && cp .env.example "${STAGE}/"
+            if [ "$GOOS" = "windows" ]; then
+              (cd "${STAGE}" && zip -q -r "../../microbase_${VERSION}_${GOOS}_${GOARCH}.zip" .)
+            else
+              tar -czf "${OUT}/microbase_${VERSION}_${GOOS}_${GOARCH}.tar.gz" -C "${STAGE}" .
+            fi
+            rm -rf "${STAGE}"
+          done
+
+          (cd sdk && npm pack --pack-destination "../${OUT}")
+          (cd "${OUT}" && sha256sum * > checksums.txt)
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: dist/${{ github.ref_name }}/*
+
+  docker-package:
+    name: Build & Push Docker Image (GHCR)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  npm-sdk-package:
+    name: Publish TypeScript SDK to GitHub Packages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js for GitHub Packages
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@techasit5415'
+
+      - name: Sync SDK version with git tag & publish
+        working-directory: sdk
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG_VER="${GITHUB_REF_NAME#v}"
+          if echo "$TAG_VER" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+'; then
+            npm version "$TAG_VER" --no-git-tag-version --allow-same-version
+          fi
+          PKG_VER=$(node -p "require('./package.json').version")
+          if npm view "@techasit5415/microbase-sdk@${PKG_VER}" version >/dev/null 2>&1; then
+            echo "@techasit5415/microbase-sdk@${PKG_VER} is already published, skipping."
+          else
+            npm publish
+          fi

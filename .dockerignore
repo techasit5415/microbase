@@ -1,0 +1,14 @@
+.git
+.github
+.env
+.env.local
+dist/
+storage/
+microbase
+microbase.exe
+ui/node_modules
+ui/.svelte-kit
+ui/build
+*.test
+coverage.out
+docs/

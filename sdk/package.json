@@ -1,5 +1,5 @@
 {
-  "name": "microbase-sdk",
+  "name": "@techasit5415/microbase-sdk",
   "version": "0.10.58",
   "description": "Zero-dependency TypeScript/JavaScript SDK for Microbase (PostgreSQL + pgvector BaaS)",
   "type": "module",
@@ -7,6 +7,17 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts"
+  },
+  "files": [
+    "src/index.ts",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/techasit5415/microbase.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
   },
   "keywords": ["microbase", "baas", "postgresql", "pgvector", "pocketbase", "sdk"]
 }
