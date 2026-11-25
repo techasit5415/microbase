@@ -14,6 +14,34 @@
 	let backups = $state<BackupItem[]>([]);
 	let creating = $state(false);
 	let restoringKey = $state<string | null>(null);
+	let downloadingKey = $state<string | null>(null);
+
+	async function downloadBackup(key: string) {
+		downloadingKey = key;
+		try {
+			const token = localStorage.getItem(ADMIN_TOKEN_KEY);
+			const res = await fetch(`/api/backups/${encodeURIComponent(key)}`, {
+				headers: token ? { Authorization: `Bearer ${token}` } : {}
+			});
+			if (!res.ok) {
+				const json = await res.json().catch(() => null);
+				throw new Error(json?.message || json?.error?.message || `Download failed (${res.status})`);
+			}
+			const blob = await res.blob();
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = key;
+			document.body.appendChild(a);
+			a.click();
+			a.remove();
+			URL.revokeObjectURL(url);
+		} catch (err) {
+			toast.error(err);
+		} finally {
+			downloadingKey = null;
+		}
+	}
 
 	async function loadBackups() {
 		try {
@@ -129,9 +157,9 @@
 						<div class="text-muted-foreground">{(b.size / 1024).toFixed(1)} KB &middot; {new Date(b.modified).toLocaleString()}</div>
 					</div>
 					<div class="flex items-center gap-1.5">
-						<a href="/api/backups/{encodeURIComponent(b.key)}" class="inline-flex items-center gap-1 rounded border border-border bg-card px-2.5 py-1 text-xs font-medium hover:bg-muted">
-							<Download class="h-3.5 w-3.5" /> Download
-						</a>
+						<button type="button" disabled={downloadingKey === b.key} onclick={() => downloadBackup(b.key)} class="inline-flex cursor-pointer items-center gap-1 rounded border border-border bg-card px-2.5 py-1 text-xs font-medium hover:bg-muted disabled:opacity-50">
+							<Download class="h-3.5 w-3.5" /> {downloadingKey === b.key ? 'Downloading...' : 'Download'}
+						</button>
 						<button type="button" disabled={restoringKey === b.key} onclick={() => restoreBackup(b.key)} class="inline-flex cursor-pointer items-center gap-1 rounded border border-border bg-card px-2.5 py-1 text-xs font-medium hover:bg-muted disabled:opacity-50">
 							<RotateCcw class="h-3.5 w-3.5" /> {restoringKey === b.key ? 'Restoring...' : 'Restore'}
 						</button>
