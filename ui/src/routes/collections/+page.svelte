@@ -7,6 +7,7 @@
 	import { listSystemTable } from '#lib/api/system.ts';
 	import { deleteSuperuser, deleteUser, listUsers } from '#lib/api/users.ts';
 	import type { Collection, RecordRow } from '#lib/api/types.ts';
+	import { confirmAction } from '#lib/stores/confirm.svelte.ts';
 	import { toast } from '#lib/stores/toast.svelte.ts';
 	import CollectionDrawer from '#lib/components/collections/CollectionDrawer.svelte';
 	import CollectionSidebar from '#lib/components/collections/CollectionSidebar.svelte';
@@ -110,7 +111,13 @@
 	}
 
 	async function handleDeleteCollection(name: string) {
-		if (!confirm(`Delete collection "${name}" and all its data?`)) return;
+		const ok = await confirmAction({
+			title: `Delete "${name}" collection?`,
+			description: 'This will permanently drop the table and all of its records. This action cannot be undone.',
+			confirmLabel: 'Delete collection',
+			destructive: true
+		});
+		if (!ok) return;
 		try {
 			await deleteCollection(name);
 			toast.success(`Deleted collection "${name}"`);
@@ -123,6 +130,13 @@
 
 	async function handleDeleteRecord(id: number) {
 		if (activeCol.type === 'system' && activeCol.name !== '_superusers') return;
+		const ok = await confirmAction({
+			title: `Delete record #${id}?`,
+			description: `Are you sure you want to permanently delete this record from "${activeCol.name}"?`,
+			confirmLabel: 'Delete',
+			destructive: true
+		});
+		if (!ok) return;
 		try {
 			if (activeCol.name === '_superusers') await deleteSuperuser(id);
 			else if (activeCol.type === 'auth') await deleteUser(id);

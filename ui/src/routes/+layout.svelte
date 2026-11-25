@@ -2,6 +2,7 @@
 	import './layout.css';
 	import IconRail from '#lib/components/layout/IconRail.svelte';
 	import SuperuserGate from '#lib/components/layout/SuperuserGate.svelte';
+	import ConfirmDialog from '#lib/components/ui/ConfirmDialog.svelte';
 	import Toaster from '#lib/components/ui/Toaster.svelte';
 
 	let { children } = $props();
@@ -20,4 +21,5 @@
 	</div>
 </SuperuserGate>
 
+<ConfirmDialog />
 <Toaster />
