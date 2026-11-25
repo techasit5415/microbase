@@ -78,7 +78,13 @@
 	function formatCell(val: unknown): string {
 		if (val === null || val === undefined) return 'N/A';
 		if (typeof val === 'object') return JSON.stringify(val);
-		return String(val);
+		const str = String(val);
+		const iso = str.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})(?:\.(\d+))?(?:Z|[+-]\d{2}:\d{2})$/);
+		if (iso) {
+			const ms = iso[3] ? `.${iso[3].slice(0, 3).padEnd(3, '0')}` : '';
+			return `${iso[1]} ${iso[2]}${ms}`;
+		}
+		return str;
 	}
 
 	function isImageFileUrl(val: unknown): val is string {
