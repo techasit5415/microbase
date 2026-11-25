@@ -90,7 +90,7 @@
 					Identity/Password
 				</div>
 				<div class="flex items-center gap-2.5">
-					<span class="rounded bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+					<span class="rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
 						Enabled
 					</span>
 					<ChevronDown class="h-4 w-4 text-muted-foreground transition-transform {openSection === 'password' ? 'rotate-180' : ''}" />
@@ -101,7 +101,7 @@
 				<div class="border-t border-border bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
 					Email & Password sign-in using <code class="rounded bg-muted px-1 py-0.5">Argon2id</code> +
 					<code class="rounded bg-muted px-1 py-0.5">HS256 JWT</code>.
-					<div class="mt-2 font-mono text-[11px]">
+					<div class="mt-2 font-mono text-xs">
 						POST /api/auth/register &middot; POST /api/auth/login &middot; GET /api/auth/me
 					</div>
 				</div>
@@ -120,7 +120,7 @@
 				</div>
 				<div class="flex items-center gap-2.5">
 					<span
-						class="rounded px-2 py-0.5 text-[11px] font-medium {anyOAuthEnabled
+						class="rounded px-2 py-0.5 text-xs font-medium {anyOAuthEnabled
 							? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
 							: 'bg-muted text-muted-foreground'}"
 					>
@@ -145,7 +145,7 @@
 								<ProviderIcon name={p.name} />
 								<div class="text-xs font-medium">{p.display_name}</div>
 								<span
-									class="rounded px-1.5 py-0.5 text-[10px] font-medium {active
+									class="rounded px-1.5 py-0.5 text-xs font-medium {active
 										? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
 										: 'bg-muted text-muted-foreground'}"
 								>
@@ -163,13 +163,13 @@
 							</div>
 
 							<div>
-								<div class="mb-1 text-[11px] font-medium text-muted-foreground">Callback URL</div>
+								<div class="mb-1 text-xs font-medium text-muted-foreground">Callback URL</div>
 								<div class="flex items-center justify-between gap-2 rounded-md border border-border bg-muted/30 px-2.5 py-1.5">
-									<code class="truncate text-[11px]">{callbackUrl}</code>
+									<code class="truncate text-xs">{callbackUrl}</code>
 									<button
 										type="button"
 										onclick={copyCallback}
-										class="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium hover:bg-accent"
+										class="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded px-2 py-0.5 text-xs font-medium hover:bg-accent"
 									>
 										{#if copied}
 											<Check class="h-3 w-3 text-emerald-500" /> Copied
@@ -182,7 +182,7 @@
 
 							<div class="grid gap-3 sm:grid-cols-2">
 								<div>
-									<label for="oa-cid" class="mb-1 block text-[11px] text-muted-foreground">Client ID</label>
+									<label for="oa-cid" class="mb-1 block text-xs text-muted-foreground">Client ID</label>
 									<input
 										id="oa-cid"
 										type="text"
@@ -192,7 +192,7 @@
 									/>
 								</div>
 								<div>
-									<label for="oa-sec" class="mb-1 block text-[11px] text-muted-foreground">
+									<label for="oa-sec" class="mb-1 block text-xs text-muted-foreground">
 										Client Secret {editingProvider.has_secret ? '(saved)' : ''}
 									</label>
 									<input
@@ -207,7 +207,7 @@
 
 							{#if editingProvider.name === 'oidc'}
 								<div>
-									<label for="oa-issuer" class="mb-1 block text-[11px] text-muted-foreground">OIDC Issuer URL</label>
+									<label for="oa-issuer" class="mb-1 block text-xs text-muted-foreground">OIDC Issuer URL</label>
 									<input
 										id="oa-issuer"
 										type="url"
@@ -233,7 +233,7 @@
 										Test login <ExternalLink class="h-3 w-3" />
 									</a>
 								{:else}
-									<span class="text-[11px] text-muted-foreground">
+									<span class="text-xs text-muted-foreground">
 										External apps: <code>GET /api/auth/oauth/{editingProvider.name}?redirect_to=...</code>
 									</span>
 								{/if}

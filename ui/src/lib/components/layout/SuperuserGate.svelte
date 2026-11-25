@@ -131,7 +131,7 @@
 
 					<div class="relative my-5 flex items-center justify-center">
 						<div class="w-full border-t border-border"></div>
-						<span class="absolute bg-card px-3 text-[11px] text-muted-foreground">or</span>
+						<span class="absolute bg-card px-3 text-xs text-muted-foreground">or</span>
 					</div>
 				{/if}
 

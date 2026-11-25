@@ -40,7 +40,7 @@
 		{disabled}
 		{title}
 		onclick={() => (open = !open)}
-		class="inline-flex min-w-26 items-center justify-between gap-2 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium text-foreground transition hover:bg-accent/60 focus:border-ring disabled:cursor-not-allowed disabled:opacity-50"
+		class="inline-flex min-w-26 items-center justify-between gap-2 rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground transition hover:bg-accent/60 focus:border-ring disabled:cursor-not-allowed disabled:opacity-50"
 	>
 		<span>{activeLabel}</span>
 		<ChevronDown class="h-3 w-3 text-muted-foreground transition-transform {open ? 'rotate-180' : ''}" />

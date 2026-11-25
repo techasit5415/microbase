@@ -128,7 +128,16 @@
 	}
 }
 
-html { font-size: 17.5px; }
+html { font-size: 18px; }
+
+:root {
+	--text-xs: 0.875rem;
+	--text-xs--line-height: 1.45;
+	--text-sm: 0.96rem;
+	--text-sm--line-height: 1.5;
+	--text-base: 1.08rem;
+	--text-base--line-height: 1.5;
+}
 
 @keyframes mbFadeIn {
 	from { opacity: 0; }

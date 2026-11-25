@@ -189,22 +189,22 @@
 				/>
 			</div>
 		{:else if field.type === 'autodate'}
-			<span class="rounded bg-muted px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
+			<span class="rounded bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground">
 				{field.on_update ? 'Create/Update' : 'Create'}
 			</span>
 		{:else}
-			<span class="rounded bg-muted px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
+			<span class="rounded bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground">
 				{field.type}
 			</span>
 		{/if}
 
 		{#if field.required}
-			<span class="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+			<span class="rounded bg-emerald-500/15 px-1.5 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
 				Req
 			</span>
 		{/if}
 		{#if field.hidden}
-			<span class="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+			<span class="rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
 				Hidden
 			</span>
 		{/if}
@@ -235,7 +235,7 @@
 			{#if field.type === 'relation'}
 				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					<div>
-						<div class="mb-1 text-[11px] font-medium text-muted-foreground">
+						<div class="mb-1 text-xs font-medium text-muted-foreground">
 							Target collection <span class="text-destructive">*</span>
 						</div>
 						<Select
@@ -257,12 +257,12 @@
 
 			{#if field.type === 'select'}
 				<div>
-					<div class="mb-1.5 text-[11px] font-medium text-muted-foreground">
+					<div class="mb-1.5 text-xs font-medium text-muted-foreground">
 						Choices <span class="text-destructive">*</span>
 					</div>
 					<div class="flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-background p-2">
 						{#each field.values ?? [] as choice (choice)}
-							<span class="inline-flex items-center gap-1 rounded border border-border bg-muted/60 px-2 py-0.5 font-mono text-[11px]">
+							<span class="inline-flex items-center gap-1 rounded border border-border bg-muted/60 px-2 py-0.5 font-mono text-xs">
 								{choice}
 								<button
 									type="button"
@@ -291,7 +291,7 @@
 								}
 							}}
 							placeholder="Type choice + Enter (e.g. draft, published)..."
-							class="min-w-[180px] flex-1 bg-transparent px-1 py-0.5 font-mono text-[11px] outline-none"
+							class="min-w-[180px] flex-1 bg-transparent px-1 py-0.5 font-mono text-xs outline-none"
 						/>
 					</div>
 				</div>
@@ -299,10 +299,10 @@
 
 			{#if field.type === 'file'}
 				<div>
-					<div class="mb-1.5 text-[11px] font-medium text-muted-foreground">Allowed mime types</div>
+					<div class="mb-1.5 text-xs font-medium text-muted-foreground">Allowed mime types</div>
 					<div class="flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-background p-2">
 						{#each field.mime_types ?? [] as mime (mime)}
-							<span class="inline-flex items-center gap-1 rounded border border-border bg-muted/60 px-2 py-0.5 text-[11px]">
+							<span class="inline-flex items-center gap-1 rounded border border-border bg-muted/60 px-2 py-0.5 text-xs">
 								{#if mimeShortExt(mime)}
 									<strong class="font-semibold">{mimeShortExt(mime)}</strong>
 								{/if}
@@ -328,16 +328,16 @@
 								}
 							}}
 							placeholder="Add mime type + Enter..."
-							class="min-w-[140px] flex-1 bg-transparent px-1 py-0.5 font-mono text-[11px] outline-none"
+							class="min-w-[140px] flex-1 bg-transparent px-1 py-0.5 font-mono text-xs outline-none"
 						/>
 					</div>
-					<div class="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+					<div class="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
 						<span>Presets:</span>
 						{#each Object.keys(mimePresets) as preset (preset)}
 							<button
 								type="button"
 								onclick={() => applyPreset(preset)}
-								class="cursor-pointer rounded border border-border bg-background px-2 py-0.5 text-[10px] font-medium text-foreground transition hover:bg-accent"
+								class="cursor-pointer rounded border border-border bg-background px-2 py-0.5 text-xs font-medium text-foreground transition hover:bg-accent"
 							>
 								+ {preset}
 							</button>
@@ -346,7 +346,7 @@
 							<button
 								type="button"
 								onclick={() => (field.mime_types = [])}
-								class="cursor-pointer text-[10px] text-muted-foreground underline hover:text-foreground"
+								class="cursor-pointer text-xs text-muted-foreground underline hover:text-foreground"
 							>
 								Clear
 							</button>
@@ -356,7 +356,7 @@
 
 				<div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
 					<div class="sm:col-span-2">
-						<div class="mb-1 text-[11px] font-medium text-muted-foreground">Thumb sizes</div>
+						<div class="mb-1 text-xs font-medium text-muted-foreground">Thumb sizes</div>
 						<input
 							type="text"
 							value={(field.thumbs ?? []).join(', ')}
@@ -371,7 +371,7 @@
 						/>
 					</div>
 					<div>
-						<div class="mb-1 text-[11px] font-medium text-muted-foreground">Max size (bytes)</div>
+						<div class="mb-1 text-xs font-medium text-muted-foreground">Max size (bytes)</div>
 						<input
 							type="number"
 							min="0"
@@ -398,7 +398,7 @@
 			{#if field.type === 'text'}
 				<div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
 					<div>
-						<div class="mb-1 text-[11px] font-medium text-muted-foreground">Min length</div>
+						<div class="mb-1 text-xs font-medium text-muted-foreground">Min length</div>
 						<input
 							type="number"
 							min="0"
@@ -412,7 +412,7 @@
 						/>
 					</div>
 					<div>
-						<div class="mb-1 text-[11px] font-medium text-muted-foreground">Max length</div>
+						<div class="mb-1 text-xs font-medium text-muted-foreground">Max length</div>
 						<input
 							type="number"
 							min="0"
@@ -426,7 +426,7 @@
 						/>
 					</div>
 					<div>
-						<div class="mb-1 text-[11px] font-medium text-muted-foreground">Validation pattern</div>
+						<div class="mb-1 text-xs font-medium text-muted-foreground">Validation pattern</div>
 						<input
 							type="text"
 							value={field.pattern ?? ''}
@@ -441,7 +441,7 @@
 			{#if field.type === 'number' || field.type === 'integer' || field.type === 'float'}
 				<div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
 					<div>
-						<div class="mb-1 text-[11px] font-medium text-muted-foreground">Min</div>
+						<div class="mb-1 text-xs font-medium text-muted-foreground">Min</div>
 						<input
 							type="number"
 							step="any"
@@ -455,7 +455,7 @@
 						/>
 					</div>
 					<div>
-						<div class="mb-1 text-[11px] font-medium text-muted-foreground">Max</div>
+						<div class="mb-1 text-xs font-medium text-muted-foreground">Max</div>
 						<input
 							type="number"
 							step="any"
@@ -481,7 +481,7 @@
 			{#if field.type === 'email' || field.type === 'url'}
 				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					<div>
-						<div class="mb-1 text-[11px] font-medium text-muted-foreground">Only domains</div>
+						<div class="mb-1 text-xs font-medium text-muted-foreground">Only domains</div>
 						<input
 							type="text"
 							value={(field.only_domains ?? []).join(', ')}
@@ -496,7 +496,7 @@
 						/>
 					</div>
 					<div>
-						<div class="mb-1 text-[11px] font-medium text-muted-foreground">Except domains</div>
+						<div class="mb-1 text-xs font-medium text-muted-foreground">Except domains</div>
 						<input
 							type="text"
 							value={(field.except_domains ?? []).join(', ')}
@@ -530,7 +530,7 @@
 
 			{#if field.type === 'editor' || field.type === 'json'}
 				<div>
-					<div class="mb-1 text-[11px] font-medium text-muted-foreground">Max size (bytes)</div>
+					<div class="mb-1 text-xs font-medium text-muted-foreground">Max size (bytes)</div>
 					<input
 						type="number"
 						min="0"
@@ -562,7 +562,7 @@
 
 			<!-- Help text -->
 			<div>
-				<div class="mb-1 text-[11px] font-medium text-muted-foreground">Help text</div>
+				<div class="mb-1 text-xs font-medium text-muted-foreground">Help text</div>
 				<input
 					type="text"
 					value={field.help_text ?? ''}

@@ -207,7 +207,7 @@
 								<div class="text-xs font-medium">
 									{field.name}{field.required ? ' *' : ''}
 								</div>
-								<div class="text-[11px] text-muted-foreground">boolean</div>
+								<div class="text-xs text-muted-foreground">boolean</div>
 							</div>
 							<Switch
 								checked={Boolean(boolValues[field.name])}
@@ -220,7 +220,7 @@
 								<span class="font-medium">
 									{field.name}{#if field.required}<span class="text-destructive"> *</span>{/if}
 								</span>
-								<span class="font-mono text-[11px] text-muted-foreground">{field.type}</span>
+								<span class="font-mono text-xs text-muted-foreground">{field.type}</span>
 							</label>
 
 							{#if field.type === 'json' || field.type === 'geopoint' || field.type === 'editor'}

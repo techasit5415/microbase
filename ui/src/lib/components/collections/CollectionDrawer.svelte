@@ -208,7 +208,7 @@
 	<div class="px-6 pb-4">
 		<div class="flex items-center justify-between rounded-md border border-border bg-muted/40 px-3.5 py-2">
 			<div class="min-w-0 flex-1">
-				<label for="col-name" class="block text-[11px] font-medium text-muted-foreground">
+				<label for="col-name" class="block text-xs font-medium text-muted-foreground">
 					Name <span class="text-destructive">*</span>
 				</label>
 				<input
@@ -357,7 +357,7 @@
 												delete next[r.key];
 												apiRules = next;
 											}}
-											class="inline-flex cursor-pointer items-center gap-1 rounded border border-border bg-background px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
+											class="inline-flex cursor-pointer items-center gap-1 rounded border border-border bg-background px-2 py-0.5 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
 										>
 											<Lock class="h-3 w-3" />
 											Set Superusers only
@@ -368,7 +368,7 @@
 											onclick={() => {
 												apiRules = { ...apiRules, [r.key]: '' };
 											}}
-											class="inline-flex cursor-pointer items-center gap-1 rounded border border-border bg-background px-2.5 py-0.5 text-[11px] font-medium text-foreground transition hover:bg-accent"
+											class="inline-flex cursor-pointer items-center gap-1 rounded border border-border bg-background px-2.5 py-0.5 text-xs font-medium text-foreground transition hover:bg-accent"
 										>
 											<LockOpen class="h-3 w-3" />
 											Unlock
@@ -390,7 +390,7 @@
 									class="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs outline-none focus:border-ring disabled:opacity-60"
 								/>
 							{:else}
-								<div class="mt-1.5 text-[11px] text-muted-foreground">
+								<div class="mt-1.5 text-xs text-muted-foreground">
 									Locked — only <code class="rounded bg-muted px-1">_superusers</code> can access this endpoint.
 								</div>
 							{/if}

@@ -112,7 +112,7 @@
 							>
 								<td class="px-5 py-2.5">
 									<span
-										class="rounded px-2 py-0.5 text-[11px] font-semibold {row.status >= 500
+										class="rounded px-2 py-0.5 text-xs font-semibold {row.status >= 500
 											? 'bg-destructive/15 text-destructive'
 											: row.status >= 400
 												? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
@@ -125,7 +125,7 @@
 								<td class="max-w-xs truncate px-4 py-2.5 text-foreground" title={row.path}>{row.path}</td>
 								<td class="px-4 py-2.5">
 									<span
-										class="rounded px-1.5 py-0.5 text-[11px] {row.status >= 400
+										class="rounded px-1.5 py-0.5 text-xs {row.status >= 400
 											? 'bg-destructive/10 text-destructive'
 											: 'bg-muted text-muted-foreground'}"
 									>

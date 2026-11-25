@@ -116,7 +116,7 @@
 				</div>
 
 				<div class="flex items-center gap-2">
-					<label for="idx-name" class="text-[11px] text-muted-foreground">Name</label>
+					<label for="idx-name" class="text-xs text-muted-foreground">Name</label>
 					<input
 						id="idx-name"
 						type="text"
@@ -145,7 +145,7 @@
 						<button
 							type="button"
 							onclick={() => toggleColumn(col)}
-							class="cursor-pointer rounded-md border px-2.5 py-1 font-mono text-[11px] transition {active
+							class="cursor-pointer rounded-md border px-2.5 py-1 font-mono text-xs transition {active
 								? 'border-foreground bg-foreground text-background'
 								: 'border-border bg-muted/40 text-foreground hover:bg-accent'}"
 						>

@@ -92,7 +92,7 @@
 			</p>
 		</div>
 		<div class="flex items-center gap-2.5">
-			<span class="rounded border border-border bg-muted px-2 py-0.5 font-mono text-[11px] uppercase">
+			<span class="rounded border border-border bg-muted px-2 py-0.5 font-mono text-xs uppercase">
 				{backend}
 			</span>
 			<Switch checked={enabled} onChange={(v) => (enabled = v)} />
