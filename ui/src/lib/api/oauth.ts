@@ -7,13 +7,11 @@ export interface OAuthProvider {
 	client_id: string;
 	has_secret: boolean;
 	issuer_url?: string;
-}
-
-export interface UpdateOAuthProviderInput {
-	enabled: boolean;
-	client_id: string;
-	client_secret: string;
-	issuer_url: string;
+	auth_url?: string;
+	token_url?: string;
+	userinfo_url?: string;
+	scopes?: string;
+	field_mapping?: Record<string, string>;
 }
 
 export async function listOAuthProviders(): Promise<OAuthProvider[]> {
@@ -23,10 +21,21 @@ export async function listOAuthProviders(): Promise<OAuthProvider[]> {
 
 export async function updateOAuthProvider(
 	name: string,
-	input: UpdateOAuthProviderInput
+	payload: {
+		display_name?: string;
+		enabled: boolean;
+		client_id: string;
+		client_secret?: string;
+		issuer_url?: string;
+		auth_url?: string;
+		token_url?: string;
+		userinfo_url?: string;
+		scopes?: string;
+		field_mapping?: Record<string, string>;
+	}
 ): Promise<OAuthProvider> {
 	return apiRequest<OAuthProvider>(`/api/oauth/providers/${encodeURIComponent(name)}`, {
 		method: 'PUT',
-		body: JSON.stringify(input)
+		body: JSON.stringify(payload)
 	});
 }

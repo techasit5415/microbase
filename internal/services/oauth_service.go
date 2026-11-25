@@ -31,10 +31,16 @@ var (
 
 // UpdateProviderRequest is the payload accepted by PUT /api/oauth/providers/:name.
 type UpdateProviderRequest struct {
-	Enabled      bool   `json:"enabled"`
-	ClientID     string `json:"client_id"`
-	ClientSecret string `json:"client_secret"`
-	IssuerURL    string `json:"issuer_url"`
+	DisplayName  string            `json:"display_name"`
+	Enabled      bool              `json:"enabled"`
+	ClientID     string            `json:"client_id"`
+	ClientSecret string            `json:"client_secret"`
+	IssuerURL    string            `json:"issuer_url"`
+	AuthURL      string            `json:"auth_url"`
+	TokenURL     string            `json:"token_url"`
+	UserInfoURL  string            `json:"userinfo_url"`
+	Scopes       string            `json:"scopes"`
+	FieldMapping map[string]string `json:"field_mapping"`
 }
 
 // AuthMethodProvider describes an enabled OAuth2/OIDC provider for client discovery.
@@ -79,7 +85,8 @@ func NewOAuthService(pool *pgxpool.Pool, c cache.CacheStore, authSvc *AuthServic
 // ListProviders returns all OAuth2/OIDC provider configurations with secrets masked.
 func (s *OAuthService) ListProviders(ctx context.Context) ([]oauth.ProviderConfig, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT name, display_name, enabled, client_id, client_secret, issuer_url
+		SELECT name, display_name, enabled, client_id, client_secret, issuer_url,
+		       auth_url, token_url, userinfo_url, scopes, field_mapping
 		FROM _oauth_providers
 		ORDER BY name ASC`)
 	if err != nil {
@@ -91,10 +98,12 @@ func (s *OAuthService) ListProviders(ctx context.Context) ([]oauth.ProviderConfi
 	for rows.Next() {
 		var p oauth.ProviderConfig
 		var secret string
-		if err := rows.Scan(&p.Name, &p.DisplayName, &p.Enabled, &p.ClientID, &secret, &p.IssuerURL); err != nil {
+		var rawMap []byte
+		if err := rows.Scan(&p.Name, &p.DisplayName, &p.Enabled, &p.ClientID, &secret, &p.IssuerURL, &p.AuthURL, &p.TokenURL, &p.UserInfoURL, &p.Scopes, &rawMap); err != nil {
 			return nil, err
 		}
 		p.HasSecret = secret != ""
+		_ = json.Unmarshal(rawMap, &p.FieldMapping)
 		list = append(list, p)
 	}
 	return list, rows.Err()
@@ -261,11 +270,13 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, code string) (*models.A
 
 func (s *OAuthService) getProviderConfig(ctx context.Context, name string) (*oauth.ProviderConfig, error) {
 	var p oauth.ProviderConfig
+	var rawMap []byte
 	err := s.pool.QueryRow(ctx, `
-		SELECT name, display_name, enabled, client_id, client_secret, issuer_url
+		SELECT name, display_name, enabled, client_id, client_secret, issuer_url,
+		       auth_url, token_url, userinfo_url, scopes, field_mapping
 		FROM _oauth_providers
 		WHERE name = $1`, name,
-	).Scan(&p.Name, &p.DisplayName, &p.Enabled, &p.ClientID, &p.ClientSecret, &p.IssuerURL)
+	).Scan(&p.Name, &p.DisplayName, &p.Enabled, &p.ClientID, &p.ClientSecret, &p.IssuerURL, &p.AuthURL, &p.TokenURL, &p.UserInfoURL, &p.Scopes, &rawMap)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrProviderNotFound
 	}
@@ -273,6 +284,7 @@ func (s *OAuthService) getProviderConfig(ctx context.Context, name string) (*oau
 		return nil, err
 	}
 	p.HasSecret = p.ClientSecret != ""
+	_ = json.Unmarshal(rawMap, &p.FieldMapping)
 	return &p, nil
 }
 
@@ -324,6 +336,7 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, ext *oauth.External
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
+	s.syncExtraFields(ctx, user.ID, ext.ExtraFields)
 	return &user, nil
 }
 
@@ -334,4 +347,16 @@ func generateRandomHex(n int) string {
 	b := make([]byte, n)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+func (s *OAuthService) syncExtraFields(ctx context.Context, userID int64, extra map[string]any) {
+	if len(extra) == 0 {
+		return
+	}
+	for col, val := range extra {
+		if !models.IsValidIdentifier(col) || col == "id" || col == "email" || col == "password_hash" || col == "role" {
+			continue
+		}
+		_, _ = s.pool.Exec(ctx, fmt.Sprintf(`UPDATE _users SET "%s" = $2, updated_at = NOW() WHERE id = $1`, col), userID, val)
+	}
 }

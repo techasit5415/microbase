@@ -5,25 +5,31 @@ import (
 	"fmt"
 )
 
-// ProviderConfig holds persisted settings for an OAuth2/OIDC provider.
+// ProviderConfig holds persisted settings for an OAuth2/OIDC or Custom IAM provider.
 type ProviderConfig struct {
-	Name         string `json:"name"`
-	DisplayName  string `json:"display_name"`
-	Enabled      bool   `json:"enabled"`
-	ClientID     string `json:"client_id"`
-	ClientSecret string `json:"client_secret,omitempty"`
-	HasSecret    bool   `json:"has_secret"`
-	IssuerURL    string `json:"issuer_url,omitempty"`
+	Name         string            `json:"name"`
+	DisplayName  string            `json:"display_name"`
+	Enabled      bool              `json:"enabled"`
+	ClientID     string            `json:"client_id"`
+	ClientSecret string            `json:"client_secret,omitempty"`
+	HasSecret    bool              `json:"has_secret"`
+	IssuerURL    string            `json:"issuer_url,omitempty"`
+	AuthURL      string            `json:"auth_url,omitempty"`
+	TokenURL     string            `json:"token_url,omitempty"`
+	UserInfoURL  string            `json:"userinfo_url,omitempty"`
+	Scopes       string            `json:"scopes,omitempty"`
+	FieldMapping map[string]string `json:"field_mapping,omitempty"`
 }
 
-// ExternalUser represents normalized identity data returned by an external IdP.
+// ExternalUser represents normalized identity data + mapped custom claims returned by an external IdP.
 type ExternalUser struct {
 	Provider       string
 	ProviderUserID string
 	Email          string
+	ExtraFields    map[string]any
 }
 
-// Provider defines the contract implemented by Google, Discord, and Generic OIDC.
+// Provider defines the contract implemented by Google, Discord, and Generic OIDC / Custom IAM.
 type Provider interface {
 	AuthURL(state string) string
 	ExchangeUser(ctx context.Context, code string) (*ExternalUser, error)
@@ -44,7 +50,7 @@ func BuildProvider(ctx context.Context, cfg ProviderConfig, redirectURL string) 
 	case "discord":
 		return NewDiscordProvider(cfg.ClientID, cfg.ClientSecret, redirectURL), nil
 	case "oidc":
-		return NewOIDCProvider(ctx, cfg.IssuerURL, cfg.ClientID, cfg.ClientSecret, redirectURL)
+		return NewOIDCProvider(ctx, cfg, redirectURL)
 	default:
 		return nil, fmt.Errorf("unsupported oauth provider %q", cfg.Name)
 	}

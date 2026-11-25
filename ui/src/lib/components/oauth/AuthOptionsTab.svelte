@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Check, ChevronDown, Copy, ExternalLink, KeyRound, Lock } from '@lucide/svelte';
+	import { Check, ChevronDown, Copy, ExternalLink, KeyRound, Lock, Plus, Trash2 } from '@lucide/svelte';
 	import {
 		listOAuthProviders,
 		updateOAuthProvider,
@@ -18,7 +18,13 @@
 	let enabled = $state(false);
 	let clientId = $state('');
 	let clientSecret = $state('');
+	let displayName = $state('');
 	let issuerUrl = $state('');
+	let authUrl = $state('');
+	let tokenUrl = $state('');
+	let userInfoUrl = $state('');
+	let scopes = $state('openid email profile');
+	let mappingRows = $state<{ col: string; path: string }[]>([]);
 	let saving = $state(false);
 	let copied = $state(false);
 	let errorMsg = $state('');
@@ -63,7 +69,13 @@
 		enabled = p.enabled;
 		clientId = p.client_id;
 		clientSecret = '';
+		displayName = p.display_name ?? '';
 		issuerUrl = p.issuer_url ?? '';
+		authUrl = p.auth_url ?? '';
+		tokenUrl = p.token_url ?? '';
+		userInfoUrl = p.userinfo_url ?? '';
+		scopes = p.scopes || 'openid email profile';
+		mappingRows = Object.entries(p.field_mapping ?? {}).map(([col, path]) => ({ col, path }));
 		errorMsg = '';
 	}
 
@@ -227,15 +239,61 @@
 							</div>
 
 							{#if editingProvider.name === 'oidc'}
-								<div>
-									<label for="oa-issuer" class="mb-1 block text-xs text-muted-foreground">OIDC Issuer URL</label>
-									<input
-										id="oa-issuer"
-										type="url"
-										bind:value={issuerUrl}
-										placeholder="https://issuer.example.com"
-										class="w-full rounded-md border border-input bg-background px-3 py-2 text-xs outline-none focus:border-ring"
-									/>
+								<div class="space-y-3 rounded-md border border-border bg-muted/25 p-3.5">
+									<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+										<div>
+											<label for="oa-dname" class="mb-1 block text-xs font-medium">Display name</label>
+											<input id="oa-dname" type="text" bind:value={displayName} placeholder="e.g. KMITL IAM" class="w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs outline-none focus:border-ring" />
+										</div>
+										<div>
+											<label for="oa-scopes" class="mb-1 block text-xs font-medium">Scopes</label>
+											<input id="oa-scopes" type="text" bind:value={scopes} placeholder="openid email profile" class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring" />
+										</div>
+									</div>
+									<div>
+										<label for="oa-issuer" class="mb-1 block text-xs font-medium">OIDC Issuer URL (auto-discovery, optional if manual URLs set)</label>
+										<input id="oa-issuer" type="url" bind:value={issuerUrl} placeholder="https://api.science.kmitl.ac.th/iam" class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring" />
+									</div>
+									<div class="grid grid-cols-1 gap-2.5">
+										<div>
+											<label for="oa-auth" class="mb-1 block text-xs font-medium">Auth URL (manual override)</label>
+											<input id="oa-auth" type="url" bind:value={authUrl} placeholder="https://api.science.kmitl.ac.th/iam/oauth/authorize" class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring" />
+										</div>
+										<div>
+											<label for="oa-token" class="mb-1 block text-xs font-medium">Token URL (manual override)</label>
+											<input id="oa-token" type="url" bind:value={tokenUrl} placeholder="https://api.science.kmitl.ac.th/iam/oauth/token" class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring" />
+										</div>
+										<div>
+											<label for="oa-userinfo" class="mb-1 block text-xs font-medium">UserInfo / Profile API URL</label>
+											<input id="oa-userinfo" type="url" bind:value={userInfoUrl} placeholder="https://api.science.kmitl.ac.th/iam/o/v2/students" class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring" />
+										</div>
+									</div>
+
+									<!-- IAM Claim -> _users Column Mapping -->
+									<div class="border-t border-border pt-3">
+										<div class="mb-2 flex items-center justify-between">
+											<span class="text-xs font-semibold">Claim / Field Mapping (IAM JSON Path &rarr; _users column)</span>
+											<button type="button" onclick={() => (mappingRows = [...mappingRows, { col: '', path: '' }])} class="inline-flex cursor-pointer items-center gap-1 rounded border border-border bg-card px-2 py-0.5 text-xs font-medium hover:bg-muted">
+												<Plus class="h-3 w-3" /> Add mapping
+											</button>
+										</div>
+										{#if mappingRows.length === 0}
+											<p class="text-xs text-muted-foreground">Example: <code>sub &larr; student_id</code>, <code>name &larr; firstname_th</code>, <code>department &larr; department.name</code></p>
+										{:else}
+											<div class="space-y-1.5">
+												{#each mappingRows as row, idx (idx)}
+													<div class="flex items-center gap-2">
+														<input type="text" bind:value={row.col} placeholder="_users col (e.g. name, sub)" class="w-1/2 rounded border border-input bg-background px-2.5 py-1 font-mono text-xs outline-none focus:border-ring" />
+														<span class="text-xs text-muted-foreground">&larr;</span>
+														<input type="text" bind:value={row.path} placeholder="IAM path (e.g. firstname_th)" class="w-1/2 rounded border border-input bg-background px-2.5 py-1 font-mono text-xs outline-none focus:border-ring" />
+														<button type="button" onclick={() => (mappingRows = mappingRows.filter((_, i) => i !== idx))} class="cursor-pointer rounded p-1 text-muted-foreground hover:text-destructive">
+															<Trash2 class="h-3.5 w-3.5" />
+														</button>
+													</div>
+												{/each}
+											</div>
+										{/if}
+									</div>
 								</div>
 							{/if}
 
