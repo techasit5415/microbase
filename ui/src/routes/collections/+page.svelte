@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { fade } from 'svelte/transition';
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page as pageState } from '$app/state';
 	import { deleteCollection, listCollections } from '#lib/api/collections.ts';
@@ -100,9 +100,12 @@
 	// Automatically reload records whenever URL ?collection=... changes (including Back/Forward!)
 	$effect(() => {
 		const target = activeCol;
-		currentPage = 1;
-		search = '';
-		refreshRecords(target);
+		void target.name;
+		untrack(() => {
+			currentPage = 1;
+			search = '';
+			refreshRecords(target);
+		});
 	});
 
 	function handleSelectCollection(name: string) {

@@ -18,7 +18,6 @@
 		Share2,
 		Sparkles,
 		ToggleLeft,
-		Trash2,
 		Type,
 		X
 	} from '@lucide/svelte';
@@ -153,7 +152,15 @@
 </script>
 
 <div class="{stacked ? 'bg-muted/35 hover:bg-muted/55' : 'rounded-md border border-border bg-background/80'} transition">
-	<div class="group relative flex items-center gap-2.5 px-3 py-2">
+	<div
+		role="presentation"
+		onclick={(e) => {
+			const el = e.target as HTMLElement | null;
+			if (el?.closest('input, textarea, select, button, [role="listbox"], [role="option"]')) return;
+			expanded = !expanded;
+		}}
+		class="group relative flex cursor-pointer items-center gap-2.5 px-3 py-2"
+	>
 		<span
 			title="Drag to reorder field"
 			class="absolute top-1/2 -left-5 flex h-8 w-5 -translate-y-1/2 cursor-grab items-center justify-center text-muted-foreground/60 opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-foreground active:cursor-grabbing"
@@ -317,14 +324,7 @@
 			<Settings2 class="h-3.5 w-3.5" />
 		</button>
 
-		<button
-			type="button"
-			onclick={onRemove}
-			title="Remove field"
-			class="cursor-pointer rounded p-1.5 text-muted-foreground transition hover:bg-destructive/15 hover:text-destructive"
-		>
-			<Trash2 class="h-3.5 w-3.5" />
-		</button>
+
 	</div>
 
 	{#if expanded}
