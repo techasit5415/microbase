@@ -19,6 +19,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/techasit5415/microbase/internal/middlewares"
 	"github.com/techasit5415/microbase/internal/response"
+	"github.com/techasit5415/microbase/internal/services"
 )
 
 type MailConfig struct {
@@ -487,4 +488,28 @@ func (h *OpsController) UpdateDatabase(c echo.Context) error {
 		"port":             req.Port,
 		"database":         req.Database,
 	})
+}
+
+
+// GetAppSettings handles GET /api/settings/app (public-safe UI branding + settings).
+func (h *OpsController) GetAppSettings(c echo.Context) error {
+	return response.OK(c, services.GetCachedAppSettings())
+}
+
+// UpdateAppSettings handles PUT /api/settings/app (Superuser only — persisted to _settings and hot-reloaded).
+func (h *OpsController) UpdateAppSettings(c echo.Context) error {
+	var req services.AppSettings
+	if err := c.Bind(&req); err != nil {
+		return response.Error(c, http.StatusBadRequest, "INVALID_JSON", "invalid application settings payload")
+	}
+	services.SetCachedAppSettings(req)
+	saved := services.GetCachedAppSettings()
+	raw, _ := json.Marshal(saved)
+	_, err := h.pool.Exec(c.Request().Context(), `
+		INSERT INTO _settings (key, value, updated_at) VALUES ('app_settings', $1, NOW())
+		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`, string(raw))
+	if err != nil {
+		return response.Error(c, http.StatusInternalServerError, "DB_ERROR", err.Error())
+	}
+	return response.OK(c, saved)
 }

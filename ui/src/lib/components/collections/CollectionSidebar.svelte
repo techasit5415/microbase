@@ -3,6 +3,7 @@
 	import { slide } from 'svelte/transition';
 	import { ChevronUp, Folder, Plus, Search, Users } from '@lucide/svelte';
 	import type { Collection } from '#lib/api/types.ts';
+	import { appSettings } from '#lib/stores/appSettings.svelte.ts';
 	import CollectionItem from './CollectionItem.svelte';
 
 	interface Props {
@@ -42,7 +43,7 @@
 				collection={col}
 				active={activeName === col.name}
 				{onSelect}
-				onDelete={col.type === 'auth' ? undefined : onDelete}
+				onDelete={col.type === 'auth' || appSettings.data.hide_controls ? undefined : onDelete}
 			/>
 		{/each}
 
@@ -81,6 +82,7 @@
 		</div>
 	</div>
 
+	{#if !appSettings.data.hide_controls}
 	<div class="flex h-14 shrink-0 items-center border-t border-border px-3">
 		<button
 			type="button"
@@ -91,4 +93,5 @@
 			New collection
 		</button>
 	</div>
+	{/if}
 </aside>

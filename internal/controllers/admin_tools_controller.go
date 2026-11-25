@@ -12,6 +12,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/techasit5415/microbase/internal/middlewares"
 	"github.com/techasit5415/microbase/internal/response"
+	"github.com/techasit5415/microbase/internal/services"
 )
 
 // AdminToolsController provides Superuser power tools: SQL Console and Batch API.
@@ -87,6 +88,10 @@ func (h *AdminToolsController) ExecuteSQL(c echo.Context) error {
 
 // Batch handles POST /api/batch — executes multiple sub-requests against Echo in sequence.
 func (h *AdminToolsController) Batch(c echo.Context) error {
+	appCfg := services.GetCachedAppSettings()
+	if !appCfg.Batch.Enabled {
+		return response.Error(c, http.StatusForbidden, "BATCH_DISABLED", "batch web API is disabled in application settings")
+	}
 	var req struct {
 		Requests []struct {
 			Method string         `json:"method"`

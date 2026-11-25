@@ -58,6 +58,9 @@ func RequireSuperuser(authSvc *services.AuthService) echo.MiddlewareFunc {
 			if claims.Role != "superuser" {
 				return response.Error(c, http.StatusForbidden, "FORBIDDEN", "only superusers can access this endpoint")
 			}
+			if !services.IsSuperuserIPAllowed(services.RealClientIP(c)) {
+				return response.Error(c, http.StatusForbidden, "IP_NOT_ALLOWED", "superuser access is restricted to allowed IP addresses")
+			}
 
 			c.Set(contextUserKey, claims)
 			return next(c)

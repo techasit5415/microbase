@@ -1,5 +1,6 @@
 <script lang="ts">
 	import './layout.css';
+	import { onMount } from 'svelte';
 	import { cubicOut } from 'svelte/easing';
 	import { fly } from 'svelte/transition';
 	import { page } from '$app/state';
@@ -7,8 +8,13 @@
 	import SuperuserGate from '#lib/components/layout/SuperuserGate.svelte';
 	import ConfirmDialog from '#lib/components/ui/ConfirmDialog.svelte';
 	import Toaster from '#lib/components/ui/Toaster.svelte';
+	import { appSettings } from '#lib/stores/appSettings.svelte.ts';
 
 	let { children } = $props();
+
+	onMount(() => {
+		appSettings.load();
+	});
 </script>
 
 <svelte:head>

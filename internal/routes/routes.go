@@ -33,6 +33,7 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStor
 
 	if pool != nil {
 		middlewares.SetLogPool(pool)
+		services.LoadAppSettingsFromDB(context.Background(), pool)
 		hub := realtime.NewHub()
 		webhookService := services.NewWebhookService(pool)
 		colService := services.NewCollectionService(pool, cacheStore)
@@ -73,6 +74,8 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStor
 
 		// OpenAPI 3.0 Spec & Batch.
 		api.GET("/openapi.json", openapiCtrl.Spec)
+		api.GET("/settings/app", opsCtrl.GetAppSettings)
+		api.PUT("/settings/app", opsCtrl.UpdateAppSettings, adminOnly)
 		api.POST("/batch", toolsCtrl.Batch, middlewares.OptionalAuth(authService))
 
 		// Superuser-only Settings, Backups, Crons, SQL.
