@@ -24,8 +24,8 @@
 	);
 </script>
 
-<aside class="flex w-60 shrink-0 flex-col border-r border-border bg-card">
-	<div class="border-b border-border p-3">
+<aside class="flex h-full min-h-0 w-60 shrink-0 flex-col overflow-hidden border-r border-border bg-card">
+	<div class="shrink-0 border-b border-border p-3">
 		<div class="relative">
 			<Search class="pointer-events-none absolute top-2.5 left-2.5 h-3.5 w-3.5 text-muted-foreground" />
 			<input
@@ -37,7 +37,7 @@
 		</div>
 	</div>
 
-	<div class="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2.5">
+	<div class="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2.5">
 		{#each filtered as col (col.name)}
 			<CollectionItem
 				collection={col}
@@ -48,7 +48,7 @@
 		{/each}
 
 		<!-- Collapsible System section (PocketBase style) -->
-		<div class="mt-4 pt-2">
+		<div class="mt-4 shrink-0 pt-2">
 			<button
 				type="button"
 				onclick={() => (showSystem = !showSystem)}
