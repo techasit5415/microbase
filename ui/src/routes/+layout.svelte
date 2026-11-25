@@ -1,13 +1,17 @@
 <script lang="ts">
 	import './layout.css';
-	import favicon from '#lib/assets/favicon.svg';
-	import type { LayoutProps } from './$types';
+	import IconRail from '#lib/components/layout/IconRail.svelte';
 
-	let { children }: LayoutProps = $props();
+	let { children } = $props();
 </script>
 
 <svelte:head>
-	<link rel="icon" href={favicon} />
+	<title>Microbase Admin</title>
 </svelte:head>
 
-{@render children()}
+<div class="flex h-screen w-screen overflow-hidden bg-background text-foreground">
+	<IconRail />
+	<div class="flex min-w-0 flex-1 overflow-hidden">
+		{@render children()}
+	</div>
+</div>
