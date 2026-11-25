@@ -21,7 +21,7 @@ func Connect(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 	}
 	// Use unnamed parameterized statements so dynamic ALTER TABLE DDL never hits
 	// PostgreSQL SQLSTATE 0A000 ("cached plan must not change result type").
-	poolCfg.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeExec
+	poolCfg.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeDescribeExec
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
