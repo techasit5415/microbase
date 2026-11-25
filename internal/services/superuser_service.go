@@ -2,29 +2,94 @@ package services
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
 	"errors"
 	"fmt"
+	"math/big"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/techasit5415/microbase/internal/cache"
 	"github.com/techasit5415/microbase/internal/models"
 )
 
-// SuperuserService manages _superusers admin accounts separately from app _users.
+const (
+	setupOTPKey = "microbase:setup_otp"
+	setupOTPTTL = 5 * time.Minute
+)
+
+var (
+	ErrSetupLocked     = errors.New("superuser setup is locked because a superuser already exists")
+	ErrInvalidSetupOTP = errors.New("invalid or expired 8-digit setup OTP (restart server for a new OTP)")
+)
+
+// SuperuserSetupRequest is the payload accepted by POST /api/superusers/setup.
+type SuperuserSetupRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+	OTP      string `json:"otp"`
+}
+
+// SuperuserService manages _superusers admin accounts and first-run OTP setup.
 type SuperuserService struct {
-	pool *pgxpool.Pool
-	auth *AuthService
+	pool  *pgxpool.Pool
+	auth  *AuthService
+	cache cache.CacheStore
 }
 
-// NewSuperuserService constructs a SuperuserService.
-func NewSuperuserService(pool *pgxpool.Pool, authSvc *AuthService) *SuperuserService {
-	return &SuperuserService{pool: pool, auth: authSvc}
+func NewSuperuserService(pool *pgxpool.Pool, authSvc *AuthService, c cache.CacheStore) *SuperuserService {
+	return &SuperuserService{pool: pool, auth: authSvc, cache: c}
 }
 
-// Setup creates a new superuser account (allowed when no superusers exist or by existing superuser).
-func (s *SuperuserService) Setup(ctx context.Context, req models.RegisterRequest) (*models.AuthResponse, error) {
+// HasSuperuser reports whether at least one superuser account exists.
+func (s *SuperuserService) HasSuperuser(ctx context.Context) (bool, error) {
+	var count int64
+	if err := s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM _superusers`).Scan(&count); err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// GenerateSetupOTP creates a cryptographically random 8-digit OTP valid for 30 minutes.
+func GenerateSetupOTP(ctx context.Context, c cache.CacheStore) (string, error) {
+	max := big.NewInt(100000000) // 0..99999999
+	n, err := rand.Int(rand.Reader, max)
+	if err != nil {
+		return "", err
+	}
+	otp := fmt.Sprintf("%08d", n.Int64())
+	if err := c.Set(ctx, setupOTPKey, otp, setupOTPTTL); err != nil {
+		return "", err
+	}
+	return otp, nil
+}
+
+// Setup creates the first superuser account after verifying the 8-digit 30m OTP and locks setup thereafter.
+func (s *SuperuserService) Setup(ctx context.Context, req SuperuserSetupRequest) (*models.AuthResponse, error) {
+	// 1. Strictly lock setup if any superuser already exists.
+	has, err := s.HasSuperuser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if has {
+		return nil, ErrSetupLocked
+	}
+
+	// 2. Verify 8-digit Setup OTP from CacheStore (30-minute TTL).
+	expectedOTP, err := s.cache.Get(ctx, setupOTPKey)
+	if err != nil || expectedOTP == "" {
+		return nil, ErrInvalidSetupOTP
+	}
+	providedOTP := strings.TrimSpace(req.OTP)
+	if len(providedOTP) != len(expectedOTP) || subtle.ConstantTimeCompare([]byte(providedOTP), []byte(expectedOTP)) != 1 {
+		return nil, ErrInvalidSetupOTP
+	}
+
+	// 3. Validate email and password.
 	email := strings.ToLower(strings.TrimSpace(req.Email))
 	if !strings.Contains(email, "@") || len(req.Password) < 8 {
 		return nil, fmt.Errorf("%w: valid email and password (min 8 chars) required", ErrInvalidInput)
@@ -50,6 +115,9 @@ func (s *SuperuserService) Setup(ctx context.Context, req models.RegisterRequest
 		}
 		return nil, fmt.Errorf("create superuser: %w", err)
 	}
+
+	// 4. Consume OTP immediately so it can never be reused.
+	_ = s.cache.Delete(ctx, setupOTPKey)
 
 	token, err := s.auth.GenerateToken(u)
 	if err != nil {
@@ -85,13 +153,4 @@ func (s *SuperuserService) Login(ctx context.Context, req models.LoginRequest) (
 		return nil, err
 	}
 	return &models.AuthResponse{Token: token, User: u}, nil
-}
-
-// HasSuperuser reports whether at least one superuser account has been initialized.
-func (s *SuperuserService) HasSuperuser(ctx context.Context) (bool, error) {
-	var count int64
-	if err := s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM _superusers`).Scan(&count); err != nil {
-		return false, err
-	}
-	return count > 0, nil
 }

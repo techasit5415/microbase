@@ -16,6 +16,7 @@ import (
 	"github.com/techasit5415/microbase/internal/config"
 	"github.com/techasit5415/microbase/internal/database"
 	"github.com/techasit5415/microbase/internal/routes"
+	"github.com/techasit5415/microbase/internal/services"
 )
 
 func main() {
@@ -37,16 +38,9 @@ func main() {
 		}
 		defer pool.Close()
 
-		// Load persisted Redis URL from _settings if configured via Admin UI.
 		var savedRedis string
 		if err := pool.QueryRow(ctx, `SELECT value FROM _settings WHERE key = 'redis_url'`).Scan(&savedRedis); err == nil && savedRedis != "" {
 			redisURL = savedRedis
-		}
-
-		// Print PocketBase-style first-run superuser setup banner if _superusers is empty.
-		var superCount int64
-		if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM _superusers`).Scan(&superCount); err == nil && superCount == 0 {
-			slog.Info("FIRST-TIME SETUP: open http://localhost:" + cfg.Port + "/_/ to create your first Superuser account")
 		}
 	} else {
 		slog.Warn("DATABASE_URL is not set; running without database")
@@ -54,6 +48,20 @@ func main() {
 
 	cacheStore := cache.NewSwitchableStore(cache.NewStore(ctx, redisURL))
 	defer cacheStore.Close()
+
+	// If no superuser exists yet, generate a 30-minute 8-digit Setup OTP and print it to the terminal.
+	if pool != nil {
+		var superCount int64
+		if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM _superusers`).Scan(&superCount); err == nil && superCount == 0 {
+			if otp, err := services.GenerateSetupOTP(ctx, cacheStore); err == nil {
+				slog.Info("FIRST-TIME SUPERUSER SETUP",
+					"otp", otp,
+					"expires_in", "5m",
+					"url", "http://localhost:"+cfg.Port+"/_/",
+				)
+			}
+		}
+	}
 
 	e := echo.New()
 	e.HideBanner = true

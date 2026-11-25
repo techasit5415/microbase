@@ -34,7 +34,7 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStor
 		colService := services.NewCollectionService(pool, cacheStore)
 		recService := services.NewRecordService(pool, colService, hub, webhookService)
 		authService := services.NewAuthService(pool, cfg.JWTSecret)
-		superService := services.NewSuperuserService(pool, authService)
+		superService := services.NewSuperuserService(pool, authService, cacheStore)
 		oauthService := services.NewOAuthService(pool, cacheStore, authService)
 
 		colCtrl := controllers.NewCollectionController(colService)
