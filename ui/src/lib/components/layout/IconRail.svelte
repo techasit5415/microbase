@@ -1,69 +1,59 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { Activity, Database, Layers, LogOut, Settings } from '@lucide/svelte';
+	import { Database, LogOut, ScrollText, Settings } from '@lucide/svelte';
 	import { ADMIN_TOKEN_KEY } from '#lib/api/client.ts';
 	import ThemeToggle from './ThemeToggle.svelte';
 
-	let pathname = $derived(page.url.pathname);
+	const navItems = [
+		{ href: '/_/collections', label: 'Collections', icon: Database, match: '/_/collections' },
+		{ href: '/_/logs', label: 'Logs', icon: ScrollText, match: '/_/logs' },
+		{ href: '/_/settings', label: 'Settings', icon: Settings, match: '/_/settings' }
+	];
 
-	function logout() {
+	function handleLogout() {
 		localStorage.removeItem(ADMIN_TOKEN_KEY);
 		window.location.reload();
 	}
 </script>
 
-<nav class="flex w-14 shrink-0 flex-col items-center justify-between border-r border-border bg-card py-3">
-	<div class="flex flex-col items-center gap-2.5">
+<aside class="flex h-full w-[72px] shrink-0 flex-col items-center justify-between border-r border-border bg-card py-4">
+	<div class="flex flex-col items-center gap-3">
+		<!-- Brand Mark -->
 		<a
 			href="/_/collections"
 			title="Microbase"
-			class="flex h-9 w-9 items-center justify-center rounded-md bg-foreground text-background shadow-xs"
+			class="mb-3 flex h-11 w-11 items-center justify-center rounded-lg border-2 border-foreground bg-card text-foreground transition hover:bg-muted"
 		>
-			<Database class="h-4 w-4" />
+			<Database class="h-5 w-5" />
 		</a>
 
-		<div class="my-1 h-px w-6 bg-border"></div>
-
-		<a
-			href="/_/collections"
-			title="Collections"
-			class="flex h-9 w-9 items-center justify-center rounded-md transition {pathname.includes('/collections')
-				? 'bg-accent text-foreground'
-				: 'text-muted-foreground hover:bg-accent hover:text-foreground'}"
-		>
-			<Layers class="h-4 w-4" />
-		</a>
-
-		<a
-			href="/_/logs"
-			title="Logs"
-			class="flex h-9 w-9 items-center justify-center rounded-md transition {pathname.includes('/logs')
-				? 'bg-accent text-foreground'
-				: 'text-muted-foreground hover:bg-accent hover:text-foreground'}"
-		>
-			<Activity class="h-4 w-4" />
-		</a>
-
-		<a
-			href="/_/settings"
-			title="Settings"
-			class="flex h-9 w-9 items-center justify-center rounded-md transition {pathname.includes('/settings')
-				? 'bg-accent text-foreground'
-				: 'text-muted-foreground hover:bg-accent hover:text-foreground'}"
-		>
-			<Settings class="h-4 w-4" />
-		</a>
+		<!-- Left Navigation Icons -->
+		<nav class="flex flex-col items-center gap-2">
+			{#each navItems as item (item.href)}
+				{@const active = page.url.pathname.startsWith(item.match)}
+				<a
+					href={item.href}
+					title={item.label}
+					class="flex h-11 w-11 items-center justify-center rounded-lg border transition {active
+						? 'border-foreground bg-foreground text-background shadow-xs'
+						: 'border-transparent text-muted-foreground hover:bg-muted hover:text-foreground'}"
+				>
+					<item.icon class="h-5 w-5" />
+				</a>
+			{/each}
+		</nav>
 	</div>
 
+	<!-- Bottom Utilities -->
 	<div class="flex flex-col items-center gap-2">
 		<ThemeToggle />
 		<button
 			type="button"
-			onclick={logout}
+			onclick={handleLogout}
 			title="Sign out"
-			class="flex h-9 w-9 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition hover:bg-destructive/15 hover:text-destructive"
+			class="flex h-10 w-10 cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition hover:bg-destructive/12 hover:text-destructive"
 		>
-			<LogOut class="h-4 w-4" />
+			<LogOut class="h-4.5 w-4.5" />
 		</button>
 	</div>
-</nav>
+</aside>

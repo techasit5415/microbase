@@ -36,7 +36,7 @@
 
 <div class="flex-1 overflow-auto">
 	<table class="w-full border-collapse text-left text-[13px]">
-		<thead class="sticky top-0 border-b border-border bg-background/95 text-xs text-muted-foreground backdrop-blur-xs">
+		<thead class="sticky top-0 border-b border-border bg-card/95 text-xs text-muted-foreground backdrop-blur-xs">
 			<tr>
 				{#each columns as col}
 					{@const t = getFieldType(col)}
@@ -79,7 +79,7 @@
 				</tr>
 			{:else}
 				{#each items as row, idx (row.id ?? idx)}
-					<tr onclick={() => !readOnly && onSelect?.(row)} class="transition hover:bg-muted/40 {!readOnly && onSelect ? 'cursor-pointer' : ''}">
+					<tr onclick={() => !readOnly && onSelect?.(row)} class="transition bg-card hover:bg-muted/60 {!readOnly && onSelect ? 'cursor-pointer' : ''}">
 						{#each columns as col}
 							{@const val = row[col]}
 							<td class="max-w-xs truncate px-5 py-3">

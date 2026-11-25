@@ -82,7 +82,7 @@
 			value={search}
 			oninput={(e) => onSearchChange(e.currentTarget.value)}
 			placeholder="Search term or filter..."
-			class="w-full rounded-full border border-border bg-muted/40 py-2 pr-4 pl-10 text-xs outline-none placeholder:text-muted-foreground focus:border-ring focus:bg-background"
+			class="w-full rounded-full border border-transparent bg-muted/80 py-2 pr-4 pl-10 text-xs outline-none placeholder:text-muted-foreground focus:border-border focus:bg-accent/70"
 		/>
 	</div>
 </header>

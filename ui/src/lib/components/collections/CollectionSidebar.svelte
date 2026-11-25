@@ -21,7 +21,7 @@
 	);
 </script>
 
-<aside class="flex w-60 shrink-0 flex-col border-r border-border bg-muted/20">
+<aside class="flex w-60 shrink-0 flex-col border-r border-border bg-card">
 	<div class="border-b border-border p-3">
 		<div class="relative">
 			<Search class="pointer-events-none absolute top-2.5 left-2.5 h-3.5 w-3.5 text-muted-foreground" />
