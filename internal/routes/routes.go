@@ -12,13 +12,14 @@ import (
 	"github.com/techasit5415/microbase/internal/middlewares"
 	"github.com/techasit5415/microbase/internal/realtime"
 	"github.com/techasit5415/microbase/internal/services"
+	"github.com/techasit5415/microbase/ui"
 )
 
 func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore cache.CacheStore, cfg *config.Config) {
 	// Middlewares พื้นฐาน
 	e.Use(middleware.Recover())
 	e.Use(middleware.CORS())
-
+	ui.Register(e)
 	// Controllers
 	healthCtrl := controllers.NewHealthController(cacheStore)
 
