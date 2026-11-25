@@ -27,6 +27,7 @@
 	import { createRecord, listRecords, updateRecord } from '#lib/api/records.ts';
 	import type { Collection, FieldDef, RecordRow } from '#lib/api/types.ts';
 	import { createSuperuser, createUser, listUsers, updateSuperuser, updateUser } from '#lib/api/users.ts';
+	import RelationPickerModal, { type RelationOption } from '#lib/components/records/RelationPickerModal.svelte';
 	import Drawer from '#lib/components/ui/Drawer.svelte';
 	import Select from '#lib/components/ui/Select.svelte';
 	import Switch from '#lib/components/ui/Switch.svelte';
@@ -47,9 +48,8 @@
 	let recordId = $state('');
 	let values = $state<Record<string, string>>({});
 	let boolValues = $state<Record<string, boolean>>({});
-	let relationOptions = $state<Record<string, { value: string; label: string }[]>>({});
+	let relationOptions = $state<Record<string, RelationOption[]>>({});
 	let openRelationPicker = $state<string | null>(null);
-	let relationSearch = $state('');
 	let uploadingField = $state<string | null>(null);
 	let dragOverField = $state<string | null>(null);
 	let email = $state('');
@@ -106,8 +106,41 @@
 		onClose();
 	}
 
+	function extractRowPreview(row: RecordRow): string {
+		const preferred = ['title', 'name', 'type', 'email', 'username', 'slug', 'label', 'device_name'];
+		for (const k of preferred) {
+			const v = row[k];
+			if (typeof v === 'string' && v.trim()) return v.trim();
+		}
+		const skip = new Set(['id', 'created', 'updated', 'created_at', 'updated_at', 'password_hash', 'token_key']);
+		for (const [k, v] of Object.entries(row)) {
+			if (skip.has(k)) continue;
+			if (typeof v === 'string' && v.trim() && v.length <= 80) return v.trim();
+		}
+		return '';
+	}
+
+	function parseRelationIds(raw: string | undefined, maxSelect: number): string[] {
+		if (!raw || !raw.trim()) return [];
+		const trimmed = raw.trim();
+		if (trimmed.startsWith('[')) {
+			try {
+				const arr = JSON.parse(trimmed);
+				if (Array.isArray(arr)) return arr.map((x) => String(x)).filter(Boolean);
+			} catch {
+				// fall through
+			}
+		}
+		return maxSelect > 1 ? trimmed.split(',').map((s) => s.trim()).filter(Boolean) : [trimmed];
+	}
+
+	function formatRelationIds(ids: string[], maxSelect: number): string {
+		if (ids.length === 0) return '';
+		return maxSelect > 1 ? JSON.stringify(ids) : ids[0];
+	}
+
 	async function loadRelationChoices(fields: FieldDef[]) {
-		const next: Record<string, { value: string; label: string }[]> = {};
+		const next: Record<string, RelationOption[]> = {};
 		for (const f of fields) {
 			if (f.type !== 'relation' || !f.collection_name) continue;
 			try {
@@ -115,11 +148,10 @@
 					f.collection_name === 'users'
 						? await listUsers({ page: 1, perPage: 100 })
 						: await listRecords(f.collection_name, { page: 1, perPage: 100 });
-				next[f.name] = (res.items ?? []).map((row) => {
-					const id = String(row.id ?? '');
-					const label = String(row.title ?? row.name ?? row.email ?? row.username ?? `#${id}`);
-					return { value: id, label: `${id} — ${label}` };
-				});
+				next[f.name] = (res.items ?? []).map((row) => ({
+					id: String(row.id ?? ''),
+					preview: extractRowPreview(row)
+				}));
 			} catch {
 				next[f.name] = [];
 			}
@@ -148,7 +180,6 @@
 			confirmPassword = '';
 			showPassword = false;
 			openRelationPicker = null;
-			relationSearch = '';
 			errorMsg = '';
 			impersonateToken = '';
 			initialSnapshot = untrack(() => buildSnapshot());
@@ -600,7 +631,9 @@
 							</label>
 						</div>
 					{:else if field.type === 'relation'}
-						<!-- PocketBase Relation Picker Box -->
+						{@const maxSel = field.max_select && field.max_select > 0 ? field.max_select : 1}
+						{@const selectedList = parseRelationIds(values[field.name], maxSel)}
+						<!-- PocketBase Relation Picker Field -->
 						<div class="overflow-hidden rounded-[5px] bg-secondary/75">
 							<div class="flex items-center justify-between border-b border-border/60 px-3.5 py-2 text-xs font-medium text-muted-foreground">
 								<span class="flex items-center gap-1.5">
@@ -608,69 +641,52 @@
 									{field.name}{#if field.required}<span class="text-destructive"> *</span>{/if}
 								</span>
 								{#if field.collection_name}
-									<span class="font-mono text-[11px]">&rarr; {field.collection_name}</span>
+									<span class="font-mono text-[11px]">&rarr; {field.collection_name}{maxSel > 1 ? ` (max ${maxSel})` : ''}</span>
 								{/if}
 							</div>
-							{#if values[field.name]}
-								{@const matched = (relationOptions[field.name] ?? []).find((o) => o.value === values[field.name])}
-								<div class="flex items-center justify-between border-b border-border/50 bg-card/70 px-3.5 py-2 text-xs">
-									<span class="truncate font-mono text-foreground">{matched?.label ?? values[field.name]}</span>
-									<button
-										type="button"
-										onclick={() => (values = { ...values, [field.name]: '' })}
-										class="cursor-pointer rounded p-0.5 text-muted-foreground hover:text-destructive"
-									>
-										<X class="h-3.5 w-3.5" />
-									</button>
+							{#if selectedList.length > 0}
+								<div class="flex flex-wrap gap-1.5 border-b border-border/50 bg-card/70 px-3.5 py-2.5">
+									{#each selectedList as sid (sid)}
+										{@const matched = (relationOptions[field.name] ?? []).find((o) => o.id === sid)}
+										<span class="inline-flex items-center gap-1.5 rounded-md bg-secondary px-2 py-1 text-xs text-foreground">
+											<span class="rounded bg-background/80 px-1.5 py-0.5 font-mono text-[11px]">{sid}</span>
+											{#if matched?.preview}
+												<span class="max-w-36 truncate font-medium">{matched.preview}</span>
+											{/if}
+											<button
+												type="button"
+												onclick={() => {
+													const next = selectedList.filter((x) => x !== sid);
+													values = { ...values, [field.name]: formatRelationIds(next, maxSel) };
+												}}
+												class="cursor-pointer rounded p-0.5 text-muted-foreground hover:text-destructive"
+											>
+												<X class="h-3 w-3" />
+											</button>
+										</span>
+									{/each}
 								</div>
 							{/if}
 							<button
 								type="button"
-								onclick={() => {
-									openRelationPicker = openRelationPicker === field.name ? null : field.name;
-									relationSearch = '';
-								}}
-								class="flex w-full cursor-pointer items-center justify-center gap-2 px-3.5 py-3 text-xs font-medium text-foreground transition hover:bg-secondary"
+								onclick={() => (openRelationPicker = field.name)}
+								class="flex w-full cursor-pointer items-center justify-center gap-2 px-3.5 py-2.5 text-xs font-medium text-foreground transition hover:bg-secondary"
 							>
 								<Search class="h-3.5 w-3.5 text-muted-foreground" />
-								<span>{openRelationPicker === field.name ? 'Close records picker' : 'Open records picker'}</span>
+								<span>Open picker</span>
 							</button>
-							{#if openRelationPicker === field.name}
-								{@const filteredRel = (relationOptions[field.name] ?? []).filter((o) =>
-									o.label.toLowerCase().includes(relationSearch.trim().toLowerCase())
-								)}
-								<div transition:slide={{ duration: 160, easing: cubicOut }} class="border-t border-border/60 bg-card p-2.5">
-									<input
-										type="text"
-										bind:value={relationSearch}
-										placeholder="Search records or type ID..."
-										class="mb-2 w-full rounded border border-input bg-background px-2.5 py-1.5 text-xs outline-none focus:border-ring"
-									/>
-									<div class="max-h-40 space-y-0.5 overflow-y-auto">
-										{#if filteredRel.length === 0}
-											<div class="px-2 py-2 text-center text-xs text-muted-foreground">No records found.</div>
-										{:else}
-											{#each filteredRel as opt (opt.value)}
-												<button
-													type="button"
-													onclick={() => {
-														values = { ...values, [field.name]: opt.value };
-														openRelationPicker = null;
-													}}
-													class="flex w-full cursor-pointer items-center justify-between rounded px-2.5 py-1.5 text-left font-mono text-xs transition hover:bg-accent {values[
-														field.name
-													] === opt.value
-														? 'bg-accent font-semibold text-foreground'
-														: 'text-muted-foreground'}"
-												>
-													<span class="truncate">{opt.label}</span>
-												</button>
-											{/each}
-										{/if}
-									</div>
-								</div>
-							{/if}
 						</div>
+						<RelationPickerModal
+							open={openRelationPicker === field.name}
+							collectionName={field.collection_name ?? field.name}
+							options={relationOptions[field.name] ?? []}
+							selectedIds={selectedList}
+							maxSelect={maxSel}
+							onClose={() => (openRelationPicker = null)}
+							onConfirm={(nextIds) => {
+								values = { ...values, [field.name]: formatRelationIds(nextIds, maxSel) };
+							}}
+						/>
 					{:else if field.type === 'select'}
 						<div class="rounded-[5px] bg-secondary/75 px-3.5 py-2.5">
 							<div class="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
