@@ -76,7 +76,7 @@ jobs:
             [ -f README.md ] && cp README.md "${STAGE}/"
             [ -f .env.example ] && cp .env.example "${STAGE}/"
 
-            (cd "${STAGE}" && zip -q -r "../../microbase_${VER}_${GOOS}_${LABEL}.zip" .)
+            (cd "${STAGE}" && zip -q -r "../microbase_${VER}_${GOOS}_${LABEL}.zip" .)
             rm -rf "${STAGE}"
           done
 
