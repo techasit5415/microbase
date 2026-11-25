@@ -48,5 +48,17 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := pool.Exec(ctx, query); err != nil {
 		return fmt.Errorf("create _collections table failed: %w", err)
 	}
+	usersSQL := `
+	CREATE TABLE IF NOT EXISTS _users (
+		id            BIGSERIAL PRIMARY KEY,
+		email         TEXT UNIQUE NOT NULL,
+		password_hash TEXT NOT NULL,
+		role          TEXT NOT NULL DEFAULT 'user',
+		created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	);`
+	if _, err := pool.Exec(ctx, usersSQL); err != nil {
+		return fmt.Errorf("create _users table failed: %w", err)
+	}
 	return nil
 }
