@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -108,21 +109,20 @@ func (h *AuthController) DeleteUser(c echo.Context) error {
 	return response.OK(c, map[string]any{"deleted": id})
 }
 
-// UpdateUser handles PATCH /api/users/:id.
+// UpdateUser handles PATCH /api/users/:id (supports email, role, password, and custom _users fields).
 func (h *AuthController) UpdateUser(c echo.Context) error {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		return response.Error(c, http.StatusBadRequest, "INVALID_ID", "user id must be an integer")
 	}
-	var req struct {
-		Email    string `json:"email"`
-		Role     string `json:"role"`
-		Password string `json:"password"`
-	}
-	if err := c.Bind(&req); err != nil {
+	var raw map[string]any
+	if err := json.NewDecoder(c.Request().Body).Decode(&raw); err != nil {
 		return response.Error(c, http.StatusBadRequest, "INVALID_JSON", "invalid request body")
 	}
-	u, err := h.service.UpdateUser(c.Request().Context(), id, req.Email, req.Role, req.Password)
+	email, _ := raw["email"].(string)
+	role, _ := raw["role"].(string)
+	password, _ := raw["password"].(string)
+	u, err := h.service.UpdateUser(c.Request().Context(), id, email, role, password, raw)
 	if errors.Is(err, services.ErrInvalidInput) {
 		return response.Error(c, http.StatusBadRequest, "INVALID_INPUT", err.Error())
 	}

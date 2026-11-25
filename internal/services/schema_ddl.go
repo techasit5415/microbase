@@ -146,7 +146,7 @@ func buildAlterTableStatements(tableName string, oldFields, newFields []models.F
 
 // buildCreateIndexSQL validates an IndexDef and generates a PostgreSQL CREATE [UNIQUE] INDEX statement.
 func buildCreateIndexSQL(tableName string, idx models.IndexDef) (string, error) {
-	if !models.IsValidIdentifier(tableName) {
+	if tableName != "_users" && !models.IsValidIdentifier(tableName) {
 		return "", fmt.Errorf("invalid table name %q", tableName)
 	}
 	if !models.IsValidIdentifier(idx.Name) {

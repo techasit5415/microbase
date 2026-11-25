@@ -85,7 +85,20 @@
 				}
 			} else if (isAuth) {
 				if (editingRecord && typeof editingRecord.id === 'number') {
+					const customFields = (collection.fields ?? []).filter((f) => !['email', 'role'].includes(f.name));
+					const { payload: customPayload, error: customErr } = buildAndValidateRecordPayload(
+						customFields,
+						values,
+						boolValues
+					);
+					if (customErr) {
+						errorMsg = customErr;
+						toast.error(customErr);
+						saving = false;
+						return;
+					}
 					await updateUser(editingRecord.id, {
+						...(customPayload ?? {}),
 						email: email.trim(),
 						role: role.trim() || 'user',
 						password: password || undefined

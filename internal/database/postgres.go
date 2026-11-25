@@ -66,6 +66,18 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		);`,
 		`ALTER TABLE _collections ADD COLUMN IF NOT EXISTS api_rules JSONB NOT NULL DEFAULT '{}'::jsonb;
 		ALTER TABLE _collections ADD COLUMN IF NOT EXISTS indexes JSONB NOT NULL DEFAULT '[]'::jsonb;`,
+		`ALTER TABLE _users ADD COLUMN IF NOT EXISTS verified BOOLEAN NOT NULL DEFAULT FALSE;`,
+		`ALTER TABLE _users ADD COLUMN IF NOT EXISTS email_visibility BOOLEAN NOT NULL DEFAULT FALSE;`,
+		`ALTER TABLE _users ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT '';`,
+		`ALTER TABLE _users ADD COLUMN IF NOT EXISTS avatar TEXT NOT NULL DEFAULT '';`,
+		`INSERT INTO _collections (name, fields, api_rules, indexes)
+		 VALUES (
+			'users',
+			'[{"name":"name","type":"text"},{"name":"avatar","type":"file","max_select":1}]'::jsonb,
+			'{}'::jsonb,
+			'[]'::jsonb
+		 )
+		 ON CONFLICT (name) DO NOTHING;`,
 		`CREATE TABLE IF NOT EXISTS _oauth_providers (
 			name          TEXT PRIMARY KEY,
 			display_name  TEXT NOT NULL,

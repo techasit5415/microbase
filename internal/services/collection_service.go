@@ -189,6 +189,9 @@ func (s *CollectionService) Delete(ctx context.Context, name string) error {
 	if !models.IsValidIdentifier(name) {
 		return ErrCollectionNotFound
 	}
+	if name == "users" {
+		return fmt.Errorf("%w: built-in auth collection users cannot be deleted", ErrInvalidSchema)
+	}
 
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -217,6 +220,13 @@ func (s *CollectionService) Delete(ctx context.Context, name string) error {
 	return nil
 }
 
+func physicalTableName(name string) string {
+	if name == "users" {
+		return "_users"
+	}
+	return name
+}
+
 func schemaCacheKey(name string) string {
 	return "schema:" + name
 }
@@ -228,7 +238,8 @@ func (s *CollectionService) Update(ctx context.Context, name string, newFields [
 		return nil, err
 	}
 
-	alterStmts, cleanedFields, err := buildAlterTableStatements(existing.Name, existing.Fields, newFields)
+	tableName := physicalTableName(existing.Name)
+	alterStmts, cleanedFields, err := buildAlterTableStatements(tableName, existing.Fields, newFields)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidSchema, err)
 	}
@@ -239,7 +250,7 @@ func (s *CollectionService) Update(ctx context.Context, name string, newFields [
 	if newIndexes == nil {
 		newIndexes = []models.IndexDef{}
 	}
-	indexStmts, err := buildIndexDiffStatements(existing.Name, existing.Indexes, newIndexes)
+	indexStmts, err := buildIndexDiffStatements(tableName, existing.Indexes, newIndexes)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidSchema, err)
 	}

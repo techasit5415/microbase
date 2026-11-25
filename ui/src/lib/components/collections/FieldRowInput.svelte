@@ -26,6 +26,7 @@
 		field: FieldDef;
 		isExisting?: boolean;
 		availableCollections?: string[];
+		stacked?: boolean;
 		onRemove: () => void;
 	}
 
@@ -33,6 +34,7 @@
 		field = $bindable(),
 		isExisting = false,
 		availableCollections = [],
+		stacked = false,
 		onRemove
 	}: Props = $props();
 
@@ -115,7 +117,7 @@
 	}
 </script>
 
-<div class="rounded-md border border-border bg-background/80 transition hover:border-border/90">
+<div class="{stacked ? 'bg-muted/35 hover:bg-muted/55' : 'rounded-md border border-border bg-background/80'} transition">
 	<div class="flex items-center gap-2 px-3 py-2">
 		<div
 			class="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-muted text-muted-foreground"

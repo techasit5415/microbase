@@ -39,7 +39,7 @@ export function deleteSuperuser(id: number): Promise<{ deleted: number }> {
 
 export function updateUser(
 	id: number,
-	payload: { email: string; role: string; password?: string }
+	payload: Record<string, unknown>
 ): Promise<RecordRow> {
 	return apiRequest<RecordRow>(`/api/users/${id}`, {
 		method: 'PATCH',

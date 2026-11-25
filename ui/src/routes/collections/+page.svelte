@@ -38,7 +38,16 @@
 	];
 
 	let userCollections = $state<Collection[]>([]);
-	let mainCollections = $derived([usersCollection, ...userCollections]);
+	let mainCollections = $derived.by(() => {
+		const dbUsers = userCollections.find((c) => c.name === 'users');
+		const authCol: Collection = dbUsers
+			? { ...dbUsers, type: 'auth' }
+			: usersCollection;
+		const others = userCollections
+			.filter((c) => c.name !== 'users')
+			.map((c) => ({ ...c, type: 'base' as const }));
+		return [authCol, ...others];
+	});
 	let allLookup = $derived([...mainCollections, ...systemTables]);
 
 	// Sync active collection directly from URL ?collection=...
@@ -213,7 +222,7 @@
 	availableCollections={mainCollections.map((c) => c.name)}
 	onClose={() => (showColDrawer = false)}
 	onSaved={(col, isEdit) => {
-		const typed: Collection = { ...col, type: 'base' };
+		const typed: Collection = { ...col, type: col.name === 'users' ? 'auth' : 'base' };
 		if (isEdit) {
 			userCollections = userCollections.map((c) => (c.name === typed.name ? typed : c));
 			toast.success(`Updated collection "${typed.name}"`);

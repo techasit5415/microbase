@@ -169,55 +169,48 @@ func (s *AuthService) ParseToken(tokenString string) (*AuthClaims, error) {
 	return claims, nil
 }
 
-// ListUsers returns paginated users from _users with optional email search.
-func (s *AuthService) ListUsers(ctx context.Context, page, perPage int, search string) ([]models.User, int64, error) {
-	if page < 1 {
-		page = 1
-	}
-	if perPage < 1 || perPage > 100 {
-		perPage = 20
-	}
+// ListUsers returns paginated user records including any custom columns added to _users (never exposing password_hash).
+func (s *AuthService) ListUsers(ctx context.Context, page, perPage int, search string) ([]models.Record, int64, error) {
 	offset := (page - 1) * perPage
 	q := strings.TrimSpace(search)
 
 	var total int64
 	if q != "" {
-		if err := s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM _users WHERE email ILIKE $1`, "%"+q+"%").Scan(&total); err != nil {
-			return nil, 0, err
-		}
+		_ = s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM _users WHERE email ILIKE $1`, "%"+q+"%").Scan(&total)
 	} else {
-		if err := s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM _users`).Scan(&total); err != nil {
-			return nil, 0, err
-		}
+		_ = s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM _users`).Scan(&total)
 	}
 
 	var rows pgx.Rows
 	var err error
 	if q != "" {
-		rows, err = s.pool.Query(ctx, `
-			SELECT id, email, COALESCE(password_hash, ''), role, created_at, updated_at
-			FROM _users WHERE email ILIKE $1 ORDER BY id DESC LIMIT $2 OFFSET $3`,
-			"%"+q+"%", perPage, offset)
+		rows, err = s.pool.Query(ctx, `SELECT * FROM _users WHERE email ILIKE $1 ORDER BY id DESC LIMIT $2 OFFSET $3`, "%"+q+"%", perPage, offset)
 	} else {
-		rows, err = s.pool.Query(ctx, `
-			SELECT id, email, COALESCE(password_hash, ''), role, created_at, updated_at
-			FROM _users ORDER BY id DESC LIMIT $1 OFFSET $2`,
-			perPage, offset)
+		rows, err = s.pool.Query(ctx, `SELECT * FROM _users ORDER BY id DESC LIMIT $1 OFFSET $2`, perPage, offset)
 	}
 	if err != nil {
 		return nil, 0, err
 	}
 	defer rows.Close()
 
-	users := make([]models.User, 0)
+	descs := rows.FieldDescriptions()
+	items := make([]models.Record, 0)
 	for rows.Next() {
-		var u models.User
-		if err := rows.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Role, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		vals, err := rows.Values()
+		if err != nil {
 			return nil, 0, err
 		}
-		users = append(users, u)
+		rec := make(models.Record, len(descs))
+		for i, fd := range descs {
+			col := string(fd.Name)
+			if col == "password_hash" {
+				continue
+			}
+			rec[col] = vals[i]
+		}
+		items = append(items, rec)
 	}
-	return users, total, rows.Err()
+	return items, total, rows.Err()
 }
 
 // DeleteUser removes a user account by ID.
@@ -232,8 +225,8 @@ func (s *AuthService) DeleteUser(ctx context.Context, id int64) error {
 	return nil
 }
 
-// UpdateUser updates a user's email, role, and optionally resets their password.
-func (s *AuthService) UpdateUser(ctx context.Context, id int64, email, role, newPassword string) (*models.User, error) {
+// UpdateUser updates a user's email, role, optional password, and any custom columns on _users.
+func (s *AuthService) UpdateUser(ctx context.Context, id int64, email, role, newPassword string, custom map[string]any) (models.Record, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	if !strings.Contains(email, "@") {
 		return nil, fmt.Errorf("%w: valid email is required", ErrInvalidInput)
@@ -243,8 +236,10 @@ func (s *AuthService) UpdateUser(ctx context.Context, id int64, email, role, new
 		role = "user"
 	}
 
-	var u models.User
-	var err error
+	setClauses := []string{"email = $2", "role = $3", "updated_at = NOW()"}
+	args := []any{id, email, role}
+	argIdx := 4
+
 	if newPassword != "" {
 		if len(newPassword) < 8 {
 			return nil, fmt.Errorf("%w: password must be at least 8 characters", ErrInvalidInput)
@@ -253,25 +248,22 @@ func (s *AuthService) UpdateUser(ctx context.Context, id int64, email, role, new
 		if hashErr != nil {
 			return nil, hashErr
 		}
-		err = s.pool.QueryRow(ctx, `
-			UPDATE _users
-			SET email = $2, role = $3, password_hash = $4, updated_at = NOW()
-			WHERE id = $1
-			RETURNING id, email, role, created_at, updated_at`,
-			id, email, role, hash,
-		).Scan(&u.ID, &u.Email, &u.Role, &u.CreatedAt, &u.UpdatedAt)
-	} else {
-		err = s.pool.QueryRow(ctx, `
-			UPDATE _users
-			SET email = $2, role = $3, updated_at = NOW()
-			WHERE id = $1
-			RETURNING id, email, role, created_at, updated_at`,
-			id, email, role,
-		).Scan(&u.ID, &u.Email, &u.Role, &u.CreatedAt, &u.UpdatedAt)
+		setClauses = append(setClauses, fmt.Sprintf("password_hash = $%d", argIdx))
+		args = append(args, hash)
+		argIdx++
 	}
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrRecordNotFound
+
+	for k, v := range custom {
+		if !models.IsValidIdentifier(k) || k == "id" || k == "email" || k == "role" || k == "password" || k == "password_hash" || k == "created_at" || k == "updated_at" {
+			continue
+		}
+		setClauses = append(setClauses, fmt.Sprintf(`"%s" = $%d`, k, argIdx))
+		args = append(args, v)
+		argIdx++
 	}
+
+	query := fmt.Sprintf(`UPDATE _users SET %s WHERE id = $1 RETURNING *`, strings.Join(setClauses, ", "))
+	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -279,5 +271,30 @@ func (s *AuthService) UpdateUser(ctx context.Context, id int64, email, role, new
 		}
 		return nil, err
 	}
-	return &u, nil
+	defer rows.Close()
+
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+				return nil, ErrEmailExists
+			}
+			return nil, err
+		}
+		return nil, ErrRecordNotFound
+	}
+	descs := rows.FieldDescriptions()
+	vals, err := rows.Values()
+	if err != nil {
+		return nil, err
+	}
+	rec := make(models.Record, len(descs))
+	for i, fd := range descs {
+		col := string(fd.Name)
+		if col == "password_hash" {
+			continue
+		}
+		rec[col] = vals[i]
+	}
+	return rec, nil
 }
