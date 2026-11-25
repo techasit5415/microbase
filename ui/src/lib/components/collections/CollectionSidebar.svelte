@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { cubicOut } from 'svelte/easing';
+	import { slide } from 'svelte/transition';
 	import { ChevronUp, Folder, Plus, Search, Users } from '@lucide/svelte';
 	import type { Collection } from '#lib/api/types.ts';
 	import CollectionItem from './CollectionItem.svelte';

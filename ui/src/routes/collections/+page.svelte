@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { fade } from 'svelte/transition';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page as pageState } from '$app/state';
@@ -194,6 +195,8 @@
 />
 
 <main class="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
+		{#key activeName}
+		<div in:fade={{ duration: 150 }} class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
 	<RecordsToolbar
 		collectionName={activeCol.name}
 		{search}
@@ -237,6 +240,8 @@
 			refreshRecords();
 		}}
 	/>
+		</div>
+		{/key}
 </main>
 
 <CollectionDrawer

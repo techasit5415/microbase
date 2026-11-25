@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { cubicOut } from 'svelte/easing';
+	import { fade, scale } from 'svelte/transition';
 	import { Trash2, X } from '@lucide/svelte';
 	import type { IndexDef } from '#lib/api/types.ts';
 	import Switch from '#lib/components/ui/Switch.svelte';
@@ -87,14 +89,16 @@
 		<button
 			type="button"
 			aria-label="Close index modal"
+			transition:fade={{ duration: 150 }}
 			onclick={onClose}
-			class="animate-fade-in fixed inset-0 bg-black/45 backdrop-blur-[2px]"
+			class="fixed inset-0 bg-black/45 backdrop-blur-[2px]"
 		></button>
 
 		<div
 			role="dialog"
 			aria-modal="true"
-			class="relative z-10 w-full max-w-lg animate-modal-in rounded-lg border border-border bg-card p-6 shadow-xl"
+			transition:scale={{ start: 0.94, duration: 180, easing: cubicOut }}
+			class="relative z-10 w-full max-w-lg rounded-lg border border-border bg-card p-6 shadow-xl"
 		>
 			<div class="mb-5 flex items-center justify-between">
 				<h3 class="text-base font-semibold text-foreground">

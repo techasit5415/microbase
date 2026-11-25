@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { cubicOut } from 'svelte/easing';
-	import { slide } from 'svelte/transition';
+	import { fade, fly, slide } from 'svelte/transition';
 	import {
 		CalendarCheck,
 		ChevronDown,
@@ -698,7 +698,7 @@
 					</div>
 				</div>
 			{:else if activeTab === 'rules'}
-				<div class="space-y-3">
+				<div in:fade={{ duration: 140 }} class="space-y-3">
 					<div class="flex items-center justify-between gap-2 text-xs text-muted-foreground">
 						<span>All rules follow PocketBase filter syntax.</span>
 						<button

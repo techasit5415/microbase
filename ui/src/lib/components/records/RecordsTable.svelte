@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { cubicOut } from 'svelte/easing';
+	import { fly } from 'svelte/transition';
 	import { Calendar, Check, Hash, KeyRound, Mail, ToggleLeft, Trash2, Type } from '@lucide/svelte';
 	import type { Collection, RecordRow } from '#lib/api/types.ts';
 
@@ -221,7 +223,7 @@
 
 	<!-- Floating PocketBase Bulkbar -->
 	{#if !readOnly && onBulkDelete && selectedIds.length > 0}
-		<div class="animate-modal-in sticky bottom-4 z-20 mx-auto mt-4 flex w-fit items-center gap-3 rounded-full border border-border bg-foreground px-5 py-2.5 text-xs text-background shadow-xl">
+		<div transition:fly={{ y: 24, duration: 180, easing: cubicOut }} class="sticky bottom-4 z-20 mx-auto mt-4 flex w-fit items-center gap-3 rounded-full border border-border bg-foreground px-5 py-2.5 text-xs text-background shadow-xl">
 			<span>Selected <strong>{selectedIds.length}</strong> record{selectedIds.length > 1 ? 's' : ''}</span>
 			<button
 				type="button"

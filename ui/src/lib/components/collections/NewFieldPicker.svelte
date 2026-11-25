@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { cubicOut } from 'svelte/easing';
+	import { fly } from 'svelte/transition';
 	import {
 		Braces,
 		Calendar,
@@ -63,7 +65,7 @@
 	</button>
 
 	{#if open}
-		<div
+		<div transition:fly={{ y: 6, duration: 150, easing: cubicOut }}
 			class="mt-1 grid grid-cols-2 gap-1 rounded-md border-2 border-foreground/80 bg-popover p-2 text-popover-foreground shadow-xl sm:grid-cols-4"
 		>
 			{#each options as opt (opt.type)}

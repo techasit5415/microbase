@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { cubicOut } from 'svelte/easing';
+	import { fade, scale } from 'svelte/transition';
 	import { onMount } from 'svelte';
 	import { RefreshCw, Search, X } from '@lucide/svelte';
 	import { apiRequest } from '#lib/api/client.ts';
@@ -222,7 +224,7 @@
 
 <!-- Log Preview Modal -->
 {#if selectedLog}
-	<div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+	<div transition:fade={{ duration: 150 }} class="fixed inset-0 z-50 flex items-center justify-center p-4">
 		<button
 			type="button"
 			aria-label="Close log preview"

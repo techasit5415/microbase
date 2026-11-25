@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { cubicOut } from 'svelte/easing';
+	import { fly } from 'svelte/transition';
 	import { Check, ChevronDown } from '@lucide/svelte';
 
 	export interface SelectOption {

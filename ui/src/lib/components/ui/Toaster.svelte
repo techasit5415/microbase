@@ -1,12 +1,15 @@
 <script lang="ts">
 	import { AlertCircle, CheckCircle2, X } from '@lucide/svelte';
+	import { cubicOut } from 'svelte/easing';
+	import { fly } from 'svelte/transition';
 	import { toast } from '#lib/stores/toast.svelte.ts';
 </script>
 
 {#if toast.items.length > 0}
-	<div class="fixed right-5 bottom-5 z-50 flex w-80 flex-col gap-2">
+	<div class="fixed right-5 bottom-5 z-[70] flex w-80 flex-col gap-2">
 		{#each toast.items as item (item.id)}
 			<div
+				transition:fly={{ x: 64, duration: 220, easing: cubicOut }}
 				class="flex items-start gap-2.5 rounded-md border px-3.5 py-2.5 text-xs shadow-lg backdrop-blur-sm {item.type ===
 				'error'
 					? 'border-destructive/40 bg-destructive/15 text-destructive'
