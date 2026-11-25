@@ -239,6 +239,11 @@
 			currentPage = next;
 			refreshRecords();
 		}}
+		onPerPageChange={(nextPerPage) => {
+			perPage = nextPerPage;
+			currentPage = 1;
+			refreshRecords();
+		}}
 	/>
 		</div>
 		{/key}
