@@ -70,11 +70,19 @@
 		}
 	});
 
+	function generateDefaultFieldName(base: string): string {
+		const existing = new Set(fields.map((f) => f.name.trim().toLowerCase()));
+		if (!existing.has(base)) return base;
+		let n = 2;
+		while (existing.has(`${base}${n}`)) n++;
+		return `${base}${n}`;
+	}
+
 	function addField(type: FieldType) {
 		fields = [
 			...fields,
 			{
-				name: '',
+				name: generateDefaultFieldName(type),
 				type,
 				required: false,
 				unique: false,
@@ -116,10 +124,20 @@
 			return;
 		}
 		errorMsg = '';
+		for (let i = 0; i < fields.length; i++) {
+			const n = fields[i].name.trim();
+			if (!n) {
+				errorMsg = `Field #${i + 1} (${fields[i].type}) must have a column name.`;
+				return;
+			}
+			if (!/^[a-z][a-z0-9_]{0,62}$/.test(n)) {
+				errorMsg = `Field "${n}" must start with a lowercase letter and contain only a-z, 0-9, or _.`;
+				return;
+			}
+		}
 		saving = true;
 		try {
 			const cleanFields = fields
-				.filter((f) => f.name.trim() !== '')
 				.map((f) => ({
 					name: f.name.trim(),
 					original_name: f.original_name,
