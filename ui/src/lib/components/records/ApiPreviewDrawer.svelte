@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { Check, Copy, X } from '@lucide/svelte';
 	import type { Collection } from '#lib/api/types.ts';
+	import { fade } from 'svelte/transition';
 	import Drawer from '#lib/components/ui/Drawer.svelte';
+	import { highlightCode, type HighlightLang } from '#lib/utils/highlight.ts';
 
 	interface Props {
 		open: boolean;
@@ -36,7 +38,7 @@
 	let { open, collection, onClose }: Props = $props();
 
 	let activeTab = $state<TabKey>('list');
-	let lang = $state<'js' | 'curl' | 'go'>('js');
+	let lang = $state<'js' | 'ts' | 'curl' | 'go'>('js');
 	let respCode = $state<'200' | '400' | '403'>('200');
 	let copied = $state(false);
 
@@ -120,6 +122,63 @@
 			else body[f.name] = `example_${f.name}`;
 		}
 		return body;
+	}
+
+
+	function tsTypeName(): string {
+		const raw = collection.name.replace(/^_+/, '');
+		return raw
+			.split(/[_-]+/)
+			.filter(Boolean)
+			.map((p) => p[0].toUpperCase() + p.slice(1))
+			.join('') + 'Record';
+	}
+
+	function buildTsInterface(): string {
+		const lines: string[] = [];
+		lines.push(`  id: ${collection.id_type === 'text' ? 'string' : 'number'};`);
+		if (isAuth) {
+			lines.push('  email: string;');
+			if (collection.name === 'users') {
+				lines.push('  verified: boolean;');
+				lines.push('  email_visibility: boolean;');
+			}
+		}
+		for (const f of collection.fields ?? []) {
+			if (f.hidden) continue;
+			if (isAuth && ['email', 'verified', 'email_visibility', 'password', 'token_key'].includes(f.name)) continue;
+			let t = 'string';
+			if (f.type === 'boolean') t = 'boolean';
+			else if (f.type === 'integer' || f.type === 'number' || f.type === 'float') t = 'number';
+			else if (f.type === 'vector') t = 'number[]';
+			else if (f.type === 'geopoint') t = '{ lat: number; lon: number }';
+			else if (f.type === 'json') t = 'Record<string, unknown>';
+			lines.push(`  ${f.name}${f.required ? '' : '?'}: ${t};`);
+		}
+		lines.push('  created_at: string;');
+		lines.push('  updated_at: string;');
+		return `interface ${tsTypeName()} {\n${lines.join('\n')}\n}`;
+	}
+
+	function buildTsSnippet(jsSnippet: string): string {
+		const iface = buildTsInterface();
+		const typeName = tsTypeName();
+		if (activeTab === 'list') {
+			return `${iface}\n\ninterface ListResponse<T> {\n  data: { page: number; per_page: number; total_items: number; items: T[] };\n}\n\n` +
+				jsSnippet.replace('const data = await res.json();', `const { data }: ListResponse<${typeName}> = await res.json();`);
+		}
+		if (activeTab === 'view' || activeTab === 'create' || activeTab === 'update') {
+			return `${iface}\n\n` +
+				jsSnippet
+					.replace('const record = await res.json();', `const { data: record }: { data: ${typeName} } = await res.json();`)
+					.replace('const created = await res.json();', `const { data: created }: { data: ${typeName} } = await res.json();`)
+					.replace('const updated = await res.json();', `const { data: updated }: { data: ${typeName} } = await res.json();`);
+		}
+		if (activeTab === 'auth-password' || activeTab === 'auth-otp' || activeTab === 'auth-refresh') {
+			return `${iface}\n\ninterface AuthResponse {\n  data: { token: string; user: ${typeName} };\n}\n\n` +
+				jsSnippet.replace('const auth = await res.json();', 'const { data: auth }: AuthResponse = await res.json();');
+		}
+		return `${iface}\n\n${jsSnippet}`;
 	}
 
 	let baseEndpoint = $derived(
@@ -394,7 +453,7 @@
 		}
 	});
 
-	let activeSnippet = $derived(lang === 'js' ? doc.js : lang === 'curl' ? doc.curl : doc.go);
+	let activeSnippet = $derived(lang === 'js' ? doc.js : lang === 'ts' ? buildTsSnippet(doc.js) : lang === 'curl' ? doc.curl : doc.go);
 
 	let activeResponseJSON = $derived(
 		respCode === '200'
@@ -470,12 +529,13 @@
 						<div class="flex items-center gap-1">
 							{#each [
 								{ id: 'js', label: 'JS (fetch)' },
+								{ id: 'ts', label: 'TypeScript' },
 								{ id: 'curl', label: 'curl' },
 								{ id: 'go', label: 'Go' }
 							] as l (l.id)}
 								<button
 									type="button"
-									onclick={() => (lang = l.id as 'js' | 'curl' | 'go')}
+									onclick={() => (lang = l.id as 'js' | 'ts' | 'curl' | 'go')}
 									class="cursor-pointer rounded-t-md px-3.5 py-2 text-xs font-medium transition {lang === l.id
 										? 'bg-muted text-foreground'
 										: 'text-muted-foreground hover:text-foreground'}"
@@ -496,7 +556,7 @@
 							{/if}
 						</button>
 					</div>
-					<pre class="overflow-x-auto rounded-b-md rounded-tr-md bg-muted/85 p-4 font-mono text-xs leading-relaxed text-foreground">{activeSnippet}</pre>
+					{#key lang + activeTab}<pre in:fade={{ duration: 120 }} class="overflow-x-auto rounded-b-md rounded-tr-md bg-muted/85 p-4 font-mono text-xs leading-relaxed text-foreground">{@html highlightCode(activeSnippet, lang as HighlightLang)}</pre>{/key}
 				</div>
 
 				<!-- API Details Bar -->
@@ -565,7 +625,7 @@
 							{/each}
 						</div>
 					</div>
-					<pre class="overflow-x-auto rounded-md bg-muted/85 p-4 font-mono text-xs leading-relaxed text-foreground">{activeResponseJSON}</pre>
+					{#key respCode + activeTab}<pre in:fade={{ duration: 120 }} class="overflow-x-auto rounded-md bg-muted/85 p-4 font-mono text-xs leading-relaxed text-foreground">{@html highlightCode(activeResponseJSON, 'json')}</pre>{/key}
 				</div>
 			</div>
 		</div>
