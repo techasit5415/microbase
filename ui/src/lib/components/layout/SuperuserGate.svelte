@@ -89,7 +89,7 @@
 		<div class="grid w-full max-w-5xl grid-cols-1 items-center gap-12 lg:grid-cols-2 lg:gap-16">
 			<!-- Left Column: Brand Showcase -->
 			<div class="flex flex-col items-start px-2">
-				<div class="mb-5 flex h-12 w-12 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+				<div class="mb-5 flex h-12 w-12 items-center justify-center rounded-lg bg-foreground text-background shadow-sm">
 					<Database class="h-6 w-6" />
 				</div>
 				<span class="text-xs font-semibold tracking-wide text-muted-foreground">
@@ -222,7 +222,7 @@
 					<button
 						type="submit"
 						disabled={submitting}
-						class="mt-2 flex w-full cursor-pointer items-center justify-center gap-2 rounded-md bg-primary py-2.5 text-sm font-medium text-primary-foreground shadow-xs transition hover:opacity-90 disabled:opacity-50"
+						class="mt-2 flex w-full cursor-pointer items-center justify-center gap-2 rounded-md bg-foreground py-2.5 text-sm font-medium text-background shadow-xs transition hover:opacity-90 disabled:opacity-50"
 					>
 						<LogIn class="h-4 w-4" />
 						{submitting ? 'Please wait...' : hasSuperuser ? 'Sign in' : 'Create & Sign in'}
