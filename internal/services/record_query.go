@@ -1,0 +1,74 @@
+package services
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/techasit5415/microbase/internal/models"
+)
+
+// buildWhereClause constructs a parameterized WHERE clause for exact filters and full-text search.
+func buildWhereClause(
+	col *models.Collection,
+	opts models.ListOptions,
+	allowed map[string]models.FieldDef,
+) (string, []any, int, error) {
+	clauses := make([]string, 0)
+	args := make([]any, 0)
+	idx := 1
+
+	// Exact-match filters (whitelisted against collection schema).
+	for key, val := range opts.Filters {
+		if _, ok := allowed[key]; !ok && !reservedColumns[key] {
+			return "", nil, idx, fmt.Errorf("%w: unknown filter field %q", ErrInvalidInput, key)
+		}
+		clauses = append(clauses, fmt.Sprintf(`"%s"::text = $%d`, key, idx))
+		args = append(args, val)
+		idx++
+	}
+
+	// Full-text + substring search across all "text" fields (supports English FTS and Thai).
+	if q := strings.TrimSpace(opts.Search); q != "" {
+		textCols := make([]string, 0)
+		for _, f := range col.Fields {
+			if f.Type == "text" {
+				textCols = append(textCols, fmt.Sprintf(`coalesce("%s", '')`, f.Name))
+			}
+		}
+		if len(textCols) > 0 {
+			concatExpr := fmt.Sprintf("concat_ws(' ', %s)", strings.Join(textCols, ", "))
+			clauses = append(clauses, fmt.Sprintf(
+				`(to_tsvector('simple', %s) @@ websearch_to_tsquery('simple', $%d) OR %s ILIKE $%d)`,
+				concatExpr, idx, concatExpr, idx+1,
+			))
+			args = append(args, q, "%"+q+"%")
+			idx += 2
+		}
+	}
+
+	if len(clauses) == 0 {
+		return "", args, idx, nil
+	}
+	return " WHERE " + strings.Join(clauses, " AND "), args, idx, nil
+}
+
+// buildOrderBy converts a sort expression (e.g. "-created_at", "title") into a safe SQL ORDER BY clause.
+func buildOrderBy(sort string, allowed map[string]models.FieldDef) (string, error) {
+	if sort == "" {
+		return `"id" DESC`, nil
+	}
+
+	dir := "ASC"
+	field := sort
+	if strings.HasPrefix(sort, "-") {
+		dir = "DESC"
+		field = strings.TrimPrefix(sort, "-")
+	} else if strings.HasPrefix(sort, "+") {
+		field = strings.TrimPrefix(sort, "+")
+	}
+
+	if _, ok := allowed[field]; !ok && !reservedColumns[field] {
+		return "", fmt.Errorf("unknown sort field %q", field)
+	}
+	return fmt.Sprintf(`"%s" %s`, field, dir), nil
+}
