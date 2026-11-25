@@ -21,6 +21,7 @@
 	let boolValues = $state<Record<string, boolean>>({});
 	let email = $state('');
 	let password = $state('');
+	let confirmPassword = $state('');
 	let errorMsg = $state('');
 	let saving = $state(false);
 
@@ -42,6 +43,7 @@
 			boolValues = nextBools;
 			email = '';
 			password = '';
+			confirmPassword = '';
 			errorMsg = '';
 		}
 	});
@@ -49,6 +51,10 @@
 	async function handleSubmit(e: SubmitEvent) {
 		e.preventDefault();
 		errorMsg = '';
+		if (isAuth && password !== confirmPassword) {
+			errorMsg = 'Passwords do not match';
+			return;
+		}
 		saving = true;
 
 		try {
@@ -123,20 +129,37 @@
 						class="w-full rounded-md border border-input bg-background px-3.5 py-2.5 text-sm outline-none focus:border-ring"
 					/>
 				</div>
-				<div>
-					<label for="u-pass" class="mb-1.5 block text-xs font-medium">
-						password <span class="text-destructive">*</span>
-					</label>
-					<input
-						id="u-pass"
-						type="password"
-						required
-						minlength="8"
-						value={password}
-						oninput={(e) => (password = e.currentTarget.value)}
-						placeholder="Minimum 8 characters"
-						class="w-full rounded-md border border-input bg-background px-3.5 py-2.5 text-sm outline-none focus:border-ring"
-					/>
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+					<div>
+						<label for="u-pass" class="mb-1.5 block text-xs font-medium">
+							password <span class="text-destructive">*</span>
+						</label>
+						<input
+							id="u-pass"
+							type="password"
+							required
+							minlength="8"
+							value={password}
+							oninput={(e) => (password = e.currentTarget.value)}
+							placeholder="Minimum 8 characters"
+							class="w-full rounded-md border border-input bg-background px-3.5 py-2.5 text-sm outline-none focus:border-ring"
+						/>
+					</div>
+					<div>
+						<label for="u-pass-confirm" class="mb-1.5 block text-xs font-medium">
+							retype password <span class="text-destructive">*</span>
+						</label>
+						<input
+							id="u-pass-confirm"
+							type="password"
+							required
+							minlength="8"
+							value={confirmPassword}
+							oninput={(e) => (confirmPassword = e.currentTarget.value)}
+							placeholder="Retype password"
+							class="w-full rounded-md border border-input bg-background px-3.5 py-2.5 text-sm outline-none focus:border-ring"
+						/>
+					</div>
 				</div>
 			{:else}
 				{#each collection.fields ?? [] as field (field.name)}
