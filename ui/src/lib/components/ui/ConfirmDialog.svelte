@@ -19,14 +19,14 @@
 			type="button"
 			aria-label="Cancel dialog"
 			onclick={() => confirmStore.respond(false)}
-			class="fixed inset-0 bg-black/45 backdrop-blur-[2px] transition-opacity"
+			class="fixed inset-0 animate-fade-in bg-black/45 backdrop-blur-[2px]"
 		></button>
 
 		<!-- Centered Modal Card -->
 		<div
 			role="alertdialog"
 			aria-modal="true"
-			class="relative z-10 w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-xl"
+			class="relative z-10 w-full max-w-md animate-modal-in rounded-lg border border-border bg-card p-6 shadow-xl"
 		>
 			<div class="flex items-start gap-3.5">
 				{#if confirmStore.state.options.destructive}

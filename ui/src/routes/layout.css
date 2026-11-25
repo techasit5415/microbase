@@ -129,3 +129,57 @@
 }
 
 html { font-size: 17.5px; }
+
+@keyframes mbFadeIn {
+	from { opacity: 0; }
+	to { opacity: 1; }
+}
+
+@keyframes mbModalIn {
+	from {
+		opacity: 0;
+		transform: translateY(6px) scale(0.97);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0) scale(1);
+	}
+}
+
+@keyframes mbDrawerIn {
+	from {
+		opacity: 0.4;
+		transform: translateX(24px);
+	}
+	to {
+		opacity: 1;
+		transform: translateX(0);
+	}
+}
+
+@keyframes mbRowIn {
+	from {
+		opacity: 0;
+		transform: translateY(4px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+.animate-fade-in {
+	animation: mbFadeIn 160ms ease-out both;
+}
+
+.animate-modal-in {
+	animation: mbModalIn 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-drawer-in {
+	animation: mbDrawerIn 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-row-in {
+	animation: mbRowIn 200ms ease-out both;
+}

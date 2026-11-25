@@ -32,6 +32,7 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStor
 	e.GET("/health", healthCtrl.Check)
 
 	if pool != nil {
+		middlewares.SetLogPool(pool)
 		hub := realtime.NewHub()
 		webhookService := services.NewWebhookService(pool)
 		colService := services.NewCollectionService(pool, cacheStore)
@@ -100,7 +101,7 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStor
 		api.GET("/files/:filename", fileCtrl.Serve)
 		api.GET("/system/:table", systemCtrl.List)
 		api.GET("/logs", func(c echo.Context) error {
-			return c.JSON(200, map[string]any{"items": middlewares.RecentLogs()})
+			return c.JSON(200, map[string]any{"items": middlewares.RecentLogs(c.Request().Context())})
 		})
 
 		// Collections & Schema Portability.

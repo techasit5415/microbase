@@ -99,7 +99,20 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 
 	migrations = append(migrations,
-		`CREATE TABLE IF NOT EXISTS _settings (
+		`CREATE TABLE IF NOT EXISTS _logs (
+			id BIGSERIAL PRIMARY KEY,
+			status INTEGER NOT NULL,
+			method TEXT NOT NULL,
+			path TEXT NOT NULL,
+			code TEXT NOT NULL DEFAULT '',
+			message TEXT NOT NULL DEFAULT '',
+			latency_ms BIGINT NOT NULL DEFAULT 0,
+			ip TEXT NOT NULL DEFAULT '',
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);
+		CREATE INDEX IF NOT EXISTS idx_logs_created_at ON _logs (created_at DESC);
+
+		CREATE TABLE IF NOT EXISTS _settings (
 			key        TEXT PRIMARY KEY,
 			value      TEXT NOT NULL DEFAULT '',
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

@@ -28,7 +28,7 @@
 	>
 		<div
 			onclick={(e) => e.stopPropagation()}
-			class="flex h-full w-full {maxWidth} flex-col border-l border-border bg-card shadow-2xl"
+			class="flex h-full w-full {maxWidth} flex-col border-l border-border animate-drawer-in bg-card shadow-2xl"
 		>
 			{@render children()}
 		</div>

@@ -88,13 +88,13 @@
 			type="button"
 			aria-label="Close index modal"
 			onclick={onClose}
-			class="fixed inset-0 bg-black/45 backdrop-blur-[2px]"
+			class="animate-fade-in fixed inset-0 bg-black/45 backdrop-blur-[2px]"
 		></button>
 
 		<div
 			role="dialog"
 			aria-modal="true"
-			class="relative z-10 w-full max-w-lg rounded-lg border border-border bg-card p-6 shadow-xl"
+			class="relative z-10 w-full max-w-lg animate-modal-in rounded-lg border border-border bg-card p-6 shadow-xl"
 		>
 			<div class="mb-5 flex items-center justify-between">
 				<h3 class="text-base font-semibold text-foreground">

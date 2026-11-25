@@ -20,6 +20,13 @@
 		onOpenApiPreview,
 		onOpenCreateRecord
 	}: Props = $props();
+
+	let spinning = $state(false);
+	function triggerRefresh() {
+		spinning = true;
+		onRefresh();
+		setTimeout(() => (spinning = false), 450);
+	}
 </script>
 
 <header class="space-y-3 border-b border-border px-6 py-4">
@@ -40,11 +47,11 @@
 
 			<button
 				type="button"
-				onclick={onRefresh}
+				onclick={triggerRefresh}
 				title="Refresh"
 				class="cursor-pointer rounded-md p-1.5 text-muted-foreground transition hover:bg-accent hover:text-foreground"
 			>
-				<RefreshCw class="h-4 w-4" />
+				<RefreshCw class="h-4 w-4 transition-transform {spinning ? 'animate-spin text-foreground' : ''}" />
 			</button>
 		</div>
 
