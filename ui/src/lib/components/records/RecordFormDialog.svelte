@@ -6,6 +6,7 @@
 	import Drawer from '#lib/components/ui/Drawer.svelte';
 	import Switch from '#lib/components/ui/Switch.svelte';
 	import { toast } from '#lib/stores/toast.svelte.ts';
+	import { buildAndValidateRecordPayload } from '#lib/validation/validators.ts';
 
 	interface Props {
 		open: boolean;
@@ -53,9 +54,22 @@
 	async function handleSubmit(e: SubmitEvent) {
 		e.preventDefault();
 		errorMsg = '';
-		if (isAuth && (password !== '' || !editingRecord) && password !== confirmPassword) {
-			errorMsg = 'Passwords do not match';
-			return;
+		if (isAuth) {
+			if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+				errorMsg = 'Please enter a valid email address.';
+				toast.error(errorMsg);
+				return;
+			}
+			if ((!editingRecord || password !== '') && password.length < 8) {
+				errorMsg = 'Password must be at least 8 characters.';
+				toast.error(errorMsg);
+				return;
+			}
+			if ((password !== '' || !editingRecord) && password !== confirmPassword) {
+				errorMsg = 'Passwords do not match.';
+				toast.error(errorMsg);
+				return;
+			}
 		}
 		saving = true;
 
@@ -80,24 +94,16 @@
 					await createUser(email.trim(), password);
 				}
 			} else {
-				const payload: Record<string, unknown> = {};
-				for (const field of collection.fields ?? []) {
-					if (field.type === 'boolean') {
-						payload[field.name] = Boolean(boolValues[field.name]);
-						continue;
-					}
-					const raw = values[field.name];
-					if (raw === undefined || raw === '') continue;
-
-					if (field.type === 'integer' || field.type === 'relation') {
-						payload[field.name] = parseInt(raw, 10);
-					} else if (field.type === 'float' || field.type === 'number') {
-						payload[field.name] = parseFloat(raw);
-					} else if (field.type === 'json' || field.type === 'geopoint' || field.type === 'vector') {
-						payload[field.name] = JSON.parse(raw);
-					} else {
-						payload[field.name] = raw;
-					}
+				const { payload, error } = buildAndValidateRecordPayload(
+					collection.fields ?? [],
+					values,
+					boolValues
+				);
+				if (error || !payload) {
+					errorMsg = error ?? 'Invalid record data';
+					toast.error(errorMsg);
+					saving = false;
+					return;
 				}
 				if (editingRecord && typeof editingRecord.id === 'number') {
 					await updateRecord(collection.name, editingRecord.id, payload);

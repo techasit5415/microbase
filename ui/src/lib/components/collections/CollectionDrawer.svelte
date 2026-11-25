@@ -4,6 +4,8 @@
 	import type { Collection, FieldDef, FieldType, IndexDef } from '#lib/api/types.ts';
 	import AuthOptionsTab from '#lib/components/oauth/AuthOptionsTab.svelte';
 	import Drawer from '#lib/components/ui/Drawer.svelte';
+	import { toast } from '#lib/stores/toast.svelte.ts';
+	import { validateCollectionForm } from '#lib/validation/validators.ts';
 	import FieldRowInput from './FieldRowInput.svelte';
 	import IndexModal from './IndexModal.svelte';
 	import NewFieldPicker from './NewFieldPicker.svelte';
@@ -124,16 +126,11 @@
 			return;
 		}
 		errorMsg = '';
-		for (let i = 0; i < fields.length; i++) {
-			const n = fields[i].name.trim();
-			if (!n) {
-				errorMsg = `Field #${i + 1} (${fields[i].type}) must have a column name.`;
-				return;
-			}
-			if (!/^[a-z][a-z0-9_]{0,62}$/.test(n)) {
-				errorMsg = `Field "${n}" must start with a lowercase letter and contain only a-z, 0-9, or _.`;
-				return;
-			}
+		const validationErr = validateCollectionForm(name, fields, indexes, Boolean(editing));
+		if (validationErr) {
+			errorMsg = validationErr;
+			toast.error(validationErr);
+			return;
 		}
 		saving = true;
 		try {
@@ -163,6 +160,7 @@
 			onClose();
 		} catch (err) {
 			errorMsg = err instanceof Error ? err.message : 'Failed to save collection';
+			toast.error(errorMsg);
 		} finally {
 			saving = false;
 		}

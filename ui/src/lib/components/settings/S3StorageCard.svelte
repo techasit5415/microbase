@@ -44,6 +44,12 @@
 	});
 
 	async function handleSave() {
+		if (enabled) {
+			if (!endpoint.trim()) return toast.error('S3 Endpoint URL is required.');
+			if (!bucket.trim()) return toast.error('S3 Bucket name is required.');
+			if (!accessKey.trim()) return toast.error('S3 Access Key is required.');
+			if (!secretKey.trim() && !hasSecret) return toast.error('S3 Secret Key is required.');
+		}
 		saving = true;
 		try {
 			const res = await apiRequest<S3Response>('/api/settings/s3', {
