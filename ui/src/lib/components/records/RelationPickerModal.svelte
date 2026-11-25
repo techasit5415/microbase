@@ -2,11 +2,13 @@
 	import { cubicOut } from 'svelte/easing';
 	import { fade, scale } from 'svelte/transition';
 	import { Check, Copy, Eye, Search, X } from '@lucide/svelte';
+	import type { RecordRow } from '#lib/api/types.ts';
 	import { toast } from '#lib/stores/toast.svelte.ts';
 
 	export interface RelationOption {
 		id: string;
 		preview: string;
+		record: RecordRow;
 	}
 
 	interface Props {
@@ -31,6 +33,7 @@
 
 	let search = $state('');
 	let draftIds = $state<string[]>([]);
+	let hoveredTooltip = $state<{ json: string; x: number; y: number } | null>(null);
 
 	let isMulti = $derived(maxSelect > 1);
 
@@ -38,6 +41,7 @@
 		if (open) {
 			draftIds = [...selectedIds];
 			search = '';
+			hoveredTooltip = null;
 		}
 	});
 
@@ -45,7 +49,10 @@
 		const q = search.trim().toLowerCase();
 		if (!q) return options;
 		return options.filter(
-			(o) => o.id.toLowerCase().includes(q) || o.preview.toLowerCase().includes(q)
+			(o) =>
+				o.id.toLowerCase().includes(q) ||
+				o.preview.toLowerCase().includes(q) ||
+				JSON.stringify(o.record).toLowerCase().includes(q)
 		);
 	});
 
@@ -75,6 +82,25 @@
 		e.stopPropagation();
 		navigator.clipboard?.writeText(id).catch(() => {});
 		toast.success(`Copied ${id}`);
+	}
+
+	function showRecordTooltip(e: MouseEvent, rec: RecordRow | undefined) {
+		if (!rec) return;
+		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		const clean: Record<string, unknown> = {};
+		for (const [k, v] of Object.entries(rec)) {
+			if (k === 'password_hash' || k === 'token_key') continue;
+			clean[k] = v;
+		}
+		hoveredTooltip = {
+			json: JSON.stringify(clean, null, 2),
+			x: Math.min(window.innerWidth - 340, Math.max(16, rect.left)),
+			y: rect.bottom + 8
+		};
+	}
+
+	function hideRecordTooltip() {
+		hoveredTooltip = null;
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
@@ -107,15 +133,15 @@
 			class="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-border bg-card shadow-2xl"
 		>
 			<!-- PocketBase-style Header with Pill Search -->
-			<div class="flex items-center gap-3 border-b border-border px-5 py-4">
+			<div class="flex items-center gap-3.5 border-b border-border px-5 py-4">
 				<span class="shrink-0 font-mono text-sm font-semibold text-foreground">{collectionName}</span>
 				<div class="relative flex-1">
-					<Search class="pointer-events-none absolute top-1/2 left-3.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+					<Search class="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
 					<input
 						type="text"
 						bind:value={search}
 						placeholder="Search term or ID..."
-						class="w-full rounded-full border border-transparent bg-secondary/80 py-2 pr-4 pl-9 text-xs text-foreground outline-none transition placeholder:text-muted-foreground focus:border-border focus:bg-background"
+						class="w-full rounded-full border border-transparent bg-secondary/80 py-2 pr-4 pl-10 text-sm text-foreground outline-none transition placeholder:text-muted-foreground focus:border-border focus:bg-background"
 					/>
 				</div>
 				<button
@@ -129,10 +155,10 @@
 			</div>
 
 			<!-- Scrollable Records List -->
-			<div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5">
-				<div class="max-h-72 overflow-y-auto rounded-md border border-border divide-y divide-border bg-background/50">
+			<div class="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-5">
+				<div class="max-h-80 overflow-y-auto rounded-md border border-border divide-y divide-border bg-background/50">
 					{#if filtered.length === 0}
-						<div class="py-8 text-center text-xs text-muted-foreground">No records found.</div>
+						<div class="py-10 text-center text-sm text-muted-foreground">No records found.</div>
 					{:else}
 						{#each filtered as opt (opt.id)}
 							{@const selected = draftIds.includes(opt.id)}
@@ -146,66 +172,73 @@
 										toggleId(opt.id);
 									}
 								}}
-								class="flex cursor-pointer items-center gap-3 px-3.5 py-2.5 transition hover:bg-muted/50 {selected ? 'bg-emerald-500/5' : ''}"
+								class="flex cursor-pointer items-center gap-3 px-4 py-3 transition hover:bg-muted/50 {selected ? 'bg-emerald-500/5' : ''}"
 							>
 								<!-- Circular check indicator -->
 								<span
-									class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition {selected
+									class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition {selected
 										? 'border-emerald-600 bg-emerald-600 text-white'
 										: 'border-muted-foreground/45 bg-background'}"
 								>
 									{#if selected}
-										<Check class="h-2.5 w-2.5 stroke-[3]" />
+										<Check class="h-3 w-3 stroke-[3]" />
 									{/if}
 								</span>
 
-								<!-- ID Pill + Copy button -->
-								<span class="inline-flex shrink-0 items-center gap-1.5 rounded bg-secondary px-2 py-0.5 font-mono text-[11px] text-foreground">
-									<Eye class="h-3 w-3 text-muted-foreground" />
+								<!-- PocketBase ID Pill: Eye (hover for JSON) + Copy ID -->
+								<span class="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-secondary px-2.5 py-1 font-mono text-[13px] text-foreground">
+									<span
+										role="presentation"
+										onmouseenter={(e) => showRecordTooltip(e, opt.record)}
+										onmouseleave={hideRecordTooltip}
+										onclick={(e) => e.stopPropagation()}
+										class="inline-flex cursor-help items-center rounded p-0.5 text-muted-foreground transition hover:text-foreground"
+									>
+										<Eye class="h-4 w-4" />
+									</span>
 									<button
 										type="button"
 										title="Copy ID"
 										onclick={(e) => copyId(e, opt.id)}
-										class="inline-flex cursor-pointer items-center gap-1 rounded bg-background/75 px-1.5 py-0.5 text-[11px] text-foreground transition hover:bg-background"
+										class="inline-flex cursor-pointer items-center gap-1.5 rounded bg-background/80 px-2 py-0.5 text-[13px] text-foreground transition hover:bg-background"
 									>
-										<Copy class="h-2.5 w-2.5 text-muted-foreground" />
+										<Copy class="h-3.5 w-3.5 text-muted-foreground" />
 										<span>{opt.id}</span>
 									</button>
 								</span>
-
-								<!-- Human-readable preview value -->
-								{#if opt.preview}
-									<span class="min-w-0 flex-1 truncate text-xs text-foreground/90">{opt.preview}</span>
-								{/if}
 							</div>
 						{/each}
 					{/if}
 				</div>
 
 				<!-- Selected Summary Section -->
-				<div class="space-y-2">
-					<div class="text-xs font-semibold text-foreground">
+				<div class="space-y-2.5">
+					<div class="text-sm font-semibold text-foreground">
 						Selected ({draftIds.length}{#if isMulti} of max {maxSelect}{/if})
 					</div>
 					{#if draftIds.length === 0}
-						<p class="text-xs text-muted-foreground">No records selected.</p>
+						<p class="text-sm text-muted-foreground">No records selected.</p>
 					{:else}
 						<div class="flex flex-wrap gap-2">
 							{#each draftIds as id (id)}
 								{@const info = optionMap[id]}
-								<span class="inline-flex items-center gap-1.5 rounded-md bg-secondary px-2.5 py-1.5 text-xs text-foreground">
-									<Eye class="h-3 w-3 text-muted-foreground" />
-									<span class="rounded bg-background/80 px-1.5 py-0.5 font-mono text-[11px]">{id}</span>
-									{#if info?.preview}
-										<span class="max-w-36 truncate text-xs font-medium">{info.preview}</span>
-									{/if}
+								<span class="inline-flex items-center gap-1.5 rounded-md bg-secondary px-2.5 py-1.5 text-[13px] text-foreground">
+									<span
+										role="presentation"
+										onmouseenter={(e) => showRecordTooltip(e, info?.record)}
+										onmouseleave={hideRecordTooltip}
+										class="inline-flex cursor-help items-center text-muted-foreground transition hover:text-foreground"
+									>
+										<Eye class="h-4 w-4" />
+									</span>
+									<span class="rounded bg-background/85 px-2 py-0.5 font-mono text-[13px]">{id}</span>
 									<button
 										type="button"
 										aria-label="Remove {id}"
 										onclick={() => toggleId(id)}
 										class="ml-0.5 cursor-pointer rounded p-0.5 text-muted-foreground transition hover:bg-destructive/15 hover:text-destructive"
 									>
-										<X class="h-3 w-3" />
+										<X class="h-3.5 w-3.5" />
 									</button>
 								</span>
 							{/each}
@@ -219,7 +252,7 @@
 				<button
 					type="button"
 					onclick={onClose}
-					class="cursor-pointer rounded-md px-3.5 py-2 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
+					class="cursor-pointer rounded-md px-4 py-2 text-sm font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
 				>
 					Close
 				</button>
@@ -229,11 +262,21 @@
 						onConfirm(draftIds);
 						onClose();
 					}}
-					class="cursor-pointer rounded-md bg-foreground px-5 py-2 text-xs font-semibold text-background transition hover:opacity-90"
+					class="cursor-pointer rounded-md bg-foreground px-5 py-2 text-sm font-semibold text-background transition hover:opacity-90"
 				>
 					Set selection
 				</button>
 			</div>
 		</div>
 	</div>
+
+	<!-- Floating JSON Record Preview Tooltip (triggered by hovering Eye icon) -->
+	{#if hoveredTooltip}
+		<div
+			style="left: {hoveredTooltip.x}px; top: {hoveredTooltip.y}px;"
+			class="pointer-events-none fixed z-70 max-h-72 w-80 overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900 p-3 text-zinc-100 shadow-2xl"
+		>
+			<pre class="overflow-auto font-mono text-xs leading-relaxed whitespace-pre-wrap break-all">{hoveredTooltip.json}</pre>
+		</div>
+	{/if}
 {/if}

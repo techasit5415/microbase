@@ -150,7 +150,8 @@
 						: await listRecords(f.collection_name, { page: 1, perPage: 100 });
 				next[f.name] = (res.items ?? []).map((row) => ({
 					id: String(row.id ?? ''),
-					preview: extractRowPreview(row)
+					preview: extractRowPreview(row),
+					record: row
 				}));
 			} catch {
 				next[f.name] = [];
@@ -648,11 +649,11 @@
 								<div class="flex flex-wrap gap-1.5 border-b border-border/50 bg-card/70 px-3.5 py-2.5">
 									{#each selectedList as sid (sid)}
 										{@const matched = (relationOptions[field.name] ?? []).find((o) => o.id === sid)}
-										<span class="inline-flex items-center gap-1.5 rounded-md bg-secondary px-2 py-1 text-xs text-foreground">
-											<span class="rounded bg-background/80 px-1.5 py-0.5 font-mono text-[11px]">{sid}</span>
-											{#if matched?.preview}
-												<span class="max-w-36 truncate font-medium">{matched.preview}</span>
-											{/if}
+										<span
+											title={matched?.record ? JSON.stringify(matched.record, null, 2) : sid}
+											class="inline-flex items-center gap-1.5 rounded-md bg-secondary px-2.5 py-1 text-[13px] text-foreground"
+										>
+											<span class="rounded bg-background/85 px-2 py-0.5 font-mono text-[13px]">{sid}</span>
 											<button
 												type="button"
 												onclick={() => {
