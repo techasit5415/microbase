@@ -6,7 +6,7 @@ github.com/techasit5415/microbase/internal/cache/memory.go:52:					Delete				100
 github.com/techasit5415/microbase/internal/cache/memory.go:59:					Incr				100.0%
 github.com/techasit5415/microbase/internal/cache/memory.go:82:					Backend				100.0%
 github.com/techasit5415/microbase/internal/cache/memory.go:83:					Close				100.0%
-github.com/techasit5415/microbase/internal/cache/redis.go:15:					NewRedisStore			75.0%
+github.com/techasit5415/microbase/internal/cache/redis.go:15:					NewRedisStore			100.0%
 github.com/techasit5415/microbase/internal/cache/redis.go:30:					Get				100.0%
 github.com/techasit5415/microbase/internal/cache/redis.go:38:					Set				100.0%
 github.com/techasit5415/microbase/internal/cache/redis.go:42:					Delete				100.0%
@@ -14,7 +14,7 @@ github.com/techasit5415/microbase/internal/cache/redis.go:46:					Incr				83.3%
 github.com/techasit5415/microbase/internal/cache/redis.go:57:					Backend				100.0%
 github.com/techasit5415/microbase/internal/cache/redis.go:58:					Close				100.0%
 github.com/techasit5415/microbase/internal/cache/switchable.go:16:				NewSwitchableStore		100.0%
-github.com/techasit5415/microbase/internal/cache/switchable.go:21:				Switch				73.3%
+github.com/techasit5415/microbase/internal/cache/switchable.go:21:				Switch				93.3%
 github.com/techasit5415/microbase/internal/cache/switchable.go:45:				current				100.0%
 github.com/techasit5415/microbase/internal/cache/switchable.go:51:				Get				100.0%
 github.com/techasit5415/microbase/internal/cache/switchable.go:54:				Set				100.0%
@@ -78,9 +78,9 @@ github.com/techasit5415/microbase/internal/controllers/oauth_controller.go:19:		
 github.com/techasit5415/microbase/internal/controllers/oauth_controller.go:24:			AuthMethods			75.0%
 github.com/techasit5415/microbase/internal/controllers/oauth_controller.go:33:			ListProviders			75.0%
 github.com/techasit5415/microbase/internal/controllers/oauth_controller.go:42:			UpdateProvider			66.7%
-github.com/techasit5415/microbase/internal/controllers/oauth_controller.go:59:			Start				54.5%
-github.com/techasit5415/microbase/internal/controllers/oauth_controller.go:78:			Callback			0.0%
-github.com/techasit5415/microbase/internal/controllers/oauth_controller.go:102:			Exchange			55.6%
+github.com/techasit5415/microbase/internal/controllers/oauth_controller.go:59:			Start				81.8%
+github.com/techasit5415/microbase/internal/controllers/oauth_controller.go:78:			Callback			78.6%
+github.com/techasit5415/microbase/internal/controllers/oauth_controller.go:102:			Exchange			77.8%
 github.com/techasit5415/microbase/internal/controllers/oauth_controller.go:120:			buildCallbackURL		75.0%
 github.com/techasit5415/microbase/internal/controllers/openapi_controller.go:17:		NewOpenAPIController		100.0%
 github.com/techasit5415/microbase/internal/controllers/openapi_controller.go:22:		Spec				90.0%
@@ -88,7 +88,7 @@ github.com/techasit5415/microbase/internal/controllers/ops_controller.go:42:			N
 github.com/techasit5415/microbase/internal/controllers/ops_controller.go:51:			loadMailConfig			100.0%
 github.com/techasit5415/microbase/internal/controllers/ops_controller.go:65:			GetMail				100.0%
 github.com/techasit5415/microbase/internal/controllers/ops_controller.go:79:			UpdateMail			84.6%
-github.com/techasit5415/microbase/internal/controllers/ops_controller.go:105:			TestMail			29.4%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:105:			TestMail			35.3%
 github.com/techasit5415/microbase/internal/controllers/ops_controller.go:134:			ListBackups			71.4%
 github.com/techasit5415/microbase/internal/controllers/ops_controller.go:161:			CreateBackup			38.5%
 github.com/techasit5415/microbase/internal/controllers/ops_controller.go:181:			DownloadBackup			100.0%
@@ -101,14 +101,14 @@ github.com/techasit5415/microbase/internal/controllers/ops_controller.go:317:			
 github.com/techasit5415/microbase/internal/controllers/ops_controller.go:346:			UploadBackup			75.0%
 github.com/techasit5415/microbase/internal/controllers/ops_controller.go:371:			RestoreBackup			60.0%
 github.com/techasit5415/microbase/internal/controllers/ops_controller.go:388:			GetRateLimits			57.1%
-github.com/techasit5415/microbase/internal/controllers/ops_controller.go:401:			UpdateRateLimits		0.0%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:401:			UpdateRateLimits		77.8%
 github.com/techasit5415/microbase/internal/controllers/ops_controller.go:423:			GetLogSettings			62.5%
 github.com/techasit5415/microbase/internal/controllers/ops_controller.go:437:			UpdateLogSettings		85.7%
 github.com/techasit5415/microbase/internal/controllers/ops_controller.go:465:			parseDBURL			93.3%
-github.com/techasit5415/microbase/internal/controllers/ops_controller.go:487:			buildDBURL			90.9%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:487:			buildDBURL			100.0%
 github.com/techasit5415/microbase/internal/controllers/ops_controller.go:511:			GetDatabase			85.7%
-github.com/techasit5415/microbase/internal/controllers/ops_controller.go:531:			TestDatabase			0.0%
-github.com/techasit5415/microbase/internal/controllers/ops_controller.go:559:			UpdateDatabase			0.0%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:531:			TestDatabase			89.5%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:559:			UpdateDatabase			74.2%
 github.com/techasit5415/microbase/internal/controllers/ops_controller.go:613:			GetAppSettings			100.0%
 github.com/techasit5415/microbase/internal/controllers/ops_controller.go:618:			UpdateAppSettings		80.0%
 github.com/techasit5415/microbase/internal/controllers/realtime_controller.go:24:		NewRealtimeController		100.0%
@@ -129,7 +129,7 @@ github.com/techasit5415/microbase/internal/controllers/schema_controller.go:23:	
 github.com/techasit5415/microbase/internal/controllers/schema_controller.go:32:			Import				85.7%
 github.com/techasit5415/microbase/internal/controllers/settings_controller.go:22:		NewSettingsController		100.0%
 github.com/techasit5415/microbase/internal/controllers/settings_controller.go:27:		GetRedis			100.0%
-github.com/techasit5415/microbase/internal/controllers/settings_controller.go:37:		UpdateRedis			0.0%
+github.com/techasit5415/microbase/internal/controllers/settings_controller.go:37:		UpdateRedis			81.8%
 github.com/techasit5415/microbase/internal/controllers/settings_controller.go:68:		GetS3				83.3%
 github.com/techasit5415/microbase/internal/controllers/settings_controller.go:88:		UpdateS3			66.7%
 github.com/techasit5415/microbase/internal/controllers/superuser_controller.go:19:		NewSuperuserController		100.0%
@@ -163,7 +163,7 @@ github.com/techasit5415/microbase/internal/middlewares/ratelimit.go:32:				GetRa
 github.com/techasit5415/microbase/internal/middlewares/ratelimit.go:41:				SetRateLimitRules		100.0%
 github.com/techasit5415/microbase/internal/middlewares/ratelimit.go:48:				RateLimit			95.7%
 github.com/techasit5415/microbase/internal/models/collection.go:95:				IsValidIdentifier		100.0%
-github.com/techasit5415/microbase/internal/models/collection.go:100:				ToPostgresType			52.6%
+github.com/techasit5415/microbase/internal/models/collection.go:100:				ToPostgresType			89.5%
 github.com/techasit5415/microbase/internal/models/record.go:18:					Normalize			100.0%
 github.com/techasit5415/microbase/internal/models/record.go:31:					Offset				100.0%
 github.com/techasit5415/microbase/internal/oauth/discord.go:23:					NewDiscordProvider		100.0%
@@ -189,7 +189,7 @@ github.com/techasit5415/microbase/internal/routes/routes.go:22:					Register			9
 github.com/techasit5415/microbase/internal/services/app_settings.go:41:				DefaultAppSettings		100.0%
 github.com/techasit5415/microbase/internal/services/app_settings.go:69:				GetCachedAppSettings		100.0%
 github.com/techasit5415/microbase/internal/services/app_settings.go:76:				SetCachedAppSettings		100.0%
-github.com/techasit5415/microbase/internal/services/app_settings.go:95:				LoadAppSettingsFromDB		50.0%
+github.com/techasit5415/microbase/internal/services/app_settings.go:95:				LoadAppSettingsFromDB		83.3%
 github.com/techasit5415/microbase/internal/services/app_settings.go:114:			RealClientIP			100.0%
 github.com/techasit5415/microbase/internal/services/app_settings.go:134:			IsSuperuserIPAllowed		94.1%
 github.com/techasit5415/microbase/internal/services/auth_service.go:43:				NewAuthService			100.0%
@@ -200,10 +200,10 @@ github.com/techasit5415/microbase/internal/services/auth_service.go:146:			GetUs
 github.com/techasit5415/microbase/internal/services/auth_service.go:163:			GenerateToken			83.3%
 github.com/techasit5415/microbase/internal/services/auth_service.go:184:			ParseToken			66.7%
 github.com/techasit5415/microbase/internal/services/auth_service.go:207:			ListUsers			73.7%
-github.com/techasit5415/microbase/internal/services/auth_service.go:263:			userExists			0.0%
+github.com/techasit5415/microbase/internal/services/auth_service.go:263:			userExists			100.0%
 github.com/techasit5415/microbase/internal/services/auth_service.go:269:			GetUserRecord			65.4%
 github.com/techasit5415/microbase/internal/services/auth_service.go:308:			DeleteUser			53.8%
-github.com/techasit5415/microbase/internal/services/auth_service.go:329:			UpdateUser			46.3%
+github.com/techasit5415/microbase/internal/services/auth_service.go:329:			UpdateUser			73.1%
 github.com/techasit5415/microbase/internal/services/auth_service.go:431:			GenerateCollectionToken		71.4%
 github.com/techasit5415/microbase/internal/services/autogen.go:16:				GenerateFromPattern		70.2%
 github.com/techasit5415/microbase/internal/services/autogen.go:86:				expandCharClass			81.8%
@@ -225,7 +225,7 @@ github.com/techasit5415/microbase/internal/services/cron_scheduler.go:48:			Cron
 github.com/techasit5415/microbase/internal/services/cron_scheduler.go:71:			matchCronField			89.2%
 github.com/techasit5415/microbase/internal/services/cron_scheduler.go:125:			ExecuteCustomCron		92.3%
 github.com/techasit5415/microbase/internal/services/cron_scheduler.go:190:			StartCronScheduler		58.3%
-github.com/techasit5415/microbase/internal/services/cron_scheduler.go:211:			runDueCrons			0.0%
+github.com/techasit5415/microbase/internal/services/cron_scheduler.go:211:			runDueCrons			88.9%
 github.com/techasit5415/microbase/internal/services/filter_parser.go:31:			tokenizeFilter			95.2%
 github.com/techasit5415/microbase/internal/services/filter_parser.go:126:			ParseFilterToSQL		100.0%
 github.com/techasit5415/microbase/internal/services/filter_parser.go:132:			ParseFilterToSQLWithBody	80.0%
@@ -234,7 +234,7 @@ github.com/techasit5415/microbase/internal/services/filter_parser.go:155:			next
 github.com/techasit5415/microbase/internal/services/filter_parser.go:163:			isColumnIdent			100.0%
 github.com/techasit5415/microbase/internal/services/filter_parser.go:178:			parseOr				100.0%
 github.com/techasit5415/microbase/internal/services/filter_parser.go:194:			parseAnd			100.0%
-github.com/techasit5415/microbase/internal/services/filter_parser.go:210:			flipOperator			33.3%
+github.com/techasit5415/microbase/internal/services/filter_parser.go:210:			flipOperator			100.0%
 github.com/techasit5415/microbase/internal/services/filter_parser.go:225:			parseAtom			90.7%
 github.com/techasit5415/microbase/internal/services/filter_parser.go:344:			isLiteralOrRequestToken		100.0%
 github.com/techasit5415/microbase/internal/services/filter_parser.go:349:			resolveValue			75.0%
@@ -244,8 +244,8 @@ github.com/techasit5415/microbase/internal/services/filter_parser.go:434:			next
 github.com/techasit5415/microbase/internal/services/filter_parser.go:442:			evalOr				100.0%
 github.com/techasit5415/microbase/internal/services/filter_parser.go:458:			evalAnd				100.0%
 github.com/techasit5415/microbase/internal/services/filter_parser.go:474:			evalAtom			95.7%
-github.com/techasit5415/microbase/internal/services/filter_parser.go:508:			resolve				56.8%
-github.com/techasit5415/microbase/internal/services/filter_parser.go:572:			toFloat64			57.1%
+github.com/techasit5415/microbase/internal/services/filter_parser.go:508:			resolve				70.3%
+github.com/techasit5415/microbase/internal/services/filter_parser.go:572:			toFloat64			85.7%
 github.com/techasit5415/microbase/internal/services/filter_parser.go:588:			evalComparison			77.4%
 github.com/techasit5415/microbase/internal/services/oauth_service.go:82:			NewOAuthService			100.0%
 github.com/techasit5415/microbase/internal/services/oauth_service.go:87:			ListProviders			87.5%
@@ -259,7 +259,7 @@ github.com/techasit5415/microbase/internal/services/oauth_service.go:325:			find
 github.com/techasit5415/microbase/internal/services/oauth_service.go:377:			oauthStateKey			100.0%
 github.com/techasit5415/microbase/internal/services/oauth_service.go:378:			oauthCodeKey			100.0%
 github.com/techasit5415/microbase/internal/services/oauth_service.go:380:			generateRandomHex		100.0%
-github.com/techasit5415/microbase/internal/services/oauth_service.go:386:			syncExtraFields			66.7%
+github.com/techasit5415/microbase/internal/services/oauth_service.go:386:			syncExtraFields			83.3%
 github.com/techasit5415/microbase/internal/services/password.go:23:				HashPassword			85.7%
 github.com/techasit5415/microbase/internal/services/password.go:37:				VerifyPassword			92.3%
 github.com/techasit5415/microbase/internal/services/record_expand.go:12:			ExpandRecords			82.0%
@@ -271,11 +271,11 @@ github.com/techasit5415/microbase/internal/services/record_query.go:11:				build
 github.com/techasit5415/microbase/internal/services/record_query.go:78:				buildOrderBy			100.0%
 github.com/techasit5415/microbase/internal/services/record_service.go:28:			NewRecordService		100.0%
 github.com/techasit5415/microbase/internal/services/record_service.go:33:			List				84.0%
-github.com/techasit5415/microbase/internal/services/record_service.go:81:			GetByID				84.6%
-github.com/techasit5415/microbase/internal/services/record_service.go:123:			recordExists			0.0%
+github.com/techasit5415/microbase/internal/services/record_service.go:81:			GetByID				88.5%
+github.com/techasit5415/microbase/internal/services/record_service.go:123:			recordExists			100.0%
 github.com/techasit5415/microbase/internal/services/record_service.go:129:			Create				77.6%
-github.com/techasit5415/microbase/internal/services/record_service.go:210:			Update				77.3%
-github.com/techasit5415/microbase/internal/services/record_service.go:278:			Delete				80.6%
+github.com/techasit5415/microbase/internal/services/record_service.go:210:			Update				81.8%
+github.com/techasit5415/microbase/internal/services/record_service.go:278:			Delete				83.9%
 github.com/techasit5415/microbase/internal/services/record_service.go:325:			publish				100.0%
 github.com/techasit5415/microbase/internal/services/record_service.go:338:			parseRecordID			75.0%
 github.com/techasit5415/microbase/internal/services/record_vector.go:12:			VectorSearch			82.1%
@@ -310,7 +310,7 @@ github.com/techasit5415/microbase/internal/services/webhook_service.go:134:			To
 github.com/techasit5415/microbase/internal/services/webhook_service.go:145:			Delete				66.7%
 github.com/techasit5415/microbase/internal/services/webhook_service.go:157:			Test				90.0%
 github.com/techasit5415/microbase/internal/services/webhook_service.go:180:			ComputeHMACSignature		100.0%
-github.com/techasit5415/microbase/internal/services/webhook_service.go:187:			DispatchAsync			35.0%
+github.com/techasit5415/microbase/internal/services/webhook_service.go:187:			DispatchAsync			85.0%
 github.com/techasit5415/microbase/internal/services/webhook_service.go:224:			deliverWithRetry		82.4%
 github.com/techasit5415/microbase/internal/services/webhook_service.go:310:			buildWebhookPayload		100.0%
 github.com/techasit5415/microbase/internal/storage/local.go:19:					NewLocalStorage			100.0%
@@ -336,4 +336,4 @@ github.com/techasit5415/microbase/internal/storage/storage.go:83:				Open				100
 github.com/techasit5415/microbase/internal/storage/storage.go:87:				Delete				0.0%
 github.com/techasit5415/microbase/internal/storage/storage.go:91:				Backend				100.0%
 github.com/techasit5415/microbase/internal/testutil/database.go:18:				Database			72.1%
-total:												(statements)			76.4%
+total:												(statements)			80.1%

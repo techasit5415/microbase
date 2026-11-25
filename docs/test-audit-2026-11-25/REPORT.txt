@@ -651,3 +651,16 @@ Final verification:
 - Cross-package Go statement coverage: total:												(statements)			76.4%
 - UI svelte-check : 0 errors, 0 warnings
 - UI Vitest (server + chromium) : 5/5 test files, 11/11 tests PASS
+
+================================================================================
+COVERAGE BOOST ROUND 2 (2026-11-26 00:00 +07:00)
+================================================================================
+Added tests:
+- internal/controllers/ops_extra_test.go (RateLimits, LogSettings, Mail/TestMail, Redis hot-swap, S3 toggle, Database Get/Test/Update)
+- internal/controllers/oauth_controller_test.go (Full mock OIDC IdP Start -> Callback -> Exchange -> Reuse rejection)
+- internal/services/coverage_boost_test.go (Async Webhook HMAC+Headers delivery, Row-level 403 vs 404 recordExists/userExists, runDueCrons, LoadAppSettingsFromDB, FilterParser edge cases, all FieldDef.ToPostgresType branches)
+
+Result:
+- go vet ./... : PASS
+- MICROBASE_TEST_LOCAL_ENV=1 go test -count=1 -coverpkg=./internal/... ./internal/... : ALL PASS (0 skipped)
+- Cross-package Go statement coverage: total:												(statements)			80.1%
