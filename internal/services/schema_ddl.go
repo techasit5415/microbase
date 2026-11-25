@@ -127,3 +127,81 @@ func buildAlterTableStatements(tableName string, oldFields, newFields []models.F
 
 	return stmts, cleaned, nil
 }
+
+// buildCreateIndexSQL validates an IndexDef and generates a PostgreSQL CREATE [UNIQUE] INDEX statement.
+func buildCreateIndexSQL(tableName string, idx models.IndexDef) (string, error) {
+	if !models.IsValidIdentifier(tableName) {
+		return "", fmt.Errorf("invalid table name %q", tableName)
+	}
+	if !models.IsValidIdentifier(idx.Name) {
+		return "", fmt.Errorf("invalid index name %q", idx.Name)
+	}
+	if len(idx.Columns) == 0 {
+		return "", fmt.Errorf("index %q must include at least one column", idx.Name)
+	}
+	quotedCols := make([]string, 0, len(idx.Columns))
+	for _, col := range idx.Columns {
+		if !models.IsValidIdentifier(col) {
+			return "", fmt.Errorf("invalid column %q in index %q", col, idx.Name)
+		}
+		quotedCols = append(quotedCols, fmt.Sprintf(`"%s"`, col))
+	}
+	uniqueKW := ""
+	if idx.Unique {
+		uniqueKW = "UNIQUE "
+	}
+	return fmt.Sprintf(`CREATE %sINDEX IF NOT EXISTS "%s" ON "%s" (%s);`,
+		uniqueKW, idx.Name, tableName, strings.Join(quotedCols, ", ")), nil
+}
+
+// buildDropIndexSQL generates a safe PostgreSQL DROP INDEX statement.
+func buildDropIndexSQL(idxName string) (string, error) {
+	if !models.IsValidIdentifier(idxName) {
+		return "", fmt.Errorf("invalid index name %q", idxName)
+	}
+	return fmt.Sprintf(`DROP INDEX IF EXISTS "%s";`, idxName), nil
+}
+
+func indexSignature(idx models.IndexDef) string {
+	return fmt.Sprintf("%s|%t|%s", idx.Name, idx.Unique, strings.Join(idx.Columns, ","))
+}
+
+// buildIndexDiffStatements computes DROP/CREATE INDEX DDL statements between old and new IndexDef slices.
+func buildIndexDiffStatements(tableName string, oldIndexes, newIndexes []models.IndexDef) ([]string, error) {
+	oldMap := make(map[string]models.IndexDef, len(oldIndexes))
+	for _, idx := range oldIndexes {
+		oldMap[idx.Name] = idx
+	}
+	newMap := make(map[string]models.IndexDef, len(newIndexes))
+	for _, idx := range newIndexes {
+		newMap[idx.Name] = idx
+	}
+
+	var stmts []string
+
+	// Drop removed or modified indexes first.
+	for name, oldIdx := range oldMap {
+		newIdx, exists := newMap[name]
+		if !exists || indexSignature(oldIdx) != indexSignature(newIdx) {
+			dropSQL, err := buildDropIndexSQL(name)
+			if err != nil {
+				return nil, err
+			}
+			stmts = append(stmts, dropSQL)
+		}
+	}
+
+	// Create newly added or modified indexes.
+	for _, newIdx := range newIndexes {
+		oldIdx, exists := oldMap[newIdx.Name]
+		if !exists || indexSignature(oldIdx) != indexSignature(newIdx) {
+			createSQL, err := buildCreateIndexSQL(tableName, newIdx)
+			if err != nil {
+				return nil, err
+			}
+			stmts = append(stmts, createSQL)
+		}
+	}
+
+	return stmts, nil
+}

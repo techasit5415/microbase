@@ -20,20 +20,29 @@ type FieldDef struct {
 	Dimension    int    `json:"dimension,omitempty"`     // Vector dimensions (1..4096), used when Type == "vector"
 }
 
+// IndexDef represents a PostgreSQL B-Tree or UNIQUE index on one or more columns.
+type IndexDef struct {
+	Name    string   `json:"name"`             // e.g. "idx_tgn94bxgmg"
+	Columns []string `json:"columns"`          // Ordered list of indexed column names
+	Unique  bool     `json:"unique,omitempty"` // true => CREATE UNIQUE INDEX
+}
+
 // Collection represents a user-defined table registered in _collections.
 type Collection struct {
 	ID        int64             `json:"id"`
 	Name      string            `json:"name"`
 	Fields    []FieldDef        `json:"fields"`
 	APIRules  map[string]string `json:"api_rules,omitempty"`
+	Indexes   []IndexDef        `json:"indexes,omitempty"`
 	CreatedAt time.Time         `json:"created_at"`
 	UpdatedAt time.Time         `json:"updated_at"`
 }
 
 // CreateCollectionRequest is the payload accepted by POST /api/collections.
 type CreateCollectionRequest struct {
-	Name   string     `json:"name"`
-	Fields []FieldDef `json:"fields"`
+	Name    string     `json:"name"`
+	Fields  []FieldDef `json:"fields"`
+	Indexes []IndexDef `json:"indexes,omitempty"`
 }
 
 // SchemaExport represents a portable snapshot of all collection schemas for environment migration.

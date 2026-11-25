@@ -64,7 +64,8 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 			created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);`,
-		`ALTER TABLE _collections ADD COLUMN IF NOT EXISTS api_rules JSONB NOT NULL DEFAULT '{}'::jsonb;`,
+		`ALTER TABLE _collections ADD COLUMN IF NOT EXISTS api_rules JSONB NOT NULL DEFAULT '{}'::jsonb;
+		ALTER TABLE _collections ADD COLUMN IF NOT EXISTS indexes JSONB NOT NULL DEFAULT '[]'::jsonb;`,
 		`CREATE TABLE IF NOT EXISTS _oauth_providers (
 			name          TEXT PRIMARY KEY,
 			display_name  TEXT NOT NULL,

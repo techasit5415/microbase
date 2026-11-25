@@ -26,12 +26,19 @@ export interface FieldDef {
 	dimension?: number;
 }
 
+export interface IndexDef {
+	name: string;
+	columns: string[];
+	unique?: boolean;
+}
+
 export interface Collection {
 	id: number;
 	name: string;
 	type?: 'auth' | 'base' | 'system';
 	fields: FieldDef[];
 	api_rules?: Record<string, string>;
+	indexes?: IndexDef[];
 	created_at: string;
 	updated_at: string;
 }

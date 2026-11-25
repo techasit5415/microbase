@@ -1,10 +1,11 @@
 <script lang="ts">
-	import { Lock, X } from '@lucide/svelte';
+	import { Lock, Plus, X } from '@lucide/svelte';
 	import { createCollection, updateCollection } from '#lib/api/collections.ts';
-	import type { Collection, FieldDef, FieldType } from '#lib/api/types.ts';
+	import type { Collection, FieldDef, FieldType, IndexDef } from '#lib/api/types.ts';
 	import AuthOptionsTab from '#lib/components/oauth/AuthOptionsTab.svelte';
 	import Drawer from '#lib/components/ui/Drawer.svelte';
 	import FieldRowInput from './FieldRowInput.svelte';
+	import IndexModal from './IndexModal.svelte';
 	import NewFieldPicker from './NewFieldPicker.svelte';
 
 	interface Props {
@@ -19,11 +20,20 @@
 	let activeTab = $state<'fields' | 'rules' | 'options'>('fields');
 	let name = $state('');
 	let fields = $state<FieldDef[]>([]);
+	let indexes = $state<IndexDef[]>([]);
 	let apiRules = $state<Record<string, string>>({});
 	let errorMsg = $state('');
 	let saving = $state(false);
 
+	let showIndexModal = $state(false);
+	let editingIndexPos = $state<number | null>(null);
+
 	let isAuth = $derived(editing?.type === 'auth');
+
+	let availableIndexCols = $derived.by(() => {
+		const userCols = fields.map((f) => f.name.trim()).filter((n) => n !== '');
+		return Array.from(new Set(['id', ...userCols, 'created_at', 'updated_at']));
+	});
 
 	const ruleKeys = [
 		{ key: 'list', label: 'List/Search rule' },
@@ -45,10 +55,16 @@
 					required: Boolean(f.required),
 					unique: Boolean(f.unique)
 				}));
+				indexes = (editing.indexes ?? []).map((idx) => ({
+					name: idx.name,
+					columns: [...idx.columns],
+					unique: Boolean(idx.unique)
+				}));
 				apiRules = { ...(editing.api_rules ?? {}) };
 			} else {
 				name = '';
 				fields = [{ name: 'title', type: 'text', required: true, unique: false }];
+				indexes = [];
 				apiRules = {};
 			}
 		}
@@ -69,6 +85,28 @@
 
 	function removeField(index: number) {
 		fields = fields.filter((_, i) => i !== index);
+	}
+
+	function openNewIndex() {
+		editingIndexPos = null;
+		showIndexModal = true;
+	}
+
+	function openEditIndex(pos: number) {
+		editingIndexPos = pos;
+		showIndexModal = true;
+	}
+
+	function handleSaveIndex(idx: IndexDef) {
+		if (editingIndexPos !== null) {
+			indexes = indexes.map((item, i) => (i === editingIndexPos ? idx : item));
+		} else {
+			indexes = [...indexes, idx];
+		}
+	}
+
+	function removeIndex(pos: number) {
+		indexes = indexes.filter((_, i) => i !== pos);
 	}
 
 	async function handleSubmit(e: SubmitEvent) {
@@ -92,8 +130,8 @@
 				}));
 
 			const result = editing
-				? await updateCollection(editing.name, cleanFields, apiRules)
-				: await createCollection(name.trim(), cleanFields);
+				? await updateCollection(editing.name, cleanFields, apiRules, indexes)
+				: await createCollection(name.trim(), cleanFields, indexes);
 
 			onSaved(result, Boolean(editing));
 			onClose();
@@ -200,6 +238,48 @@
 					</div>
 
 					<NewFieldPicker onPick={addField} />
+
+					<!-- Unique constraints and indexes -->
+					<div class="mt-6 border-t border-border pt-5">
+						<div class="mb-2.5 text-xs font-semibold text-foreground">
+							Unique constraints and indexes ({indexes.length})
+						</div>
+						<div class="flex flex-wrap items-center gap-2">
+							{#each indexes as idx, pos (idx.name + pos)}
+								<div
+									class="inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs transition {idx.unique
+										? 'border-emerald-500/30 bg-emerald-500/12 text-emerald-800 dark:text-emerald-300'
+										: 'border-border bg-muted/50 text-foreground'}"
+								>
+									<button
+										type="button"
+										onclick={() => openEditIndex(pos)}
+										class="cursor-pointer text-left hover:underline"
+									>
+										<span class="font-semibold">{idx.unique ? 'Unique:' : 'Index:'}</span>
+										<span class="font-mono"> {idx.columns.join(', ')}</span>
+									</button>
+									<button
+										type="button"
+										onclick={() => removeIndex(pos)}
+										title="Remove index"
+										class="ml-0.5 cursor-pointer rounded p-0.5 opacity-60 transition hover:bg-black/10 hover:opacity-100"
+									>
+										<X class="h-3 w-3" />
+									</button>
+								</div>
+							{/each}
+
+							<button
+								type="button"
+								onclick={openNewIndex}
+								class="inline-flex cursor-pointer items-center gap-1 rounded-md border border-border bg-muted/40 px-2.5 py-1 text-xs font-medium text-foreground transition hover:bg-accent"
+							>
+								<Plus class="h-3 w-3" />
+								New index
+							</button>
+						</div>
+					</div>
 				{/if}
 			{:else if activeTab === 'rules'}
 				<div class="space-y-3">
@@ -251,3 +331,13 @@
 		</div>
 	</form>
 </Drawer>
+
+<IndexModal
+	open={showIndexModal}
+	tableName={name}
+	availableColumns={availableIndexCols}
+	editing={editingIndexPos !== null ? indexes[editingIndexPos] : null}
+	onClose={() => (showIndexModal = false)}
+	onSave={handleSaveIndex}
+	onRemove={editingIndexPos !== null ? () => removeIndex(editingIndexPos!) : undefined}
+/>

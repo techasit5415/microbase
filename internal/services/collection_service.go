@@ -36,16 +36,33 @@ func NewCollectionService(pool *pgxpool.Pool, c cache.CacheStore) *CollectionSer
 	}
 }
 
-// Create validates the schema, executes CREATE TABLE, and registers metadata atomically.
+// Create validates the schema, executes CREATE TABLE + CREATE INDEX, and registers metadata atomically.
 func (s *CollectionService) Create(ctx context.Context, req models.CreateCollectionRequest) (*models.Collection, error) {
 	ddl, err := buildCreateTableSQL(req)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidSchema, err)
 	}
 
+	indexStmts := make([]string, 0, len(req.Indexes))
+	for _, idx := range req.Indexes {
+		stmt, err := buildCreateIndexSQL(req.Name, idx)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrInvalidSchema, err)
+		}
+		indexStmts = append(indexStmts, stmt)
+	}
+
 	fieldsJSON, err := json.Marshal(req.Fields)
 	if err != nil {
 		return nil, fmt.Errorf("marshal fields: %w", err)
+	}
+	indexes := req.Indexes
+	if indexes == nil {
+		indexes = []models.IndexDef{}
+	}
+	indexesJSON, err := json.Marshal(indexes)
+	if err != nil {
+		return nil, fmt.Errorf("marshal indexes: %w", err)
 	}
 
 	tx, err := s.pool.Begin(ctx)
@@ -63,16 +80,23 @@ func (s *CollectionService) Create(ctx context.Context, req models.CreateCollect
 		return nil, fmt.Errorf("execute create table: %w", err)
 	}
 
-	// 2. Register schema metadata in _collections.
-	var col models.Collection
-	var rawFields []byte
-	insertSQL := `
-		INSERT INTO _collections (name, fields)
-		VALUES ($1, $2)
-		RETURNING id, name, fields, created_at, updated_at`
+	// 2. Create any configured indexes / unique constraints.
+	for _, stmt := range indexStmts {
+		if _, err := tx.Exec(ctx, stmt); err != nil {
+			return nil, fmt.Errorf("create index: %w", err)
+		}
+	}
 
-	err = tx.QueryRow(ctx, insertSQL, req.Name, fieldsJSON).
-		Scan(&col.ID, &col.Name, &rawFields, &col.CreatedAt, &col.UpdatedAt)
+	// 3. Register schema metadata in _collections.
+	var col models.Collection
+	var rawFields, rawIndexes []byte
+	insertSQL := `
+		INSERT INTO _collections (name, fields, indexes)
+		VALUES ($1, $2, $3)
+		RETURNING id, name, fields, indexes, created_at, updated_at`
+
+	err = tx.QueryRow(ctx, insertSQL, req.Name, fieldsJSON, indexesJSON).
+		Scan(&col.ID, &col.Name, &rawFields, &rawIndexes, &col.CreatedAt, &col.UpdatedAt)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" { // unique_violation
@@ -86,6 +110,7 @@ func (s *CollectionService) Create(ctx context.Context, req models.CreateCollect
 	}
 
 	_ = json.Unmarshal(rawFields, &col.Fields)
+	_ = json.Unmarshal(rawIndexes, &col.Indexes)
 	_ = s.cache.Delete(ctx, schemaCacheKey(col.Name))
 	return &col, nil
 }
@@ -93,7 +118,7 @@ func (s *CollectionService) Create(ctx context.Context, req models.CreateCollect
 // List returns all registered collections ordered by ID.
 func (s *CollectionService) List(ctx context.Context) ([]models.Collection, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, name, fields, api_rules, created_at, updated_at
+		SELECT id, name, fields, api_rules, indexes, created_at, updated_at
 		FROM _collections
 		ORDER BY id ASC`)
 	if err != nil {
@@ -104,12 +129,13 @@ func (s *CollectionService) List(ctx context.Context) ([]models.Collection, erro
 	result := make([]models.Collection, 0)
 	for rows.Next() {
 		var col models.Collection
-		var rawFields, rawRules []byte
-		if err := rows.Scan(&col.ID, &col.Name, &rawFields, &rawRules, &col.CreatedAt, &col.UpdatedAt); err != nil {
+		var rawFields, rawRules, rawIndexes []byte
+		if err := rows.Scan(&col.ID, &col.Name, &rawFields, &rawRules, &rawIndexes, &col.CreatedAt, &col.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan collection: %w", err)
 		}
 		_ = json.Unmarshal(rawFields, &col.Fields)
 		_ = json.Unmarshal(rawRules, &col.APIRules)
+		_ = json.Unmarshal(rawIndexes, &col.Indexes)
 		result = append(result, col)
 	}
 	return result, rows.Err()
@@ -121,7 +147,6 @@ func (s *CollectionService) GetByName(ctx context.Context, name string) (*models
 		return nil, ErrCollectionNotFound
 	}
 
-	// Fast path: check cache first.
 	if cached, err := s.cache.Get(ctx, schemaCacheKey(name)); err == nil {
 		var col models.Collection
 		if json.Unmarshal([]byte(cached), &col) == nil {
@@ -129,14 +154,13 @@ func (s *CollectionService) GetByName(ctx context.Context, name string) (*models
 		}
 	}
 
-	// Slow path: query PostgreSQL and populate cache.
 	var col models.Collection
-	var rawFields, rawRules []byte
+	var rawFields, rawRules, rawIndexes []byte
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, name, fields, api_rules, created_at, updated_at
+		SELECT id, name, fields, api_rules, indexes, created_at, updated_at
 		FROM _collections
 		WHERE name = $1`, name).
-		Scan(&col.ID, &col.Name, &rawFields, &rawRules, &col.CreatedAt, &col.UpdatedAt)
+		Scan(&col.ID, &col.Name, &rawFields, &rawRules, &rawIndexes, &col.CreatedAt, &col.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrCollectionNotFound
 	}
@@ -146,6 +170,7 @@ func (s *CollectionService) GetByName(ctx context.Context, name string) (*models
 
 	_ = json.Unmarshal(rawFields, &col.Fields)
 	_ = json.Unmarshal(rawRules, &col.APIRules)
+	_ = json.Unmarshal(rawIndexes, &col.Indexes)
 	if encoded, err := json.Marshal(col); err == nil {
 		_ = s.cache.Set(ctx, schemaCacheKey(name), string(encoded), schemaCacheTTL)
 	}
@@ -189,14 +214,25 @@ func schemaCacheKey(name string) string {
 	return "schema:" + name
 }
 
-// Update alters the collection's PostgreSQL columns and updates metadata in _collections atomically.
-func (s *CollectionService) Update(ctx context.Context, name string, newFields []models.FieldDef, apiRules map[string]string) (*models.Collection, error) {
+// Update alters the collection's PostgreSQL columns & indexes and updates metadata in _collections atomically.
+func (s *CollectionService) Update(ctx context.Context, name string, newFields []models.FieldDef, apiRules map[string]string, newIndexes []models.IndexDef) (*models.Collection, error) {
 	existing, err := s.GetByName(ctx, name)
 	if err != nil {
 		return nil, err
 	}
 
 	alterStmts, cleanedFields, err := buildAlterTableStatements(existing.Name, existing.Fields, newFields)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidSchema, err)
+	}
+
+	if newIndexes == nil {
+		newIndexes = existing.Indexes
+	}
+	if newIndexes == nil {
+		newIndexes = []models.IndexDef{}
+	}
+	indexStmts, err := buildIndexDiffStatements(existing.Name, existing.Indexes, newIndexes)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidSchema, err)
 	}
@@ -212,6 +248,7 @@ func (s *CollectionService) Update(ctx context.Context, name string, newFields [
 		apiRules = map[string]string{}
 	}
 	rulesJSON, _ := json.Marshal(apiRules)
+	indexesJSON, _ := json.Marshal(newIndexes)
 
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -224,16 +261,21 @@ func (s *CollectionService) Update(ctx context.Context, name string, newFields [
 			return nil, fmt.Errorf("alter table: %w", err)
 		}
 	}
+	for _, stmt := range indexStmts {
+		if _, err := tx.Exec(ctx, stmt); err != nil {
+			return nil, fmt.Errorf("update index: %w", err)
+		}
+	}
 
 	var updated models.Collection
-	var rawFields, rawRules []byte
+	var rawFields, rawRules, rawIndexes []byte
 	err = tx.QueryRow(ctx, `
 		UPDATE _collections
-		SET fields = $2, api_rules = $3, updated_at = NOW()
+		SET fields = $2, api_rules = $3, indexes = $4, updated_at = NOW()
 		WHERE name = $1
-		RETURNING id, name, fields, api_rules, created_at, updated_at`,
-		existing.Name, fieldsJSON, rulesJSON,
-	).Scan(&updated.ID, &updated.Name, &rawFields, &rawRules, &updated.CreatedAt, &updated.UpdatedAt)
+		RETURNING id, name, fields, api_rules, indexes, created_at, updated_at`,
+		existing.Name, fieldsJSON, rulesJSON, indexesJSON,
+	).Scan(&updated.ID, &updated.Name, &rawFields, &rawRules, &rawIndexes, &updated.CreatedAt, &updated.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("update _collections: %w", err)
 	}
@@ -244,6 +286,7 @@ func (s *CollectionService) Update(ctx context.Context, name string, newFields [
 
 	_ = json.Unmarshal(rawFields, &updated.Fields)
 	_ = json.Unmarshal(rawRules, &updated.APIRules)
+	_ = json.Unmarshal(rawIndexes, &updated.Indexes)
 	_ = s.cache.Delete(ctx, schemaCacheKey(updated.Name))
 	return &updated, nil
 }
