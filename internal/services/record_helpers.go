@@ -77,7 +77,7 @@ func coerceInputValue(field models.FieldDef, raw any) (any, error) {
 		}
 		return formatVectorLiteral(vec), nil
 
-	case "json":
+	case "json", "geopoint":
 		encoded, err := json.Marshal(raw)
 		if err != nil {
 			return nil, fmt.Errorf("field %q invalid json: %w", field.Name, err)

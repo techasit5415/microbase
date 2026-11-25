@@ -12,20 +12,22 @@ var identifierRegex = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
 
 // FieldDef defines the schema for a single column within a collection.
 type FieldDef struct {
-	Name      string `json:"name"`
-	Type      string `json:"type"`                // Supported: text, integer, float, boolean, json, timestamptz, vector
-	Required  bool   `json:"required,omitempty"`  // Maps to NOT NULL
-	Unique    bool   `json:"unique,omitempty"`    // Maps to UNIQUE
-	Dimension int    `json:"dimension,omitempty"` // Vector dimensions (1..4096), used when Type == "vector"
+	Name         string `json:"name"`
+	OriginalName string `json:"original_name,omitempty"` // Used on PATCH to rename an existing column
+	Type         string `json:"type"`                    // text, editor, number, integer, float, boolean, email, url, datetime, timestamptz, autodate, file, relation, select, json, geopoint, vector
+	Required     bool   `json:"required,omitempty"`      // Maps to NOT NULL
+	Unique       bool   `json:"unique,omitempty"`        // Maps to UNIQUE
+	Dimension    int    `json:"dimension,omitempty"`     // Vector dimensions (1..4096), used when Type == "vector"
 }
 
 // Collection represents a user-defined table registered in _collections.
 type Collection struct {
-	ID        int64      `json:"id"`
-	Name      string     `json:"name"`
-	Fields    []FieldDef `json:"fields"`
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
+	ID        int64             `json:"id"`
+	Name      string            `json:"name"`
+	Fields    []FieldDef        `json:"fields"`
+	APIRules  map[string]string `json:"api_rules,omitempty"`
+	CreatedAt time.Time         `json:"created_at"`
+	UpdatedAt time.Time         `json:"updated_at"`
 }
 
 // CreateCollectionRequest is the payload accepted by POST /api/collections.
@@ -46,21 +48,23 @@ func IsValidIdentifier(name string) bool {
 	return identifierRegex.MatchString(name)
 }
 
-// ToPostgresType maps a Microbase field definition to its corresponding PostgreSQL column type.
+// ToPostgresType maps a Microbase/PocketBase field definition to its PostgreSQL column type.
 func (f FieldDef) ToPostgresType() (string, error) {
 	switch f.Type {
-	case "text":
+	case "text", "editor", "email", "url", "file", "select":
 		return "TEXT", nil
-	case "integer":
+	case "integer", "relation":
 		return "BIGINT", nil
-	case "float":
+	case "number", "float":
 		return "DOUBLE PRECISION", nil
 	case "boolean":
 		return "BOOLEAN", nil
-	case "json":
+	case "json", "geopoint":
 		return "JSONB", nil
-	case "timestamptz":
+	case "datetime", "timestamptz":
 		return "TIMESTAMPTZ", nil
+	case "autodate":
+		return "TIMESTAMPTZ DEFAULT NOW()", nil
 	case "vector":
 		if f.Dimension <= 0 || f.Dimension > 4096 {
 			return "", fmt.Errorf("vector field %q must have dimension between 1 and 4096", f.Name)

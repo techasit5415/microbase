@@ -75,3 +75,26 @@ func (h *CollectionController) Delete(c echo.Context) error {
 	}
 	return response.OK(c, map[string]any{"deleted": name})
 }
+
+// Update handles PATCH /api/collections/:name to add or remove fields.
+func (h *CollectionController) Update(c echo.Context) error {
+	var req struct {
+		Fields   []models.FieldDef `json:"fields"`
+		APIRules map[string]string `json:"api_rules"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return response.Error(c, http.StatusBadRequest, "INVALID_JSON", "invalid request body")
+	}
+
+	col, err := h.service.Update(c.Request().Context(), c.Param("name"), req.Fields, req.APIRules)
+	if errors.Is(err, services.ErrCollectionNotFound) {
+		return response.Error(c, http.StatusNotFound, "NOT_FOUND", "collection not found")
+	}
+	if errors.Is(err, services.ErrInvalidSchema) {
+		return response.Error(c, http.StatusBadRequest, "INVALID_SCHEMA", err.Error())
+	}
+	if err != nil {
+		return response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+	}
+	return response.OK(c, col)
+}

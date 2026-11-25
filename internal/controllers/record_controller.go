@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/labstack/echo/v4"
+	"github.com/techasit5415/microbase/internal/middlewares"
 	"github.com/techasit5415/microbase/internal/models"
 	"github.com/techasit5415/microbase/internal/response"
 	"github.com/techasit5415/microbase/internal/services"
@@ -15,12 +16,13 @@ import (
 
 // RecordController handles dynamic CRUD and search endpoints for collection records.
 type RecordController struct {
-	service *services.RecordService
+	service     *services.RecordService
+	collections *services.CollectionService
 }
 
 // NewRecordController constructs a RecordController.
-func NewRecordController(svc *services.RecordService) *RecordController {
-	return &RecordController{service: svc}
+func NewRecordController(svc *services.RecordService, colSvc *services.CollectionService) *RecordController {
+	return &RecordController{service: svc, collections: colSvc}
 }
 
 // List handles GET /api/collections/:name/records.
@@ -43,6 +45,9 @@ func (h *RecordController) List(c echo.Context) error {
 		Filters: filters,
 	}
 
+	if err := h.enforceRule(c, "list"); err != nil {
+		return handleRecordError(c, err)
+	}
 	result, err := h.service.List(c.Request().Context(), c.Param("name"), opts)
 	if err != nil {
 		return handleRecordError(c, err)
@@ -57,6 +62,9 @@ func (h *RecordController) Get(c echo.Context) error {
 		return response.Error(c, http.StatusBadRequest, "INVALID_ID", "record id must be an integer")
 	}
 
+	if err := h.enforceRule(c, "view"); err != nil {
+		return handleRecordError(c, err)
+	}
 	rec, err := h.service.GetByID(c.Request().Context(), c.Param("name"), id)
 	if err != nil {
 		return handleRecordError(c, err)
@@ -71,6 +79,9 @@ func (h *RecordController) Create(c echo.Context) error {
 		return response.Error(c, http.StatusBadRequest, "INVALID_JSON", "invalid request body")
 	}
 
+	if err := h.enforceRule(c, "create"); err != nil {
+		return handleRecordError(c, err)
+	}
 	rec, err := h.service.Create(c.Request().Context(), c.Param("name"), data)
 	if err != nil {
 		return handleRecordError(c, err)
@@ -91,6 +102,9 @@ func (h *RecordController) Update(c echo.Context) error {
 		return response.Error(c, http.StatusBadRequest, "INVALID_JSON", "invalid request body")
 	}
 
+	if err := h.enforceRule(c, "update"); err != nil {
+		return handleRecordError(c, err)
+	}
 	rec, err := h.service.Update(c.Request().Context(), c.Param("name"), id, data)
 	if err != nil {
 		return handleRecordError(c, err)
@@ -105,6 +119,9 @@ func (h *RecordController) Delete(c echo.Context) error {
 		return response.Error(c, http.StatusBadRequest, "INVALID_ID", "record id must be an integer")
 	}
 
+	if err := h.enforceRule(c, "delete"); err != nil {
+		return handleRecordError(c, err)
+	}
 	if err := h.service.Delete(c.Request().Context(), c.Param("name"), id); err != nil {
 		return handleRecordError(c, err)
 	}
@@ -131,9 +148,22 @@ func handleRecordError(c echo.Context, err error) error {
 		return response.Error(c, http.StatusNotFound, "COLLECTION_NOT_FOUND", "collection not found")
 	case errors.Is(err, services.ErrRecordNotFound):
 		return response.Error(c, http.StatusNotFound, "RECORD_NOT_FOUND", "record not found")
+	case errors.Is(err, services.ErrForbidden):
+		return response.Error(c, http.StatusForbidden, "FORBIDDEN", "access denied by collection api rules")
 	case errors.Is(err, services.ErrInvalidInput):
 		return response.Error(c, http.StatusBadRequest, "INVALID_INPUT", err.Error())
 	default:
 		return response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 	}
+}
+
+func (h *RecordController) enforceRule(c echo.Context, action string) error {
+	if h.collections == nil {
+		return nil
+	}
+	col, err := h.collections.GetByName(c.Request().Context(), c.Param("name"))
+	if err != nil {
+		return err
+	}
+	return services.CheckAPIRule(col, action, middlewares.GetAuthClaims(c))
 }

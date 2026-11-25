@@ -21,10 +21,11 @@ type RecordService struct {
 	pool        *pgxpool.Pool
 	collections *CollectionService
 	hub         *realtime.Hub
+	webhooks    *WebhookService
 }
 
-func NewRecordService(pool *pgxpool.Pool, colSvc *CollectionService, hub *realtime.Hub) *RecordService {
-	return &RecordService{pool: pool, collections: colSvc, hub: hub}
+func NewRecordService(pool *pgxpool.Pool, colSvc *CollectionService, hub *realtime.Hub, webhooks *WebhookService) *RecordService {
+	return &RecordService{pool: pool, collections: colSvc, hub: hub, webhooks: webhooks}
 }
 
 // List queries records with pagination, sorting, exact filters, and full-text search.
@@ -222,5 +223,8 @@ func (s *RecordService) publish(action, colName string, record any) {
 			Collection: colName,
 			Record:     record,
 		})
+	}
+	if s.webhooks != nil {
+		s.webhooks.DispatchAsync(colName, action, record)
 	}
 }

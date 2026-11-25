@@ -1,14 +1,25 @@
 export type FieldType =
 	| 'text'
+	| 'editor'
+	| 'number'
 	| 'integer'
 	| 'float'
 	| 'boolean'
-	| 'json'
+	| 'email'
+	| 'url'
+	| 'datetime'
 	| 'timestamptz'
+	| 'autodate'
+	| 'file'
+	| 'relation'
+	| 'select'
+	| 'json'
+	| 'geopoint'
 	| 'vector';
 
 export interface FieldDef {
 	name: string;
+	original_name?: string;
 	type: FieldType;
 	required?: boolean;
 	unique?: boolean;
@@ -18,15 +29,17 @@ export interface FieldDef {
 export interface Collection {
 	id: number;
 	name: string;
+	type?: 'auth' | 'base' | 'system';
 	fields: FieldDef[];
+	api_rules?: Record<string, string>;
 	created_at: string;
 	updated_at: string;
 }
 
 export type RecordRow = Record<string, unknown> & {
-	id: number;
-	created_at: string;
-	updated_at: string;
+	id?: number;
+	created_at?: string;
+	updated_at?: string;
 };
 
 export interface ListResult {
@@ -34,11 +47,4 @@ export interface ListResult {
 	per_page: number;
 	total_items: number;
 	items: RecordRow[];
-}
-
-export interface RealtimeEvent {
-	action: 'create' | 'update' | 'delete';
-	collection: string;
-	record: unknown;
-	timestamp: string;
 }

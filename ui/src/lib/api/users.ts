@@ -1,0 +1,26 @@
+import { apiRequest } from './client.ts';
+import type { ListResult } from './types.ts';
+
+export async function listUsers(params?: {
+	page?: number;
+	perPage?: number;
+	search?: string;
+}): Promise<ListResult> {
+	const qs = new URLSearchParams();
+	if (params?.page) qs.set('page', String(params.page));
+	if (params?.perPage) qs.set('per_page', String(params.perPage));
+	if (params?.search) qs.set('search', params.search);
+	const query = qs.toString() ? `?${qs.toString()}` : '';
+	return apiRequest<ListResult>(`/api/users${query}`);
+}
+
+export async function createUser(email: string, password: string): Promise<void> {
+	await apiRequest('/api/auth/register', {
+		method: 'POST',
+		body: JSON.stringify({ email, password })
+	});
+}
+
+export async function deleteUser(id: number): Promise<void> {
+	await apiRequest(`/api/users/${id}`, { method: 'DELETE' });
+}

@@ -85,7 +85,7 @@ func (s *AuthService) Login(ctx context.Context, req models.LoginRequest) (*mode
 
 	var user models.User
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, email, password_hash, role, created_at, updated_at
+		SELECT id, email, COALESCE(password_hash, ''), role, created_at, updated_at
 		FROM _users
 		WHERE email = $1`, email,
 	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.Role, &user.CreatedAt, &user.UpdatedAt)
@@ -112,7 +112,7 @@ func (s *AuthService) Login(ctx context.Context, req models.LoginRequest) (*mode
 func (s *AuthService) GetUserByID(ctx context.Context, id int64) (*models.User, error) {
 	var user models.User
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, email, password_hash, role, created_at, updated_at
+		SELECT id, email, COALESCE(password_hash, ''), role, created_at, updated_at
 		FROM _users
 		WHERE id = $1`, id,
 	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.Role, &user.CreatedAt, &user.UpdatedAt)
@@ -167,4 +167,67 @@ func (s *AuthService) ParseToken(tokenString string) (*AuthClaims, error) {
 		return nil, ErrInvalidToken
 	}
 	return claims, nil
+}
+
+// ListUsers returns paginated users from _users with optional email search.
+func (s *AuthService) ListUsers(ctx context.Context, page, perPage int, search string) ([]models.User, int64, error) {
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 || perPage > 100 {
+		perPage = 20
+	}
+	offset := (page - 1) * perPage
+	q := strings.TrimSpace(search)
+
+	var total int64
+	if q != "" {
+		if err := s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM _users WHERE email ILIKE $1`, "%"+q+"%").Scan(&total); err != nil {
+			return nil, 0, err
+		}
+	} else {
+		if err := s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM _users`).Scan(&total); err != nil {
+			return nil, 0, err
+		}
+	}
+
+	var rows pgx.Rows
+	var err error
+	if q != "" {
+		rows, err = s.pool.Query(ctx, `
+			SELECT id, email, COALESCE(password_hash, ''), role, created_at, updated_at
+			FROM _users WHERE email ILIKE $1 ORDER BY id DESC LIMIT $2 OFFSET $3`,
+			"%"+q+"%", perPage, offset)
+	} else {
+		rows, err = s.pool.Query(ctx, `
+			SELECT id, email, COALESCE(password_hash, ''), role, created_at, updated_at
+			FROM _users ORDER BY id DESC LIMIT $1 OFFSET $2`,
+			perPage, offset)
+	}
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	users := make([]models.User, 0)
+	for rows.Next() {
+		var u models.User
+		if err := rows.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Role, &u.CreatedAt, &u.UpdatedAt); err != nil {
+			return nil, 0, err
+		}
+		users = append(users, u)
+	}
+	return users, total, rows.Err()
+}
+
+// DeleteUser removes a user account by ID.
+func (s *AuthService) DeleteUser(ctx context.Context, id int64) error {
+	tag, err := s.pool.Exec(ctx, `DELETE FROM _users WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrRecordNotFound
+	}
+	return nil
 }

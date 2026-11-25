@@ -37,3 +37,18 @@ func GetAuthClaims(c echo.Context) *services.AuthClaims {
 	claims, _ := c.Get(contextUserKey).(*services.AuthClaims)
 	return claims
 }
+
+// OptionalAuth parses a Bearer JWT if present and attaches AuthClaims, allowing anonymous access otherwise.
+func OptionalAuth(authSvc *services.AuthService) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			header := c.Request().Header.Get("Authorization")
+			if strings.HasPrefix(header, "Bearer ") {
+				if claims, err := authSvc.ParseToken(strings.TrimPrefix(header, "Bearer ")); err == nil {
+					c.Set(contextUserKey, claims)
+				}
+			}
+			return next(c)
+		}
+	}
+}

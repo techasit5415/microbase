@@ -1,5 +1,5 @@
-import { apiRequest } from './client';
-import type { Collection, FieldDef } from './types';
+import { apiRequest } from './client.ts';
+import type { Collection, FieldDef } from './types.ts';
 
 export async function listCollections(): Promise<Collection[]> {
 	const res = await apiRequest<{ items: Collection[] }>('/api/collections');
@@ -10,6 +10,17 @@ export async function createCollection(name: string, fields: FieldDef[]): Promis
 	return apiRequest<Collection>('/api/collections', {
 		method: 'POST',
 		body: JSON.stringify({ name, fields })
+	});
+}
+
+export async function updateCollection(
+	name: string,
+	fields: FieldDef[],
+	apiRules?: Record<string, string>
+): Promise<Collection> {
+	return apiRequest<Collection>(`/api/collections/${encodeURIComponent(name)}`, {
+		method: 'PATCH',
+		body: JSON.stringify({ fields, api_rules: apiRules })
 	});
 }
 
