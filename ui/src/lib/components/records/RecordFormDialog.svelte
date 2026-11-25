@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { X } from '@lucide/svelte';
 	import { createRecord, updateRecord } from '#lib/api/records.ts';
-	import { createUser } from '#lib/api/users.ts';
+	import { createSuperuser, createUser } from '#lib/api/users.ts';
 	import type { Collection, RecordRow } from '#lib/api/types.ts';
 	import Drawer from '#lib/components/ui/Drawer.svelte';
 	import Switch from '#lib/components/ui/Switch.svelte';
@@ -24,7 +24,8 @@
 	let errorMsg = $state('');
 	let saving = $state(false);
 
-	let isAuth = $derived(collection.type === 'auth');
+	let isSuperuser = $derived(collection.name === '_superusers');
+	let isAuth = $derived(collection.type === 'auth' || isSuperuser);
 
 	$effect(() => {
 		if (open) {
@@ -51,7 +52,9 @@
 		saving = true;
 
 		try {
-			if (isAuth) {
+			if (isSuperuser) {
+				await createSuperuser(email.trim(), password);
+			} else if (isAuth) {
 				await createUser(email.trim(), password);
 			} else {
 				const payload: Record<string, unknown> = {};

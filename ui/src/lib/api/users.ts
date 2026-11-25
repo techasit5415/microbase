@@ -1,3 +1,4 @@
+import type { RecordRow } from '#lib/api/types.ts';
 import { apiRequest } from './client.ts';
 import type { ListResult } from './types.ts';
 
@@ -23,4 +24,15 @@ export async function createUser(email: string, password: string): Promise<void>
 
 export async function deleteUser(id: number): Promise<void> {
 	await apiRequest(`/api/users/${id}`, { method: 'DELETE' });
+}
+
+export function createSuperuser(email: string, password: string): Promise<RecordRow> {
+	return apiRequest<RecordRow>('/api/superusers', {
+		method: 'POST',
+		body: JSON.stringify({ email, password })
+	});
+}
+
+export function deleteSuperuser(id: number): Promise<{ deleted: number }> {
+	return apiRequest<{ deleted: number }>(`/api/superusers/${id}`, { method: 'DELETE' });
 }

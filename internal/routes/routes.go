@@ -67,6 +67,8 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStor
 		api.GET("/superusers/status", superCtrl.Status)
 		api.POST("/superusers/setup", superCtrl.Setup)
 		api.POST("/superusers/login", superCtrl.Login)
+		api.POST("/superusers", superCtrl.Create, middlewares.RequireAuth(authService))
+		api.DELETE("/superusers/:id", superCtrl.Delete, middlewares.RequireAuth(authService))
 		api.GET("/auth/oauth/:provider", oauthCtrl.Start)
 		api.GET("/auth/oauth/:provider/callback", oauthCtrl.Callback)
 		api.POST("/auth/oauth/exchange", oauthCtrl.Exchange)

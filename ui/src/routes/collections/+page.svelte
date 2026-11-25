@@ -5,7 +5,7 @@
 	import { deleteCollection, listCollections } from '#lib/api/collections.ts';
 	import { deleteRecord, listRecords } from '#lib/api/records.ts';
 	import { listSystemTable } from '#lib/api/system.ts';
-	import { deleteUser, listUsers } from '#lib/api/users.ts';
+	import { deleteSuperuser, deleteUser, listUsers } from '#lib/api/users.ts';
 	import type { Collection, RecordRow } from '#lib/api/types.ts';
 	import { toast } from '#lib/stores/toast.svelte.ts';
 	import CollectionDrawer from '#lib/components/collections/CollectionDrawer.svelte';
@@ -122,9 +122,10 @@
 	}
 
 	async function handleDeleteRecord(id: number) {
-		if (activeCol.type === 'system') return;
+		if (activeCol.type === 'system' && activeCol.name !== '_superusers') return;
 		try {
-			if (activeCol.type === 'auth') await deleteUser(id);
+			if (activeCol.name === '_superusers') await deleteSuperuser(id);
+			else if (activeCol.type === 'auth') await deleteUser(id);
 			else await deleteRecord(activeCol.name, id);
 			toast.success('Record deleted');
 			await refreshRecords();
@@ -160,7 +161,7 @@
 		onOpenEditCollection={openEditCollection}
 		onOpenApiPreview={() => (showApiPreview = true)}
 		onOpenCreateRecord={() => {
-			if (activeCol.type !== 'system') {
+			if (activeCol.type !== 'system' || activeCol.name === '_superusers') {
 				editingRec = null;
 				showCreateRec = true;
 			}
@@ -171,7 +172,7 @@
 		collection={activeCol}
 		{items}
 		{loading}
-		readOnly={activeCol.type === 'system'}
+		readOnly={activeCol.type === 'system' && activeCol.name !== '_superusers'}
 		onSelect={(row) => {
 			if (activeCol.type === 'base') {
 				editingRec = row;

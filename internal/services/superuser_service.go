@@ -25,6 +25,7 @@ const (
 var (
 	ErrSetupLocked     = errors.New("superuser setup is locked because a superuser already exists")
 	ErrInvalidSetupOTP = errors.New("invalid or expired 8-digit setup OTP (restart server for a new OTP)")
+	ErrLastSuperuser   = errors.New("cannot delete the last remaining superuser")
 )
 
 // SuperuserSetupRequest is the payload accepted by POST /api/superusers/setup.
@@ -54,7 +55,7 @@ func (s *SuperuserService) HasSuperuser(ctx context.Context) (bool, error) {
 	return count > 0, nil
 }
 
-// GenerateSetupOTP creates a cryptographically random 8-digit OTP valid for 30 minutes.
+// GenerateSetupOTP creates a cryptographically random 8-digit OTP valid for 5 minutes.
 func GenerateSetupOTP(ctx context.Context, c cache.CacheStore) (string, error) {
 	max := big.NewInt(100000000) // 0..99999999
 	n, err := rand.Int(rand.Reader, max)
@@ -68,9 +69,8 @@ func GenerateSetupOTP(ctx context.Context, c cache.CacheStore) (string, error) {
 	return otp, nil
 }
 
-// Setup creates the first superuser account after verifying the 8-digit 30m OTP and locks setup thereafter.
+// Setup creates the first superuser account after verifying the 8-digit 5m OTP and locks setup thereafter.
 func (s *SuperuserService) Setup(ctx context.Context, req SuperuserSetupRequest) (*models.AuthResponse, error) {
-	// 1. Strictly lock setup if any superuser already exists.
 	has, err := s.HasSuperuser(ctx)
 	if err != nil {
 		return nil, err
@@ -79,7 +79,6 @@ func (s *SuperuserService) Setup(ctx context.Context, req SuperuserSetupRequest)
 		return nil, ErrSetupLocked
 	}
 
-	// 2. Verify 8-digit Setup OTP from CacheStore (30-minute TTL).
 	expectedOTP, err := s.cache.Get(ctx, setupOTPKey)
 	if err != nil || expectedOTP == "" {
 		return nil, ErrInvalidSetupOTP
@@ -89,7 +88,22 @@ func (s *SuperuserService) Setup(ctx context.Context, req SuperuserSetupRequest)
 		return nil, ErrInvalidSetupOTP
 	}
 
-	// 3. Validate email and password.
+	u, err := s.Create(ctx, models.RegisterRequest{Email: req.Email, Password: req.Password})
+	if err != nil {
+		return nil, err
+	}
+
+	_ = s.cache.Delete(ctx, setupOTPKey)
+
+	token, err := s.auth.GenerateToken(*u)
+	if err != nil {
+		return nil, err
+	}
+	return &models.AuthResponse{Token: token, User: *u}, nil
+}
+
+// Create inserts a new superuser account with an Argon2id password hash.
+func (s *SuperuserService) Create(ctx context.Context, req models.RegisterRequest) (*models.User, error) {
 	email := strings.ToLower(strings.TrimSpace(req.Email))
 	if !strings.Contains(email, "@") || len(req.Password) < 8 {
 		return nil, fmt.Errorf("%w: valid email and password (min 8 chars) required", ErrInvalidInput)
@@ -115,15 +129,26 @@ func (s *SuperuserService) Setup(ctx context.Context, req SuperuserSetupRequest)
 		}
 		return nil, fmt.Errorf("create superuser: %w", err)
 	}
+	return &u, nil
+}
 
-	// 4. Consume OTP immediately so it can never be reused.
-	_ = s.cache.Delete(ctx, setupOTPKey)
-
-	token, err := s.auth.GenerateToken(u)
-	if err != nil {
-		return nil, err
+// Delete removes a superuser by ID unless it is the last remaining superuser.
+func (s *SuperuserService) Delete(ctx context.Context, id int64) error {
+	var count int64
+	if err := s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM _superusers`).Scan(&count); err != nil {
+		return err
 	}
-	return &models.AuthResponse{Token: token, User: u}, nil
+	if count <= 1 {
+		return ErrLastSuperuser
+	}
+	tag, err := s.pool.Exec(ctx, `DELETE FROM _superusers WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrRecordNotFound
+	}
+	return nil
 }
 
 // Login authenticates a superuser and issues a JWT with role "superuser".
