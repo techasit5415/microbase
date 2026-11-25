@@ -43,7 +43,7 @@
 				collection={col}
 				active={activeName === col.name}
 				{onSelect}
-				onDelete={col.type === 'auth' || appSettings.data.hide_controls ? undefined : onDelete}
+				onDelete={appSettings.data.hide_controls ? undefined : onDelete}
 			/>
 		{/each}
 

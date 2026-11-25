@@ -33,6 +33,7 @@ func buildCreateTableSQLWithTargets(req models.CreateCollectionRequest, targetID
 		columns = append(columns,
 			`"email" TEXT UNIQUE NOT NULL`,
 			`"password_hash" TEXT NOT NULL DEFAULT ''`,
+			`"role" TEXT NOT NULL DEFAULT 'user'`,
 			`"token_key" TEXT UNIQUE NOT NULL DEFAULT ''`,
 			`"email_visibility" BOOLEAN NOT NULL DEFAULT FALSE`,
 			`"verified" BOOLEAN NOT NULL DEFAULT FALSE`,
@@ -80,7 +81,7 @@ func buildCreateTableSQLWithTargets(req models.CreateCollectionRequest, targetID
 		`"updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()`,
 	)
 
-	return fmt.Sprintf(`CREATE TABLE "%s" (%s);`, req.Name, strings.Join(columns, ", ")), nil
+	return fmt.Sprintf(`CREATE TABLE "%s" (%s);`, physicalTableName(req.Name), strings.Join(columns, ", ")), nil
 }
 
 // buildAlterTableStatements computes ADD, DROP, RENAME, and NOT NULL DDL statements safely.

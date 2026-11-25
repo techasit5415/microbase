@@ -67,7 +67,7 @@ func (s *CollectionService) Create(ctx context.Context, req models.CreateCollect
 			return nil, fmt.Errorf("%w: %v", ErrInvalidSchema, err)
 		}
 		for _, idx := range req.Indexes {
-			stmt, idxErr := buildCreateIndexSQL(req.Name, idx)
+			stmt, idxErr := buildCreateIndexSQL(physicalTableName(req.Name), idx)
 			if idxErr != nil {
 				return nil, fmt.Errorf("%w: %v", ErrInvalidSchema, idxErr)
 			}
@@ -200,10 +200,6 @@ func (s *CollectionService) Delete(ctx context.Context, name string) error {
 	if !models.IsValidIdentifier(name) {
 		return ErrCollectionNotFound
 	}
-	if name == "users" {
-		return fmt.Errorf("%w: built-in auth collection users cannot be deleted", ErrInvalidSchema)
-	}
-
 	existing, err := s.GetByName(ctx, name)
 	if err != nil {
 		return err
@@ -223,7 +219,7 @@ func (s *CollectionService) Delete(ctx context.Context, name string) error {
 		return ErrCollectionNotFound
 	}
 
-	dropSQL := fmt.Sprintf(`DROP TABLE IF EXISTS "%s" CASCADE`, name)
+	dropSQL := fmt.Sprintf(`DROP TABLE IF EXISTS "%s" CASCADE`, physicalTableName(name))
 	if existing.Type == "view" {
 		dropSQL = fmt.Sprintf(`DROP VIEW IF EXISTS "%s" CASCADE`, name)
 	}

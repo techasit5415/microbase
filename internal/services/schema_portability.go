@@ -50,6 +50,20 @@ func (s *CollectionService) ImportSchema(ctx context.Context, payload models.Sch
 	for _, colReq := range ordered {
 		_, createErr := s.Create(ctx, colReq)
 		if errors.Is(createErr, ErrCollectionExists) {
+			// If built-in "users" already exists, merge any newly imported custom fields/rules/indexes.
+			if colReq.Name == "users" && (len(colReq.Fields) > 0 || len(colReq.APIRules) > 0 || len(colReq.Indexes) > 0) {
+				if existing, getErr := s.GetByName(ctx, "users"); getErr == nil {
+					mergedFields := mergeFieldDefs(existing.Fields, colReq.Fields)
+					mergedRules := existing.APIRules
+					if len(colReq.APIRules) > 0 {
+						mergedRules = colReq.APIRules
+					}
+					mergedIndexes := mergeIndexDefs(existing.Indexes, colReq.Indexes)
+					if _, updErr := s.Update(ctx, "users", mergedFields, mergedRules, mergedIndexes, existing.ViewQuery); updErr != nil {
+						return created, skipped, fmt.Errorf("import merge %q: %w", colReq.Name, updErr)
+					}
+				}
+			}
 			skipped = append(skipped, colReq.Name)
 			continue
 		}
@@ -196,6 +210,7 @@ func ParsePocketBaseSchema(raw []byte) (models.SchemaExport, error) {
 		"emailVisibility":  true,
 		"email_visibility": true,
 		"verified":         true,
+		"role":             true,
 	}
 
 	collections := make([]models.CreateCollectionRequest, 0, len(pbCols))
@@ -415,6 +430,38 @@ func parsePocketBaseIndexes(rawIndexes []string, validCols map[string]bool) []mo
 			Columns: cols,
 			Unique:  strings.TrimSpace(m[1]) != "",
 		})
+	}
+	return out
+}
+
+func mergeFieldDefs(existing, incoming []models.FieldDef) []models.FieldDef {
+	out := make([]models.FieldDef, 0, len(existing)+len(incoming))
+	seen := make(map[string]bool, len(existing))
+	for _, f := range existing {
+		out = append(out, f)
+		seen[f.Name] = true
+	}
+	for _, f := range incoming {
+		if !seen[f.Name] {
+			out = append(out, f)
+			seen[f.Name] = true
+		}
+	}
+	return out
+}
+
+func mergeIndexDefs(existing, incoming []models.IndexDef) []models.IndexDef {
+	out := make([]models.IndexDef, 0, len(existing)+len(incoming))
+	seen := make(map[string]bool, len(existing))
+	for _, idx := range existing {
+		out = append(out, idx)
+		seen[idx.Name] = true
+	}
+	for _, idx := range incoming {
+		if !seen[idx.Name] {
+			out = append(out, idx)
+			seen[idx.Name] = true
+		}
 	}
 	return out
 }

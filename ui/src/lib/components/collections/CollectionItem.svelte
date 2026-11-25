@@ -22,7 +22,7 @@
 	<button
 		type="button"
 		onclick={() => onSelect(collection.name)}
-		class="flex h-full w-full min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-md px-3 text-left {!isAuth && onDelete ? 'group-hover:pr-8' : ''}"
+		class="flex h-full w-full min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-md px-3 text-left {onDelete ? 'group-hover:pr-8' : ''}"
 	>
 		{#if isAuth}
 			<Users class="h-4 w-4 shrink-0" />
@@ -34,7 +34,7 @@
 		<span class="truncate">{collection.name}</span>
 	</button>
 
-	{#if !isAuth && onDelete}
+	{#if onDelete}
 		<button
 			type="button"
 			title="Delete collection"
