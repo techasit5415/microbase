@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/techasit5415/microbase/internal/models"
+	"github.com/techasit5415/microbase/internal/realtime"
 )
 
 var (
@@ -19,11 +20,11 @@ var (
 type RecordService struct {
 	pool        *pgxpool.Pool
 	collections *CollectionService
+	hub         *realtime.Hub
 }
 
-// NewRecordService constructs a RecordService.
-func NewRecordService(pool *pgxpool.Pool, colSvc *CollectionService) *RecordService {
-	return &RecordService{pool: pool, collections: colSvc}
+func NewRecordService(pool *pgxpool.Pool, colSvc *CollectionService, hub *realtime.Hub) *RecordService {
+	return &RecordService{pool: pool, collections: colSvc, hub: hub}
 }
 
 // List queries records with pagination, sorting, exact filters, and full-text search.
@@ -213,4 +214,13 @@ func (s *RecordService) Delete(ctx context.Context, colName string, id int64) er
 		return ErrRecordNotFound
 	}
 	return nil
+}
+func (s *RecordService) publish(action, colName string, record any) {
+	if s.hub != nil {
+		s.hub.Publish(realtime.Event{
+			Action:     action,
+			Collection: colName,
+			Record:     record,
+		})
+	}
 }

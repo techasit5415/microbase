@@ -10,6 +10,7 @@ import (
 	"github.com/techasit5415/microbase/internal/config"
 	"github.com/techasit5415/microbase/internal/controllers"
 	"github.com/techasit5415/microbase/internal/middlewares"
+	"github.com/techasit5415/microbase/internal/realtime"
 	"github.com/techasit5415/microbase/internal/services"
 )
 
@@ -24,16 +25,20 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore cache.CacheStore, cfg
 	// Routes
 	e.GET("/health", healthCtrl.Check)
 	if pool != nil {
+		hub := realtime.NewHub()
 		colService := services.NewCollectionService(pool, cacheStore)
-		recService := services.NewRecordService(pool, colService)
+		recService := services.NewRecordService(pool, colService, hub)
 		authService := services.NewAuthService(pool, cfg.JWTSecret)
-
 		colCtrl := controllers.NewCollectionController(colService)
 		schemaCtrl := controllers.NewSchemaController(colService)
 		recCtrl := controllers.NewRecordController(recService)
 		authCtrl := controllers.NewAuthController(authService)
+		realtimeCtrl := controllers.NewRealtimeController(hub)
 
 		api := e.Group("/api", middlewares.RateLimit(cacheStore, 100, time.Minute))
+
+		// Realtime SSE
+		api.GET("/realtime", realtimeCtrl.Stream)
 		// Auth endpoints.
 		api.POST("/auth/register", authCtrl.Register)
 		api.POST("/auth/login", authCtrl.Login)
@@ -52,5 +57,9 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore cache.CacheStore, cfg
 		api.PATCH("/collections/:name/records/:id", recCtrl.Update)
 		api.DELETE("/collections/:name/records/:id", recCtrl.Delete)
 		api.POST("/collections/:name/search/vector", recCtrl.VectorSearch)
+		fileCtrl := controllers.NewFileController("./storage")
+		api.POST("/files", fileCtrl.Upload)
+		api.GET("/files/:filename", fileCtrl.Serve)
 	}
+
 }
