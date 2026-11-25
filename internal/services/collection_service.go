@@ -87,16 +87,22 @@ func (s *CollectionService) Create(ctx context.Context, req models.CreateCollect
 		}
 	}
 
+	apiRules := req.APIRules
+	if apiRules == nil {
+		apiRules = map[string]string{}
+	}
+	rulesJSON, _ := json.Marshal(apiRules)
+
 	// 3. Register schema metadata in _collections.
 	var col models.Collection
-	var rawFields, rawIndexes []byte
+	var rawFields, rawRules, rawIndexes []byte
 	insertSQL := `
-		INSERT INTO _collections (name, fields, indexes)
-		VALUES ($1, $2, $3)
-		RETURNING id, name, fields, indexes, created_at, updated_at`
+		INSERT INTO _collections (name, fields, api_rules, indexes)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id, name, fields, api_rules, indexes, created_at, updated_at`
 
-	err = tx.QueryRow(ctx, insertSQL, req.Name, fieldsJSON, indexesJSON).
-		Scan(&col.ID, &col.Name, &rawFields, &rawIndexes, &col.CreatedAt, &col.UpdatedAt)
+	err = tx.QueryRow(ctx, insertSQL, req.Name, fieldsJSON, rulesJSON, indexesJSON).
+		Scan(&col.ID, &col.Name, &rawFields, &rawRules, &rawIndexes, &col.CreatedAt, &col.UpdatedAt)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" { // unique_violation
@@ -110,6 +116,7 @@ func (s *CollectionService) Create(ctx context.Context, req models.CreateCollect
 	}
 
 	_ = json.Unmarshal(rawFields, &col.Fields)
+	_ = json.Unmarshal(rawRules, &col.APIRules)
 	_ = json.Unmarshal(rawIndexes, &col.Indexes)
 	_ = s.cache.Delete(ctx, schemaCacheKey(col.Name))
 	return &col, nil

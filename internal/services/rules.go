@@ -7,30 +7,36 @@ import (
 	"github.com/techasit5415/microbase/internal/models"
 )
 
-var ErrForbidden = errors.New("access denied by collection api rules")
+var ErrForbidden = errors.New("only superusers can perform this action")
 
 // CheckAPIRule evaluates a PocketBase-style rule expression for a collection action.
-// Supported rules:
-//   - "" (empty): public access
-//   - "auth" or "@request.auth.id != ''": requires any authenticated user
-//   - "admin" or "@request.auth.role = 'admin'": requires role admin or superuser
-//   - "locked": requires superuser only
+// Rules follow PocketBase's secure-by-default model:
+//   - Key absent (nil) or "locked"/"superuser": Superusers only (403 for everyone else)
+//   - Key present with "" (empty) or "public": Public access (anyone)
+//   - "auth" or "@request.auth.id != ''": Any authenticated user
+//   - "admin" or "@request.auth.role = 'admin'": Admin or Superuser
 func CheckAPIRule(col *models.Collection, action string, claims *AuthClaims) error {
+	// Superusers always bypass API rules.
 	if claims != nil && claims.Role == "superuser" {
 		return nil
 	}
 	if col.APIRules == nil {
-		return nil
+		return ErrForbidden
 	}
 
-	rule := strings.TrimSpace(col.APIRules[action])
-	if rule == "" {
+	raw, exists := col.APIRules[action]
+	if !exists {
+		return ErrForbidden
+	}
+
+	rule := strings.TrimSpace(raw)
+	if rule == "" || strings.EqualFold(rule, "public") {
 		return nil
 	}
 
 	lower := strings.ToLower(rule)
 	switch {
-	case lower == "locked":
+	case lower == "locked" || lower == "superuser":
 		return ErrForbidden
 	case lower == "admin" || strings.Contains(lower, "role = 'admin'") || strings.Contains(lower, `role = "admin"`):
 		if claims == nil || (claims.Role != "admin" && claims.Role != "superuser") {
@@ -43,7 +49,6 @@ func CheckAPIRule(col *models.Collection, action string, claims *AuthClaims) err
 		}
 		return nil
 	default:
-		// Any other non-empty rule defaults to requiring authentication.
 		if claims == nil {
 			return ErrForbidden
 		}

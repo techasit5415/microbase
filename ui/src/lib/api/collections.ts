@@ -9,11 +9,12 @@ export async function listCollections(): Promise<Collection[]> {
 export async function createCollection(
 	name: string,
 	fields: FieldDef[],
-	indexes: IndexDef[] = []
+	indexes: IndexDef[] = [],
+	apiRules: Record<string, string> = {}
 ): Promise<Collection> {
 	return apiRequest<Collection>('/api/collections', {
 		method: 'POST',
-		body: JSON.stringify({ name, fields, indexes })
+		body: JSON.stringify({ name, fields, indexes, api_rules: apiRules })
 	});
 }
 

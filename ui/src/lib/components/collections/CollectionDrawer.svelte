@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Lock, Plus, X } from '@lucide/svelte';
+	import { Lock, LockOpen, Plus, X } from '@lucide/svelte';
 	import { createCollection, updateCollection } from '#lib/api/collections.ts';
 	import type { Collection, FieldDef, FieldType, IndexDef } from '#lib/api/types.ts';
 	import AuthOptionsTab from '#lib/components/oauth/AuthOptionsTab.svelte';
@@ -139,7 +139,7 @@
 
 			const result = editing
 				? await updateCollection(editing.name, cleanFields, apiRules, indexes)
-				: await createCollection(name.trim(), cleanFields, indexes);
+				: await createCollection(name.trim(), cleanFields, indexes, apiRules);
 
 			onSaved(result, Boolean(editing));
 			onClose();
@@ -292,19 +292,67 @@
 			{:else if activeTab === 'rules'}
 				<div class="space-y-3">
 					<p class="text-xs text-muted-foreground">
-						Leave blank for public access, or set rules like <code class="rounded bg-muted px-1">auth</code> or <code class="rounded bg-muted px-1">admin</code>.
+						By default, locked rules allow <strong>Superusers only</strong>. Click <strong>Unlock</strong> to allow public access or write a rule like <code class="rounded bg-muted px-1">auth</code>, <code class="rounded bg-muted px-1">admin</code>, or <code class="rounded bg-muted px-1">@request.auth.id != ''</code>.
 					</p>
 					{#each ruleKeys as r (r.key)}
-						<div>
-							<label for="rule-{r.key}" class="mb-1 block text-xs font-medium">{r.label}</label>
-							<input
-								id="rule-{r.key}"
-								type="text"
-								disabled={isAuth}
-								bind:value={apiRules[r.key]}
-								placeholder="Public (leave empty) or e.g. @request.auth.id != ''"
-								class="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs outline-none focus:border-ring disabled:opacity-60"
-							/>
+						{@const unlocked = Object.prototype.hasOwnProperty.call(apiRules, r.key)}
+						<div class="rounded-md border border-border bg-muted/20 p-3">
+							<div class="flex items-center justify-between gap-2">
+								<div class="flex items-center gap-2">
+									{#if unlocked}
+										<LockOpen class="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+									{:else}
+										<Lock class="h-3.5 w-3.5 text-muted-foreground" />
+									{/if}
+									<label for="rule-{r.key}" class="text-xs font-medium text-foreground">{r.label}</label>
+								</div>
+
+								{#if !isAuth}
+									{#if unlocked}
+										<button
+											type="button"
+											onclick={() => {
+												const next = { ...apiRules };
+												delete next[r.key];
+												apiRules = next;
+											}}
+											class="inline-flex cursor-pointer items-center gap-1 rounded border border-border bg-background px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
+										>
+											<Lock class="h-3 w-3" />
+											Set Superusers only
+										</button>
+									{:else}
+										<button
+											type="button"
+											onclick={() => {
+												apiRules = { ...apiRules, [r.key]: '' };
+											}}
+											class="inline-flex cursor-pointer items-center gap-1 rounded border border-border bg-background px-2.5 py-0.5 text-[11px] font-medium text-foreground transition hover:bg-accent"
+										>
+											<LockOpen class="h-3 w-3" />
+											Unlock
+										</button>
+									{/if}
+								{/if}
+							</div>
+
+							{#if unlocked}
+								<input
+									id="rule-{r.key}"
+									type="text"
+									disabled={isAuth}
+									value={apiRules[r.key] ?? ''}
+									oninput={(e) => {
+										apiRules = { ...apiRules, [r.key]: e.currentTarget.value };
+									}}
+									placeholder="Leave empty for anyone, or e.g. @request.auth.id != ''"
+									class="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs outline-none focus:border-ring disabled:opacity-60"
+								/>
+							{:else}
+								<div class="mt-1.5 text-[11px] text-muted-foreground">
+									Locked — only <code class="rounded bg-muted px-1">_superusers</code> can access this endpoint.
+								</div>
+							{/if}
 						</div>
 					{/each}
 				</div>

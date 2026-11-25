@@ -48,9 +48,10 @@ type Collection struct {
 
 // CreateCollectionRequest is the payload accepted by POST /api/collections.
 type CreateCollectionRequest struct {
-	Name    string     `json:"name"`
-	Fields  []FieldDef `json:"fields"`
-	Indexes []IndexDef `json:"indexes,omitempty"`
+	Name     string            `json:"name"`
+	Fields   []FieldDef        `json:"fields"`
+	APIRules map[string]string `json:"api_rules,omitempty"`
+	Indexes  []IndexDef        `json:"indexes,omitempty"`
 }
 
 // SchemaExport represents a portable snapshot of all collection schemas for environment migration.
