@@ -91,6 +91,9 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStor
 		api.PUT("/settings/ratelimits", opsCtrl.UpdateRateLimits)
 		api.GET("/settings/logs", opsCtrl.GetLogSettings)
 		api.PUT("/settings/logs", opsCtrl.UpdateLogSettings)
+		api.GET("/settings/database", opsCtrl.GetDatabase, middlewares.RequireAuth(authService))
+		api.POST("/settings/database/test", opsCtrl.TestDatabase, middlewares.RequireAuth(authService))
+		api.PUT("/settings/database", opsCtrl.UpdateDatabase, middlewares.RequireAuth(authService))
 
 		// Auth, Superusers & OAuth2/OIDC endpoints.
 		api.GET("/auth/methods", oauthCtrl.AuthMethods)

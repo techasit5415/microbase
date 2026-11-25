@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/smtp"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -331,4 +332,159 @@ func (h *OpsController) UpdateLogSettings(c echo.Context) error {
 		return response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 	}
 	return response.OK(c, map[string]any{"max_days": req.MaxDays})
+}
+
+type dbConnRequest struct {
+	Host     string `json:"host"`
+	Port     string `json:"port"`
+	User     string `json:"user"`
+	Password string `json:"password"`
+	Database string `json:"database"`
+	SSLMode  string `json:"sslmode"`
+}
+
+func parseDBURL(raw string) (host, port, user, password, dbName, sslmode string) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "localhost", "5432", "microbase", "", "microbase", "disable"
+	}
+	host = u.Hostname()
+	port = u.Port()
+	if port == "" {
+		port = "5432"
+	}
+	if u.User != nil {
+		user = u.User.Username()
+		password, _ = u.User.Password()
+	}
+	dbName = strings.TrimLeft(u.Path, "/")
+	sslmode = u.Query().Get("sslmode")
+	if sslmode == "" {
+		sslmode = "disable"
+	}
+	return
+}
+
+func buildDBURL(req dbConnRequest, fallbackPass string) string {
+	pass := req.Password
+	if pass == "" {
+		pass = fallbackPass
+	}
+	port := strings.TrimSpace(req.Port)
+	if port == "" {
+		port = "5432"
+	}
+	ssl := strings.TrimSpace(req.SSLMode)
+	if ssl == "" {
+		ssl = "disable"
+	}
+	u := &url.URL{
+		Scheme:   "postgres",
+		User:     url.UserPassword(strings.TrimSpace(req.User), pass),
+		Host:     fmt.Sprintf("%s:%s", strings.TrimSpace(req.Host), port),
+		Path:     "/" + strings.TrimSpace(req.Database),
+		RawQuery: "sslmode=" + url.QueryEscape(ssl),
+	}
+	return u.String()
+}
+
+// GetDatabase handles GET /api/settings/database (Superuser only, masks password).
+func (h *OpsController) GetDatabase(c echo.Context) error {
+	claims := middlewares.GetAuthClaims(c)
+	if claims == nil || claims.Role != "superuser" {
+		return response.Error(c, http.StatusForbidden, "FORBIDDEN", "only superusers can view database settings")
+	}
+	host, port, user, pass, dbName, ssl := parseDBURL(h.databaseURL)
+	var pgVersion string
+	_ = h.pool.QueryRow(c.Request().Context(), `SELECT version()`).Scan(&pgVersion)
+	return response.OK(c, map[string]any{
+		"host":         host,
+		"port":         port,
+		"user":         user,
+		"has_password": pass != "",
+		"database":     dbName,
+		"sslmode":      ssl,
+		"version":      pgVersion,
+	})
+}
+
+// TestDatabase handles POST /api/settings/database/test (tests connectivity via pgxpool.Ping).
+func (h *OpsController) TestDatabase(c echo.Context) error {
+	claims := middlewares.GetAuthClaims(c)
+	if claims == nil || claims.Role != "superuser" {
+		return response.Error(c, http.StatusForbidden, "FORBIDDEN", "only superusers can test database connections")
+	}
+	var req dbConnRequest
+	if err := c.Bind(&req); err != nil || strings.TrimSpace(req.Host) == "" || strings.TrimSpace(req.Database) == "" {
+		return response.Error(c, http.StatusBadRequest, "INVALID_INPUT", "host and database name are required")
+	}
+	_, _, _, prevPass, _, _ := parseDBURL(h.databaseURL)
+	dsn := buildDBURL(req, prevPass)
+
+	ctx, cancel := context.WithTimeout(c.Request().Context(), 5*time.Second)
+	defer cancel()
+	testPool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		return response.Error(c, http.StatusBadRequest, "DB_CONNECT_FAILED", err.Error())
+	}
+	defer testPool.Close()
+	if err := testPool.Ping(ctx); err != nil {
+		return response.Error(c, http.StatusBadRequest, "DB_PING_FAILED", err.Error())
+	}
+	var ver string
+	_ = testPool.QueryRow(ctx, `SELECT version()`).Scan(&ver)
+	return response.OK(c, map[string]any{"connected": true, "version": ver})
+}
+
+// UpdateDatabase handles PUT /api/settings/database — tests connection and updates DATABASE_URL in .env.
+func (h *OpsController) UpdateDatabase(c echo.Context) error {
+	claims := middlewares.GetAuthClaims(c)
+	if claims == nil || claims.Role != "superuser" {
+		return response.Error(c, http.StatusForbidden, "FORBIDDEN", "only superusers can update database settings")
+	}
+	var req dbConnRequest
+	if err := c.Bind(&req); err != nil || strings.TrimSpace(req.Host) == "" || strings.TrimSpace(req.Database) == "" {
+		return response.Error(c, http.StatusBadRequest, "INVALID_INPUT", "host and database name are required")
+	}
+	_, _, _, prevPass, _, _ := parseDBURL(h.databaseURL)
+	dsn := buildDBURL(req, prevPass)
+
+	ctx, cancel := context.WithTimeout(c.Request().Context(), 5*time.Second)
+	defer cancel()
+	testPool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		return response.Error(c, http.StatusBadRequest, "DB_CONNECT_FAILED", err.Error())
+	}
+	if err := testPool.Ping(ctx); err != nil {
+		testPool.Close()
+		return response.Error(c, http.StatusBadRequest, "DB_PING_FAILED", "cannot connect to target PostgreSQL: "+err.Error())
+	}
+	testPool.Close()
+
+	// Update DATABASE_URL in .env cleanly.
+	envPath := ".env"
+	content, _ := os.ReadFile(envPath)
+	lines := strings.Split(string(content), "\n")
+	replaced := false
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "DATABASE_URL=") {
+			lines[i] = "DATABASE_URL=" + dsn
+			replaced = true
+		}
+	}
+	if !replaced {
+		lines = append(lines, "DATABASE_URL="+dsn)
+	}
+	if err := os.WriteFile(envPath, []byte(strings.TrimSpace(strings.Join(lines, "\n"))+"\n"), 0o600); err != nil {
+		return response.Error(c, http.StatusInternalServerError, "ENV_WRITE_FAILED", err.Error())
+	}
+	h.databaseURL = dsn
+
+	return response.OK(c, map[string]any{
+		"saved":            true,
+		"requires_restart": true,
+		"host":             req.Host,
+		"port":             req.Port,
+		"database":         req.Database,
+	})
 }

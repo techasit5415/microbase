@@ -4,6 +4,7 @@
 	import { apiRequest } from '#lib/api/client.ts';
 	import { getSchemaExportURL } from '#lib/api/collections.ts';
 	import BackupsCard from '#lib/components/settings/BackupsCard.svelte';
+	import DatabaseCard from '#lib/components/settings/DatabaseCard.svelte';
 	import CronsCard from '#lib/components/settings/CronsCard.svelte';
 	import MailSettingsCard from '#lib/components/settings/MailSettingsCard.svelte';
 	import RateLimitsCard from '#lib/components/settings/RateLimitsCard.svelte';
