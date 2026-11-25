@@ -22,7 +22,7 @@ func TestOpsAndSettingsControllersFull(t *testing.T) {
 	pool := testutil.Database(t)
 	sw := cache.NewSwitchableStore(cache.NewMemoryStore())
 	authSvc := services.NewAuthService(pool, "ops-extra-secret")
-	superTok, _ := authSvc.GenerateToken(models.User{ID: 1, Email: "su@test.com", Role: "superuser"})
+	superTok, _ := authSvc.GenerateToken(models.User{ID: "1", Email: "su@test.com", Role: "superuser"})
 
 	backupDir := t.TempDir()
 	opsCtrl := NewOpsController(pool, backupDir)

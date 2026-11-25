@@ -177,7 +177,7 @@ func TestAPIWorkflows(t *testing.T) {
 	store.Set(ctx, "pwreset:test", "user@test.local", time.Minute)
 	call("POST", "/api/auth/confirm-password-reset", `{"token":"test","password":"changed123"}`, "", 200)
 	call("POST", "/api/auth/login", `{"email":"user@test.local","password":"changed123"}`, "", 200)
-	store.Set(ctx, "userotp:test", fmt.Sprintf(`{"user_id":%s,"email":"user@test.local","code":"123456"}`, uid), time.Minute)
+	store.Set(ctx, "userotp:test", fmt.Sprintf(`{"user_id":"%s","email":"user@test.local","code":"123456"}`, uid), time.Minute)
 	call("POST", "/api/auth/auth-with-otp", `{"otp_id":"test","password":"000000"}`, "", 401)
 	call("POST", "/api/auth/auth-with-otp", `{"otp_id":"test","password":"123456"}`, "", 200)
 	call("POST", "/api/users/"+uid+"/impersonate", `{}`, admin, 200)

@@ -47,7 +47,7 @@ func TestRelationAndVectorAccess(t *testing.T) {
 	svc := NewRecordService(pool, NewCollectionService(pool, store), nil, nil)
 	source := &models.Collection{Fields: []models.FieldDef{{Name: "related", Type: "relation", CollectionName: col.Name}}}
 	items := []models.Record{{"related": "first"}, {"related": "second"}}
-	claims := &AuthClaims{UserID: 1, Role: "user"}
+	claims := &AuthClaims{UserID: "1", Role: "user"}
 	svc.ExpandRecords(ctx, source, items, "related", claims)
 	exp, ok := items[0]["expand"].(map[string]any)
 	if !ok {

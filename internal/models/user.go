@@ -4,7 +4,7 @@ import "time"
 
 // User represents a registered account stored in users.
 type User struct {
-	ID           int64     `json:"id"`
+	ID           string    `json:"id"`
 	Email        string    `json:"email"`
 	PasswordHash string    `json:"-"` // Never expose password hash in JSON responses
 	Role         string    `json:"role"`

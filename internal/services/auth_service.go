@@ -25,7 +25,7 @@ var (
 
 // AuthClaims holds the JWT payload for authenticated users.
 type AuthClaims struct {
-	UserID int64  `json:"user_id"`
+	UserID string `json:"user_id"`
 	Email  string `json:"email"`
 	Role       string `json:"role"`
 	RecordID   string `json:"record_id,omitempty"`
@@ -93,7 +93,7 @@ func (s *AuthService) RegisterWithExtras(ctx context.Context, rawEmail, password
 	query := fmt.Sprintf(`
 		INSERT INTO users (%s)
 		VALUES (%s)
-		RETURNING id, email, password_hash, role, created_at, updated_at`,
+		RETURNING id::text, email, password_hash, role, created_at, updated_at`,
 		strings.Join(cols, ", "), strings.Join(placeholders, ", "))
 
 	var user models.User
@@ -143,7 +143,7 @@ func (s *AuthService) Login(ctx context.Context, req models.LoginRequest) (*mode
 }
 
 // GetUserByID fetches a user profile by ID.
-func (s *AuthService) GetUserByID(ctx context.Context, id int64) (*models.User, error) {
+func (s *AuthService) GetUserByID(ctx context.Context, id string) (*models.User, error) {
 	var user models.User
 	err := s.pool.QueryRow(ctx, `
 		SELECT id, email, COALESCE(password_hash, ''), role, created_at, updated_at
@@ -277,14 +277,14 @@ func (s *AuthService) ListUsers(ctx context.Context, page, perPage int, search s
 	return items, total, rows.Err()
 }
 
-func (s *AuthService) userExists(ctx context.Context, id int64) bool {
+func (s *AuthService) userExists(ctx context.Context, id string) bool {
 	var one int
-	return s.pool.QueryRow(ctx, `SELECT 1 FROM users WHERE id = $1`, id).Scan(&one) == nil
+	return s.pool.QueryRow(ctx, `SELECT 1 FROM users WHERE id::text = $1`, id).Scan(&one) == nil
 }
 
 // GetUserRecord fetches a single user record from users while enforcing optional row-level API rule SQL (starting at $2).
-func (s *AuthService) GetUserRecord(ctx context.Context, id int64, ruleSQL string, ruleArgs []any) (models.Record, error) {
-	query := `SELECT * FROM users WHERE id = $1`
+func (s *AuthService) GetUserRecord(ctx context.Context, id string, ruleSQL string, ruleArgs []any) (models.Record, error) {
+	query := `SELECT * FROM users WHERE id::text = $1`
 	args := []any{id}
 	if ruleSQL != "" {
 		query += " AND (" + ruleSQL + ")"
@@ -322,8 +322,8 @@ func (s *AuthService) GetUserRecord(ctx context.Context, id int64, ruleSQL strin
 }
 
 // DeleteUser removes a user account by ID while enforcing optional row-level API rule SQL (starting at $2).
-func (s *AuthService) DeleteUser(ctx context.Context, id int64, ruleSQL string, ruleArgs []any) error {
-	query := `DELETE FROM users WHERE id = $1`
+func (s *AuthService) DeleteUser(ctx context.Context, id string, ruleSQL string, ruleArgs []any) error {
+	query := `DELETE FROM users WHERE id::text = $1`
 	args := []any{id}
 	if ruleSQL != "" {
 		query += " AND (" + ruleSQL + ")"
@@ -343,7 +343,7 @@ func (s *AuthService) DeleteUser(ctx context.Context, id int64, ruleSQL string, 
 }
 
 // UpdateUser updates a user's email, role, optional password, and custom users columns while enforcing the users "update" API rule.
-func (s *AuthService) UpdateUser(ctx context.Context, id int64, email, role, newPassword string, custom map[string]any, usersCol *models.Collection, claims *AuthClaims) (models.Record, error) {
+func (s *AuthService) UpdateUser(ctx context.Context, id string, email, role, newPassword string, custom map[string]any, usersCol *models.Collection, claims *AuthClaims) (models.Record, error) {
 	setClauses := []string{"updated_at = NOW()"}
 	args := []any{id}
 	argIdx := 2

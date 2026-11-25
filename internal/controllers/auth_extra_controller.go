@@ -10,7 +10,6 @@ import (
 	"math/big"
 	"net/http"
 	"net/smtp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -186,11 +185,11 @@ func (h *AuthExtraController) ConfirmEmailChange(c echo.Context) error {
 		return response.Error(c, http.StatusBadRequest, "INVALID_TOKEN", "invalid or expired token")
 	}
 	var data struct {
-		UserID   int64  `json:"user_id"`
+		UserID   string `json:"user_id"`
 		NewEmail string `json:"new_email"`
 	}
 	_ = json.Unmarshal([]byte(raw), &data)
-	_, err = h.pool.Exec(c.Request().Context(), `UPDATE users SET email = $2, updated_at = NOW() WHERE id = $1`, data.UserID, data.NewEmail)
+	_, err = h.pool.Exec(c.Request().Context(), `UPDATE users SET email = $2, updated_at = NOW() WHERE id::text = $1`, data.UserID, data.NewEmail)
 	if err != nil {
 		return response.Error(c, http.StatusConflict, "EMAIL_CHANGE_FAILED", err.Error())
 	}
@@ -205,8 +204,8 @@ func (h *AuthExtraController) RequestOTP(c echo.Context) error {
 		return response.Error(c, http.StatusBadRequest, "INVALID_EMAIL", "valid email required")
 	}
 	email := strings.ToLower(strings.TrimSpace(req.Email))
-	var userID int64
-	if err := h.pool.QueryRow(c.Request().Context(), `SELECT id FROM users WHERE email = $1`, email).Scan(&userID); err != nil {
+	var userID string
+	if err := h.pool.QueryRow(c.Request().Context(), `SELECT id::text FROM users WHERE email = $1`, email).Scan(&userID); err != nil {
 		return response.OK(c, map[string]any{"otp_id": genAuthToken()}) // Do not leak account existence
 	}
 	otpID := genAuthToken()
@@ -231,7 +230,7 @@ func (h *AuthExtraController) AuthWithOTP(c echo.Context) error {
 		return response.Error(c, http.StatusUnauthorized, "INVALID_OTP", "invalid or expired OTP")
 	}
 	var data struct {
-		UserID int64  `json:"user_id"`
+		UserID string `json:"user_id"`
 		Email  string `json:"email"`
 		Code   string `json:"code"`
 	}
@@ -242,7 +241,7 @@ func (h *AuthExtraController) AuthWithOTP(c echo.Context) error {
 	_ = h.cache.Delete(c.Request().Context(), "userotp:"+req.OTPID)
 
 	var u models.User
-	err = h.pool.QueryRow(c.Request().Context(), `SELECT id, email, role, created_at, updated_at FROM users WHERE id = $1`, data.UserID).
+	err = h.pool.QueryRow(c.Request().Context(), `SELECT id::text, email, role, created_at, updated_at FROM users WHERE id::text = $1`, data.UserID).
 		Scan(&u.ID, &u.Email, &u.Role, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		return response.Error(c, http.StatusNotFound, "USER_NOT_FOUND", "user not found")
@@ -260,12 +259,12 @@ func (h *AuthExtraController) Impersonate(c echo.Context) error {
 	if claims == nil || claims.Role != "superuser" {
 		return response.Error(c, http.StatusForbidden, "FORBIDDEN", "only superusers can impersonate users")
 	}
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
 		return response.Error(c, http.StatusBadRequest, "INVALID_ID", "invalid user id")
 	}
 	var u models.User
-	err = h.pool.QueryRow(c.Request().Context(), `SELECT id, email, role, created_at, updated_at FROM users WHERE id = $1`, id).
+	err := h.pool.QueryRow(c.Request().Context(), `SELECT id::text, email, role, created_at, updated_at FROM users WHERE id::text = $1`, id).
 		Scan(&u.ID, &u.Email, &u.Role, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		return response.Error(c, http.StatusNotFound, "USER_NOT_FOUND", "user not found")

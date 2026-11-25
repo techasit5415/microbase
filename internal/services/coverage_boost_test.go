@@ -71,8 +71,8 @@ func TestCoverageBoostCronsWebhooksAuthRules(t *testing.T) {
 		t.Fatalf("create boost_posts: %v", err)
 	}
 
-	owner1 := &AuthClaims{UserID: 101, Email: "o1@test.com", Role: "user"}
-	owner2 := &AuthClaims{UserID: 202, Email: "o2@test.com", Role: "user"}
+	owner1 := &AuthClaims{UserID: "101", Email: "o1@test.com", Role: "user"}
+	owner2 := &AuthClaims{UserID: "202", Email: "o2@test.com", Role: "user"}
 
 	created, err := recSvc.Create(context.Background(), "boost_posts", models.Record{
 		"title":    "Mine",

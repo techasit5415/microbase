@@ -12,8 +12,8 @@ import (
 
 func TestRequireSuperuserGuard(t *testing.T) {
 	authSvc := services.NewAuthService(nil, "test-secret-key-12345")
-	userTok, _ := authSvc.GenerateToken(models.User{ID: 10, Email: "user@test.com", Role: "user"})
-	superTok, _ := authSvc.GenerateToken(models.User{ID: 1, Email: "admin@test.com", Role: "superuser"})
+	userTok, _ := authSvc.GenerateToken(models.User{ID: "10", Email: "user@test.com", Role: "user"})
+	superTok, _ := authSvc.GenerateToken(models.User{ID: "1", Email: "admin@test.com", Role: "superuser"})
 
 	e := echo.New()
 	e.GET("/admin", func(c echo.Context) error {

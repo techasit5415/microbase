@@ -9,7 +9,7 @@ import (
 func TestFilterComparisonMatrix(t *testing.T) {
 	data := map[string]any{"x": int64(10), "y": int64(20), "name": "Hello", "empty": nil}
 	cases := map[string]bool{"x = 10": true, "x != 10": false, "x < y": true, "x <= 10": true, "y > x": true, "x >= 11": false, "name ~ 'ell'": true, "name !~ 'ell'": false, "empty = null": true, "empty != null": false, "(x = 10 && y = 20) || x = 1": true, "@request.auth.email = 'a@test.local'": true, "@request.body.x = 10": true, "name = 'Other'": false}
-	claims := &AuthClaims{UserID: 1, Email: "a@test.local", Role: "user"}
+	claims := &AuthClaims{UserID: "1", Email: "a@test.local", Role: "user"}
 	allowed := map[string]models.FieldDef{"x": {Type: "integer"}, "y": {Type: "integer"}, "name": {Type: "text"}, "empty": {Type: "text"}}
 	for expr, want := range cases {
 		t.Run(expr, func(t *testing.T) {

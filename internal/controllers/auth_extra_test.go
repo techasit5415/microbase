@@ -45,7 +45,7 @@ func TestAuthExtraFlowsFull(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register user: %v", err)
 	}
-	superTok, _ := authSvc.GenerateToken(models.User{ID: 999, Email: "super@example.com", Role: "superuser"})
+	superTok, _ := authSvc.GenerateToken(models.User{ID: "999", Email: "super@example.com", Role: "superuser"})
 
 	doJSON := func(method, path string, body any, tok string) *httptest.ResponseRecorder {
 		var buf bytes.Buffer
@@ -120,8 +120,8 @@ func TestAuthExtraFlowsFull(t *testing.T) {
 	if rec := doJSON("POST", "/auth/refresh", nil, regRes.Token); rec.Code != 200 {
 		t.Fatalf("expected 200 for refresh, got %d", rec.Code)
 	}
-	if rec := doJSON("POST", "/users/invalid/impersonate", nil, superTok); rec.Code != 400 {
-		t.Fatalf("expected 400 for bad impersonate id, got %d", rec.Code)
+	if rec := doJSON("POST", "/users/invalid/impersonate", nil, superTok); rec.Code != 404 {
+		t.Fatalf("expected 404 for unknown impersonate id, got %d", rec.Code)
 	}
 	if rec := doJSON("GET", "/settings/auth-options", nil, superTok); rec.Code != 200 {
 		t.Fatalf("expected 200 for GetAuthOptions, got %d", rec.Code)

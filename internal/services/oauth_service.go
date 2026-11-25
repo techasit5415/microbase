@@ -383,7 +383,7 @@ func generateRandomHex(n int) string {
 	return hex.EncodeToString(b)
 }
 
-func (s *OAuthService) syncExtraFields(ctx context.Context, userID int64, extra map[string]any) {
+func (s *OAuthService) syncExtraFields(ctx context.Context, userID string, extra map[string]any) {
 	if len(extra) == 0 {
 		return
 	}
@@ -391,6 +391,6 @@ func (s *OAuthService) syncExtraFields(ctx context.Context, userID int64, extra 
 		if !models.IsValidIdentifier(col) || col == "id" || col == "email" || col == "password_hash" || col == "role" {
 			continue
 		}
-		_, _ = s.pool.Exec(ctx, fmt.Sprintf(`UPDATE users SET "%s" = $2, updated_at = NOW() WHERE id = $1`, col), userID, val)
+		_, _ = s.pool.Exec(ctx, fmt.Sprintf(`UPDATE users SET "%s" = $2, updated_at = NOW() WHERE id::text = $1`, col), userID, val)
 	}
 }

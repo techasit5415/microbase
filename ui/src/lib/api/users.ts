@@ -24,7 +24,7 @@ export async function createUser(payload: Record<string, unknown>): Promise<void
 	});
 }
 
-export async function deleteUser(id: number): Promise<void> {
+export async function deleteUser(id: number | string): Promise<void> {
 	await apiRequest(`/api/users/${id}`, { method: 'DELETE' });
 }
 
@@ -40,7 +40,7 @@ export function deleteSuperuser(id: number): Promise<{ deleted: number }> {
 }
 
 export function updateUser(
-	id: number,
+	id: number | string,
 	payload: Record<string, unknown>
 ): Promise<RecordRow> {
 	return apiRequest<RecordRow>(`/api/users/${id}`, {

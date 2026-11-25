@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 	"github.com/techasit5415/microbase/internal/middlewares"
@@ -142,9 +143,9 @@ func (h *AuthController) ListUsers(c echo.Context) error {
 
 // GetUser handles GET /api/users/:id (enforces users "view" API rule including row-level SQL).
 func (h *AuthController) GetUser(c echo.Context) error {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "INVALID_ID", "user id must be an integer")
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return response.Error(c, http.StatusBadRequest, "INVALID_ID", "invalid user id")
 	}
 	claims := middlewares.GetAuthClaims(c)
 	usersCol := h.usersCollection(c)
@@ -168,9 +169,9 @@ func (h *AuthController) GetUser(c echo.Context) error {
 
 // DeleteUser handles DELETE /api/users/:id (enforces users "delete" API rule including row-level SQL).
 func (h *AuthController) DeleteUser(c echo.Context) error {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "INVALID_ID", "user id must be an integer")
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return response.Error(c, http.StatusBadRequest, "INVALID_ID", "invalid user id")
 	}
 	claims := middlewares.GetAuthClaims(c)
 	usersCol := h.usersCollection(c)
@@ -190,9 +191,9 @@ func (h *AuthController) DeleteUser(c echo.Context) error {
 
 // UpdateUser handles PATCH /api/users/:id (enforces users "update" API rule including row-level SQL).
 func (h *AuthController) UpdateUser(c echo.Context) error {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "INVALID_ID", "user id must be an integer")
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return response.Error(c, http.StatusBadRequest, "INVALID_ID", "invalid user id")
 	}
 	var raw map[string]any
 	if err := json.NewDecoder(c.Request().Body).Decode(&raw); err != nil {

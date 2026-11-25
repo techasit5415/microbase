@@ -373,7 +373,7 @@ func (p *filterParser) resolveValue(tok fToken) (any, bool, error) {
 			if p.claims.RecordID != "" {
 				return p.claims.RecordID, false, nil
 			}
-			return strconv.FormatInt(p.claims.UserID, 10), false, nil
+			return p.claims.UserID, false, nil
 		case lower == "@request.auth.email":
 			if p.claims == nil {
 				return "", false, nil
@@ -532,7 +532,7 @@ func (e *dataRuleEval) resolve(tok fToken) (any, bool) {
 			if e.claims.RecordID != "" {
 				return e.claims.RecordID, false
 			}
-			return strconv.FormatInt(e.claims.UserID, 10), false
+			return e.claims.UserID, false
 		case lower == "@request.auth.email":
 			if e.claims == nil {
 				return "", false

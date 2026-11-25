@@ -22,9 +22,9 @@ func TestCompileAPIRuleRowLevel(t *testing.T) {
 		},
 	}
 
-	userClaims := &AuthClaims{UserID: 42, Email: "u@test.com", Role: "user"}
-	adminClaims := &AuthClaims{UserID: 1, Email: "a@test.com", Role: "admin"}
-	superClaims := &AuthClaims{UserID: 9, Email: "s@test.com", Role: "superuser"}
+	userClaims := &AuthClaims{UserID: "42", Email: "u@test.com", Role: "user"}
+	adminClaims := &AuthClaims{UserID: "1", Email: "a@test.com", Role: "admin"}
+	superClaims := &AuthClaims{UserID: "9", Email: "s@test.com", Role: "superuser"}
 
 	// 1. Superuser always bypasses
 	sql, args, _, err := CompileAPIRule(col, "view", superClaims, nil, 2)
@@ -84,7 +84,7 @@ func TestUsersCollectionRowLevelRule(t *testing.T) {
 			"create": "@request.body.role != 'admin'",
 		},
 	}
-	userClaims := &AuthClaims{UserID: 7, Email: "me@kmitl.ac.th", Role: "user"}
+	userClaims := &AuthClaims{UserID: "7", Email: "me@kmitl.ac.th", Role: "user"}
 
 	sql, args, _, err := CompileAPIRule(usersCol, "view", userClaims, nil, 2)
 	if err != nil {
