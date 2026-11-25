@@ -8,7 +8,7 @@
 	import { appSettings, type AppSettingsData } from '#lib/stores/appSettings.svelte.ts';
 	import { toast } from '#lib/stores/toast.svelte.ts';
 
-	let form = $state<AppSettingsData>(structuredClone(appSettings.data));
+	let form = $state<AppSettingsData>(JSON.parse(JSON.stringify(appSettings.data)));
 	let proxyHeadersText = $state('X-Forwarded-For, X-Real-IP');
 	let superuserIPsText = $state('127.0.0.1, ::1');
 	let openAccordion = $state<'batch' | 'proxy' | 'ratelimit' | 'ips' | null>(null);
@@ -17,7 +17,7 @@
 	const accentPresets = ['#25272d', '#1856c9', '#059669', '#7c3aed', '#dc2626', '#d97706'];
 
 	function syncFromStore() {
-		form = structuredClone(appSettings.data);
+		form = JSON.parse(JSON.stringify(appSettings.data));
 		proxyHeadersText = (form.trusted_proxy.headers ?? []).join(', ');
 		superuserIPsText = (form.superuser_ips.allowed_ips ?? []).join(', ');
 	}

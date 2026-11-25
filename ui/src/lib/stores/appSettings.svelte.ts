@@ -31,7 +31,7 @@ const defaults: AppSettingsData = {
 };
 
 class AppSettingsStore {
-	data = $state<AppSettingsData>(structuredClone(defaults));
+	data = $state<AppSettingsData>(JSON.parse(JSON.stringify(defaults)));
 	loaded = $state(false);
 
 	applyBranding(d: AppSettingsData) {
@@ -50,7 +50,7 @@ class AppSettingsStore {
 			const res = await apiRequest<AppSettingsData>('/api/settings/app');
 			if (res && res.app_name) {
 				this.data = {
-					...structuredClone(defaults),
+					...JSON.parse(JSON.stringify(defaults)),
 					...res,
 					batch: { ...defaults.batch, ...(res.batch ?? {}) },
 					trusted_proxy: { ...defaults.trusted_proxy, ...(res.trusted_proxy ?? {}) },
