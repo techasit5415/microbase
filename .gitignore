@@ -1,0 +1,10 @@
+# Binaries
+microbase
+bin/
+*.exe
+
+# Environment
+.env
+
+# Storage
+storage/
