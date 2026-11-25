@@ -28,7 +28,7 @@ func (s *RecordService) ExpandRecords(ctx context.Context, col *models.Collectio
 		}
 
 		targetTable := physicalTableName(f.CollectionName)
-		if targetTable != "_users" && !models.IsValidIdentifier(targetTable) {
+		if !models.IsValidIdentifier(targetTable) {
 			continue
 		}
 

@@ -52,7 +52,7 @@ func (s *AuthService) Register(ctx context.Context, req models.RegisterRequest) 
 	return s.RegisterWithExtras(ctx, req.Email, req.Password, nil, nil)
 }
 
-// RegisterWithExtras creates a new user with email, password, and optional role/verified/email_visibility/custom _users fields.
+// RegisterWithExtras creates a new user with email, password, and optional role/verified/email_visibility/custom users fields.
 func (s *AuthService) RegisterWithExtras(ctx context.Context, rawEmail, password string, extras map[string]any, claims *AuthClaims) (*models.AuthResponse, error) {
 	email := strings.ToLower(strings.TrimSpace(rawEmail))
 	if !strings.Contains(email, "@") || len(password) < 8 {
@@ -91,7 +91,7 @@ func (s *AuthService) RegisterWithExtras(ctx context.Context, rawEmail, password
 	}
 
 	query := fmt.Sprintf(`
-		INSERT INTO _users (%s)
+		INSERT INTO users (%s)
 		VALUES (%s)
 		RETURNING id, email, password_hash, role, created_at, updated_at`,
 		strings.Join(cols, ", "), strings.Join(placeholders, ", "))
@@ -120,7 +120,7 @@ func (s *AuthService) Login(ctx context.Context, req models.LoginRequest) (*mode
 	var user models.User
 	err := s.pool.QueryRow(ctx, `
 		SELECT id, email, COALESCE(password_hash, ''), role, created_at, updated_at
-		FROM _users
+		FROM users
 		WHERE email = $1`, email,
 	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.Role, &user.CreatedAt, &user.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -147,7 +147,7 @@ func (s *AuthService) GetUserByID(ctx context.Context, id int64) (*models.User, 
 	var user models.User
 	err := s.pool.QueryRow(ctx, `
 		SELECT id, email, COALESCE(password_hash, ''), role, created_at, updated_at
-		FROM _users
+		FROM users
 		WHERE id = $1`, id,
 	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.Role, &user.CreatedAt, &user.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -203,7 +203,7 @@ func (s *AuthService) ParseToken(tokenString string) (*AuthClaims, error) {
 	return claims, nil
 }
 
-// ListUsers returns paginated user records from _users while enforcing optional row-level API rule SQL.
+// ListUsers returns paginated user records from users while enforcing optional row-level API rule SQL.
 func (s *AuthService) ListUsers(ctx context.Context, page, perPage int, search string, ruleSQL string, ruleArgs []any) ([]models.Record, int64, error) {
 	offset := (page - 1) * perPage
 	q := strings.TrimSpace(search)
@@ -229,12 +229,12 @@ func (s *AuthService) ListUsers(ctx context.Context, page, perPage int, search s
 	}
 
 	var total int64
-	if err := s.pool.QueryRow(ctx, "SELECT COUNT(*) FROM _users"+whereSQL, args...).Scan(&total); err != nil {
+	if err := s.pool.QueryRow(ctx, "SELECT COUNT(*) FROM users"+whereSQL, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
 	listArgs := append(append([]any{}, args...), perPage, offset)
-	rows, err := s.pool.Query(ctx, fmt.Sprintf("SELECT * FROM _users%s ORDER BY id DESC LIMIT $%d OFFSET $%d", whereSQL, idx, idx+1), listArgs...)
+	rows, err := s.pool.Query(ctx, fmt.Sprintf("SELECT * FROM users%s ORDER BY id DESC LIMIT $%d OFFSET $%d", whereSQL, idx, idx+1), listArgs...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -262,12 +262,12 @@ func (s *AuthService) ListUsers(ctx context.Context, page, perPage int, search s
 
 func (s *AuthService) userExists(ctx context.Context, id int64) bool {
 	var one int
-	return s.pool.QueryRow(ctx, `SELECT 1 FROM _users WHERE id = $1`, id).Scan(&one) == nil
+	return s.pool.QueryRow(ctx, `SELECT 1 FROM users WHERE id = $1`, id).Scan(&one) == nil
 }
 
-// GetUserRecord fetches a single user record from _users while enforcing optional row-level API rule SQL (starting at $2).
+// GetUserRecord fetches a single user record from users while enforcing optional row-level API rule SQL (starting at $2).
 func (s *AuthService) GetUserRecord(ctx context.Context, id int64, ruleSQL string, ruleArgs []any) (models.Record, error) {
-	query := `SELECT * FROM _users WHERE id = $1`
+	query := `SELECT * FROM users WHERE id = $1`
 	args := []any{id}
 	if ruleSQL != "" {
 		query += " AND (" + ruleSQL + ")"
@@ -306,7 +306,7 @@ func (s *AuthService) GetUserRecord(ctx context.Context, id int64, ruleSQL strin
 
 // DeleteUser removes a user account by ID while enforcing optional row-level API rule SQL (starting at $2).
 func (s *AuthService) DeleteUser(ctx context.Context, id int64, ruleSQL string, ruleArgs []any) error {
-	query := `DELETE FROM _users WHERE id = $1`
+	query := `DELETE FROM users WHERE id = $1`
 	args := []any{id}
 	if ruleSQL != "" {
 		query += " AND (" + ruleSQL + ")"
@@ -325,7 +325,7 @@ func (s *AuthService) DeleteUser(ctx context.Context, id int64, ruleSQL string, 
 	return nil
 }
 
-// UpdateUser updates a user's email, role, optional password, and custom _users columns while enforcing the users "update" API rule.
+// UpdateUser updates a user's email, role, optional password, and custom users columns while enforcing the users "update" API rule.
 func (s *AuthService) UpdateUser(ctx context.Context, id int64, email, role, newPassword string, custom map[string]any, usersCol *models.Collection, claims *AuthClaims) (models.Record, error) {
 	setClauses := []string{"updated_at = NOW()"}
 	args := []any{id}
@@ -386,7 +386,7 @@ func (s *AuthService) UpdateUser(ctx context.Context, id int64, email, role, new
 		args = append(args, ruleArgs...)
 	}
 
-	query := fmt.Sprintf(`UPDATE _users SET %s WHERE %s RETURNING *`, strings.Join(setClauses, ", "), wherePart)
+	query := fmt.Sprintf(`UPDATE users SET %s WHERE %s RETURNING *`, strings.Join(setClauses, ", "), wherePart)
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		var pgErr *pgconn.PgError

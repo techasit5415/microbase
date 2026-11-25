@@ -236,9 +236,6 @@ func (s *CollectionService) Delete(ctx context.Context, name string) error {
 }
 
 func physicalTableName(name string) string {
-	if name == "users" {
-		return "_users"
-	}
 	return name
 }
 

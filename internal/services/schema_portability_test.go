@@ -52,7 +52,7 @@ func TestParsePocketBaseSchemaAndDDL(t *testing.T) {
 		t.Fatalf("expected Categories before Logs, got %s then %s", ordered[0].Name, ordered[1].Name)
 	}
 
-	// Verify DDL uses TEXT FK for text-ID target (Categories) and BIGINT FK for serial-ID target (users/_users).
+	// Verify DDL uses TEXT FK for text-ID target (Categories) and BIGINT FK for serial-ID target (users).
 	targetIDTypes := map[string]string{
 		"users":      "serial",
 		"Categories": "text",
@@ -64,8 +64,8 @@ func TestParsePocketBaseSchemaAndDDL(t *testing.T) {
 	if !strings.Contains(ddl, `"id" TEXT PRIMARY KEY`) {
 		t.Fatalf("expected TEXT primary key in DDL: %s", ddl)
 	}
-	if !strings.Contains(ddl, `"user_id" BIGINT REFERENCES "_users"(id)`) {
-		t.Fatalf("expected BIGINT FK to _users in DDL: %s", ddl)
+	if !strings.Contains(ddl, `"user_id" BIGINT REFERENCES "users"(id)`) {
+		t.Fatalf("expected BIGINT FK to users in DDL: %s", ddl)
 	}
 	if !strings.Contains(ddl, `"category" TEXT REFERENCES "Categories"(id)`) {
 		t.Fatalf("expected TEXT FK to Categories in DDL: %s", ddl)

@@ -111,7 +111,7 @@ func (h *AuthExtraController) ConfirmVerification(c echo.Context) error {
 	if err != nil || email == "" {
 		return response.Error(c, http.StatusBadRequest, "INVALID_TOKEN", "invalid or expired verification token")
 	}
-	_, err = h.pool.Exec(c.Request().Context(), `UPDATE _users SET verified = TRUE, updated_at = NOW() WHERE email = $1`, email)
+	_, err = h.pool.Exec(c.Request().Context(), `UPDATE users SET verified = TRUE, updated_at = NOW() WHERE email = $1`, email)
 	if err != nil {
 		return response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 	}
@@ -149,7 +149,7 @@ func (h *AuthExtraController) ConfirmPasswordReset(c echo.Context) error {
 	if err != nil {
 		return response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 	}
-	_, err = h.pool.Exec(c.Request().Context(), `UPDATE _users SET password_hash = $2, updated_at = NOW() WHERE email = $1`, email, hash)
+	_, err = h.pool.Exec(c.Request().Context(), `UPDATE users SET password_hash = $2, updated_at = NOW() WHERE email = $1`, email, hash)
 	if err != nil {
 		return response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 	}
@@ -190,7 +190,7 @@ func (h *AuthExtraController) ConfirmEmailChange(c echo.Context) error {
 		NewEmail string `json:"new_email"`
 	}
 	_ = json.Unmarshal([]byte(raw), &data)
-	_, err = h.pool.Exec(c.Request().Context(), `UPDATE _users SET email = $2, updated_at = NOW() WHERE id = $1`, data.UserID, data.NewEmail)
+	_, err = h.pool.Exec(c.Request().Context(), `UPDATE users SET email = $2, updated_at = NOW() WHERE id = $1`, data.UserID, data.NewEmail)
 	if err != nil {
 		return response.Error(c, http.StatusConflict, "EMAIL_CHANGE_FAILED", err.Error())
 	}
@@ -206,7 +206,7 @@ func (h *AuthExtraController) RequestOTP(c echo.Context) error {
 	}
 	email := strings.ToLower(strings.TrimSpace(req.Email))
 	var userID int64
-	if err := h.pool.QueryRow(c.Request().Context(), `SELECT id FROM _users WHERE email = $1`, email).Scan(&userID); err != nil {
+	if err := h.pool.QueryRow(c.Request().Context(), `SELECT id FROM users WHERE email = $1`, email).Scan(&userID); err != nil {
 		return response.OK(c, map[string]any{"otp_id": genAuthToken()}) // Do not leak account existence
 	}
 	otpID := genAuthToken()
@@ -242,7 +242,7 @@ func (h *AuthExtraController) AuthWithOTP(c echo.Context) error {
 	_ = h.cache.Delete(c.Request().Context(), "userotp:"+req.OTPID)
 
 	var u models.User
-	err = h.pool.QueryRow(c.Request().Context(), `SELECT id, email, role, created_at, updated_at FROM _users WHERE id = $1`, data.UserID).
+	err = h.pool.QueryRow(c.Request().Context(), `SELECT id, email, role, created_at, updated_at FROM users WHERE id = $1`, data.UserID).
 		Scan(&u.ID, &u.Email, &u.Role, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		return response.Error(c, http.StatusNotFound, "USER_NOT_FOUND", "user not found")
@@ -265,7 +265,7 @@ func (h *AuthExtraController) Impersonate(c echo.Context) error {
 		return response.Error(c, http.StatusBadRequest, "INVALID_ID", "invalid user id")
 	}
 	var u models.User
-	err = h.pool.QueryRow(c.Request().Context(), `SELECT id, email, role, created_at, updated_at FROM _users WHERE id = $1`, id).
+	err = h.pool.QueryRow(c.Request().Context(), `SELECT id, email, role, created_at, updated_at FROM users WHERE id = $1`, id).
 		Scan(&u.ID, &u.Email, &u.Role, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		return response.Error(c, http.StatusNotFound, "USER_NOT_FOUND", "user not found")

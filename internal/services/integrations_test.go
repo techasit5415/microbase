@@ -77,7 +77,7 @@ func TestOAuthStateExchangeAndAccountLink(t *testing.T) {
 	}
 	var name string
 	var count int
-	pool.QueryRow(ctx, "SELECT name FROM _users WHERE email='student@test.local'").Scan(&name)
+	pool.QueryRow(ctx, "SELECT name FROM users WHERE email='student@test.local'").Scan(&name)
 	pool.QueryRow(ctx, "SELECT count(*) FROM _oauth_accounts").Scan(&count)
 	if name != "Student" || count != 1 {
 		t.Fatal(name, count)

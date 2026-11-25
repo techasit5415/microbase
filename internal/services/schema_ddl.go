@@ -168,7 +168,7 @@ func buildAlterTableStatementsWithTargets(tableName string, oldFields, newFields
 
 // buildCreateIndexSQL validates an IndexDef and generates a PostgreSQL CREATE [UNIQUE] INDEX statement.
 func buildCreateIndexSQL(tableName string, idx models.IndexDef) (string, error) {
-	if tableName != "_users" && !models.IsValidIdentifier(tableName) {
+	if !models.IsValidIdentifier(tableName) {
 		return "", fmt.Errorf("invalid table name %q", tableName)
 	}
 	if !models.IsValidIdentifier(idx.Name) {
@@ -253,9 +253,7 @@ func relationConstraintSQL(f models.FieldDef) (string, error) {
 		return "", fmt.Errorf("relation field %q must specify a target collection_name", f.Name)
 	}
 	targetTable := f.CollectionName
-	if targetTable == "users" {
-		targetTable = "_users"
-	} else if !models.IsValidIdentifier(targetTable) {
+	if !models.IsValidIdentifier(targetTable) {
 		return "", fmt.Errorf("invalid target collection %q for relation field %q", f.CollectionName, f.Name)
 	}
 	if f.MaxSelect > 1 {

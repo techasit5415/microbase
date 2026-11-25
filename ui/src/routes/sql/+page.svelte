@@ -23,7 +23,7 @@
 
 	const presets = [
 		{ label: 'Collections', sql: 'SELECT id, name, type, created_at FROM _collections ORDER BY id ASC;' },
-		{ label: 'Users', sql: 'SELECT id, email, role, verified, created_at FROM _users ORDER BY id DESC LIMIT 50;' },
+		{ label: 'Users', sql: 'SELECT id, email, role, verified, created_at FROM "users" ORDER BY id DESC LIMIT 50;' },
 		{ label: 'Recent Logs', sql: 'SELECT id, status, method, path, code, latency_ms, created_at FROM _logs ORDER BY id DESC LIMIT 50;' },
 		{ label: 'Postgres Tables', sql: "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename;" }
 	];

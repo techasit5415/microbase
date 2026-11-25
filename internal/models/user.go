@@ -2,7 +2,7 @@ package models
 
 import "time"
 
-// User represents a registered account stored in _users.
+// User represents a registered account stored in users.
 type User struct {
 	ID           int64     `json:"id"`
 	Email        string    `json:"email"`

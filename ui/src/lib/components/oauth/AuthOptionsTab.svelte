@@ -289,10 +289,10 @@
 										</div>
 									</div>
 
-									<!-- IAM Claim -> _users Column Mapping -->
+									<!-- IAM Claim -> users Column Mapping -->
 									<div class="border-t border-border pt-3">
 										<div class="mb-2 flex items-center justify-between">
-											<span class="text-xs font-semibold">Claim / Field Mapping (IAM JSON Path &rarr; _users column)</span>
+											<span class="text-xs font-semibold">Claim / Field Mapping (IAM JSON Path &rarr; users column)</span>
 											<button type="button" onclick={() => (mappingRows = [...mappingRows, { col: '', path: '' }])} class="inline-flex cursor-pointer items-center gap-1 rounded border border-border bg-card px-2 py-0.5 text-xs font-medium hover:bg-muted">
 												<Plus class="h-3 w-3" /> Add mapping
 											</button>
@@ -303,7 +303,7 @@
 											<div class="space-y-1.5">
 												{#each mappingRows as row, idx (idx)}
 													<div class="flex items-center gap-2">
-														<input type="text" bind:value={row.col} placeholder="_users col (e.g. name, sub)" class="w-1/2 rounded border border-input bg-background px-2.5 py-1 font-mono text-xs outline-none focus:border-ring" />
+														<input type="text" bind:value={row.col} placeholder="users col (e.g. name, sub)" class="w-1/2 rounded border border-input bg-background px-2.5 py-1 font-mono text-xs outline-none focus:border-ring" />
 														<span class="text-xs text-muted-foreground">&larr;</span>
 														<input type="text" bind:value={row.path} placeholder="IAM path (e.g. firstname_th)" class="w-1/2 rounded border border-input bg-background px-2.5 py-1 font-mono text-xs outline-none focus:border-ring" />
 														<button type="button" onclick={() => (mappingRows = mappingRows.filter((_, i) => i !== idx))} class="cursor-pointer rounded p-1 text-muted-foreground hover:text-destructive">

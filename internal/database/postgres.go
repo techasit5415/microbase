@@ -57,7 +57,13 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);`,
-		`CREATE TABLE IF NOT EXISTS _users (
+		`DO $$
+		BEGIN
+			IF to_regclass('public._users') IS NOT NULL AND to_regclass('public.users') IS NULL THEN
+				ALTER TABLE "users" RENAME TO "users";
+			END IF;
+		END $$;`,
+		`CREATE TABLE IF NOT EXISTS "users" (
 			id            BIGSERIAL PRIMARY KEY,
 			email         TEXT UNIQUE NOT NULL,
 			password_hash TEXT,
@@ -65,7 +71,7 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 			created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);`,
-		`ALTER TABLE _users ALTER COLUMN password_hash DROP NOT NULL;`,
+		`ALTER TABLE "users" ALTER COLUMN password_hash DROP NOT NULL;`,
 		`CREATE TABLE IF NOT EXISTS _superusers (
 			id            BIGSERIAL PRIMARY KEY,
 			email         TEXT UNIQUE NOT NULL,
@@ -108,13 +114,13 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		`ALTER TABLE _webhooks ADD COLUMN IF NOT EXISTS last_run_at TIMESTAMPTZ;`,
 		`ALTER TABLE _webhooks ADD COLUMN IF NOT EXISTS last_status TEXT NOT NULL DEFAULT '';`,
 		`UPDATE _collections SET type = 'auth' WHERE name = 'users';`,
-		`ALTER TABLE _users ADD COLUMN IF NOT EXISTS verified BOOLEAN NOT NULL DEFAULT FALSE;`,
-		`ALTER TABLE _users ADD COLUMN IF NOT EXISTS email_visibility BOOLEAN NOT NULL DEFAULT FALSE;`,
-		`ALTER TABLE _users ADD COLUMN IF NOT EXISTS token_key TEXT NOT NULL DEFAULT '';`,
-		`UPDATE _users SET token_key = md5(random()::text || clock_timestamp()::text || id::text) WHERE token_key = '';`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_token_key ON _users (token_key) WHERE token_key <> '';`,
-		`ALTER TABLE _users ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT '';`,
-		`ALTER TABLE _users ADD COLUMN IF NOT EXISTS avatar TEXT NOT NULL DEFAULT '';`,
+		`ALTER TABLE "users" ADD COLUMN IF NOT EXISTS verified BOOLEAN NOT NULL DEFAULT FALSE;`,
+		`ALTER TABLE "users" ADD COLUMN IF NOT EXISTS email_visibility BOOLEAN NOT NULL DEFAULT FALSE;`,
+		`ALTER TABLE "users" ADD COLUMN IF NOT EXISTS token_key TEXT NOT NULL DEFAULT '';`,
+		`UPDATE "users" SET token_key = md5(random()::text || clock_timestamp()::text || id::text) WHERE token_key = '';`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_token_key ON "users" (token_key) WHERE token_key <> '';`,
+		`ALTER TABLE "users" ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT '';`,
+		`ALTER TABLE "users" ADD COLUMN IF NOT EXISTS avatar TEXT NOT NULL DEFAULT '';`,
 		`INSERT INTO _collections (name, type, fields, api_rules, indexes)
 		 VALUES (
 			'users', 'auth',
@@ -143,7 +149,7 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		);`,
 		`CREATE TABLE IF NOT EXISTS _oauth_accounts (
 			id               BIGSERIAL PRIMARY KEY,
-			user_id          BIGINT NOT NULL REFERENCES _users(id) ON DELETE CASCADE,
+			user_id          BIGINT NOT NULL REFERENCES "users"(id) ON DELETE CASCADE,
 			provider         TEXT NOT NULL,
 			provider_user_id TEXT NOT NULL,
 			created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),

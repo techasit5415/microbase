@@ -29,7 +29,7 @@ func NewCollectionAuthController(pool *pgxpool.Pool, colSvc *services.Collection
 
 func authTableName(col *models.Collection) string {
 	if col.Name == "users" {
-		return "_users"
+		return "users"
 	}
 	return col.Name
 }

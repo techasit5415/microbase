@@ -335,7 +335,7 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, ext *oauth.External
 	err = tx.QueryRow(ctx, `
 		SELECT u.id, u.email, COALESCE(u.password_hash, ''), u.role, u.created_at, u.updated_at
 		FROM _oauth_accounts oa
-		JOIN _users u ON u.id = oa.user_id
+		JOIN users u ON u.id = oa.user_id
 		WHERE oa.provider = $1 AND oa.provider_user_id = $2`,
 		ext.Provider, ext.ProviderUserID,
 	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.Role, &user.CreatedAt, &user.UpdatedAt)
@@ -347,7 +347,7 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, ext *oauth.External
 	}
 
 	err = tx.QueryRow(ctx, `
-		INSERT INTO _users (email)
+		INSERT INTO users (email)
 		VALUES ($1)
 		ON CONFLICT (email) DO UPDATE SET updated_at = NOW()
 		RETURNING id, email, COALESCE(password_hash, ''), role, created_at, updated_at`,
@@ -391,6 +391,6 @@ func (s *OAuthService) syncExtraFields(ctx context.Context, userID int64, extra 
 		if !models.IsValidIdentifier(col) || col == "id" || col == "email" || col == "password_hash" || col == "role" {
 			continue
 		}
-		_, _ = s.pool.Exec(ctx, fmt.Sprintf(`UPDATE _users SET "%s" = $2, updated_at = NOW() WHERE id = $1`, col), userID, val)
+		_, _ = s.pool.Exec(ctx, fmt.Sprintf(`UPDATE users SET "%s" = $2, updated_at = NOW() WHERE id = $1`, col), userID, val)
 	}
 }
