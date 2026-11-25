@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { AlertTriangle, X } from '@lucide/svelte';
+	import { cubicOut } from 'svelte/easing';
+	import { fade, scale } from 'svelte/transition';
 	import { confirmStore } from '#lib/stores/confirm.svelte.ts';
 
 	function handleKeydown(e: KeyboardEvent) {
@@ -13,20 +15,22 @@
 <svelte:window onkeydown={handleKeydown} />
 
 {#if confirmStore.state.open}
-	<div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+	<div class="fixed inset-0 z-[60] flex items-center justify-center p-4">
 		<!-- Backdrop -->
 		<button
 			type="button"
 			aria-label="Cancel dialog"
+			transition:fade={{ duration: 150 }}
 			onclick={() => confirmStore.respond(false)}
-			class="fixed inset-0 animate-fade-in bg-black/45 backdrop-blur-[2px]"
+			class="fixed inset-0 bg-black/45 backdrop-blur-[2px]"
 		></button>
 
 		<!-- Centered Modal Card -->
 		<div
 			role="alertdialog"
 			aria-modal="true"
-			class="relative z-10 w-full max-w-md animate-modal-in rounded-lg border border-border bg-card p-6 shadow-xl"
+			transition:scale={{ start: 0.94, duration: 180, easing: cubicOut }}
+			class="relative z-10 w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-xl"
 		>
 			<div class="flex items-start gap-3.5">
 				{#if confirmStore.state.options.destructive}

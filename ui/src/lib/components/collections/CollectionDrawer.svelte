@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { cubicOut } from 'svelte/easing';
+	import { slide } from 'svelte/transition';
 	import {
 		CalendarCheck,
 		ChevronDown,
@@ -48,6 +50,36 @@
 	let indexes = $state<IndexDef[]>([]);
 	let apiRules = $state<Record<string, string>>({});
 	let showRulesInfo = $state(false);
+	let initialSnapshot = $state('');
+
+	function buildSnapshot(): string {
+		return JSON.stringify({
+			name,
+			colType,
+			viewQuery,
+			idType,
+			idAutogen,
+			fields,
+			indexes,
+			apiRules
+		});
+	}
+
+	let hasUnsavedChanges = $derived(open && initialSnapshot !== '' && buildSnapshot() !== initialSnapshot);
+
+	async function requestClose() {
+		if (hasUnsavedChanges) {
+			const discard = await confirmAction({
+				title: 'Unsaved changes',
+				description: 'You have unsaved changes. Do you really want to close the panel?',
+				confirmLabel: 'Discard changes',
+				cancelLabel: 'Keep editing',
+				destructive: true
+			});
+			if (!discard) return;
+		}
+		onClose();
+	}
 	let expandedSysField = $state<string | null>(null);
 	let errorMsg = $state('');
 	let saving = $state(false);
@@ -137,6 +169,7 @@
 				indexes = [];
 				apiRules = {};
 			}
+			initialSnapshot = buildSnapshot();
 		}
 	});
 
@@ -336,7 +369,7 @@
 	}
 </script>
 
-<Drawer {open} {onClose} maxWidth="max-w-2xl">
+<Drawer {open} onClose={requestClose} maxWidth="max-w-2xl">
 	<div class="flex items-center justify-between px-6 pt-5 pb-3">
 		<h2 class="text-base font-normal text-foreground">
 			{editing ? 'Edit ' : 'Create '}<strong class="font-semibold">{editing ? editing.name : 'collection'}</strong>{editing ? ' collection' : ''}
@@ -364,7 +397,7 @@
 			{/if}
 			<button
 				type="button"
-				onclick={onClose}
+				onclick={requestClose}
 				class="cursor-pointer rounded-md p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"
 			>
 				<X class="h-4 w-4" />
@@ -756,13 +789,21 @@
 		</div>
 
 		<div class="flex items-center justify-between border-t border-border bg-card px-6 py-3.5">
-			<button
-				type="button"
-				onclick={onClose}
+			<div class="flex items-center gap-3">
+				<button
+					type="button"
+					onclick={requestClose}
 				class="cursor-pointer rounded-md px-4 py-2 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
 			>
 				Close
 			</button>
+			{#if hasUnsavedChanges}
+				<span class="inline-flex items-center gap-1.5 text-xs font-medium text-amber-600 dark:text-amber-400">
+					<span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
+					Unsaved changes
+				</span>
+			{/if}
+			</div>
 			<button
 				type="submit"
 				disabled={saving}

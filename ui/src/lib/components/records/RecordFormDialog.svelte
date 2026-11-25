@@ -7,6 +7,7 @@
 	import Drawer from '#lib/components/ui/Drawer.svelte';
 	import Select from '#lib/components/ui/Select.svelte';
 	import Switch from '#lib/components/ui/Switch.svelte';
+	import { confirmAction } from '#lib/stores/confirm.svelte.ts';
 	import { toast } from '#lib/stores/toast.svelte.ts';
 	import { buildAndValidateRecordPayload } from '#lib/validation/validators.ts';
 
@@ -32,6 +33,27 @@
 	let errorMsg = $state('');
 	let saving = $state(false);
 	let impersonateToken = $state('');
+	let initialSnapshot = $state('');
+
+	function buildSnapshot(): string {
+		return JSON.stringify({ values, boolValues, email, verified, emailVisibility, password, confirmPassword });
+	}
+
+	let hasUnsavedChanges = $derived(open && initialSnapshot !== '' && buildSnapshot() !== initialSnapshot);
+
+	async function requestClose() {
+		if (hasUnsavedChanges) {
+			const discard = await confirmAction({
+				title: 'Unsaved changes',
+				description: 'You have unsaved changes. Do you really want to close the panel?',
+				confirmLabel: 'Discard changes',
+				cancelLabel: 'Keep editing',
+				destructive: true
+			});
+			if (!discard) return;
+		}
+		onClose();
+	}
 
 	let isSuperuser = $derived(collection.name === '_superusers');
 	let isAuth = $derived(collection.type === 'auth' || isSuperuser);
@@ -84,6 +106,7 @@
 			confirmPassword = '';
 			errorMsg = '';
 			impersonateToken = '';
+			initialSnapshot = buildSnapshot();
 			loadRelationChoices(collection.fields ?? []);
 		}
 	});
@@ -223,14 +246,14 @@
 	}
 </script>
 
-<Drawer {open} {onClose} maxWidth="max-w-xl">
+<Drawer {open} onClose={requestClose} maxWidth="max-w-xl">
 	<div class="flex items-center justify-between border-b border-border px-6 py-4">
 		<h2 class="text-base font-semibold">
 			{editingRecord ? `Edit ${collection.name} #${editingRecord.id}` : `New ${collection.name} record`}
 		</h2>
 		<button
 			type="button"
-			onclick={onClose}
+			onclick={requestClose}
 			class="cursor-pointer rounded-md p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"
 		>
 			<X class="h-4 w-4" />
@@ -564,7 +587,7 @@
 			<div class="flex items-center gap-2">
 			<button
 				type="button"
-				onclick={onClose}
+				onclick={requestClose}
 				class="cursor-pointer rounded-md px-4 py-2 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
 			>
 				Cancel
