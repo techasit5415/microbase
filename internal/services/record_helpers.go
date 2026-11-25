@@ -36,7 +36,13 @@ func scanRows(rows pgx.Rows) ([]models.Record, error) {
 
 // allowedFieldMap indexes a collection's user-defined fields by name for O(1) validation.
 func allowedFieldMap(col *models.Collection) map[string]models.FieldDef {
-	allowed := make(map[string]models.FieldDef, len(col.Fields))
+	allowed := make(map[string]models.FieldDef, len(col.Fields)+4)
+	if col.Type == "auth" || col.Name == "users" {
+		allowed["email"] = models.FieldDef{Name: "email", Type: "email"}
+		allowed["role"] = models.FieldDef{Name: "role", Type: "text"}
+		allowed["verified"] = models.FieldDef{Name: "verified", Type: "boolean"}
+		allowed["email_visibility"] = models.FieldDef{Name: "email_visibility", Type: "boolean"}
+	}
 	for _, f := range col.Fields {
 		allowed[f.Name] = f
 	}
