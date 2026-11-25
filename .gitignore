@@ -23,3 +23,6 @@ coverage.out
 ui/node_modules/
 ui/.svelte-kit/
 
+
+# Release packages
+dist/
