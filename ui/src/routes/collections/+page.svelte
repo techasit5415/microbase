@@ -60,6 +60,7 @@
 	let perPage = $state(20);
 	let totalItems = $state(0);
 	let search = $state('');
+	let sort = $state('');
 	let loading = $state(false);
 
 	let showColDrawer = $state(false);
@@ -84,8 +85,8 @@
 				col.type === 'system'
 					? await listSystemTable(col.name)
 					: col.type === 'auth'
-						? await listUsers({ page: currentPage, perPage, search })
-						: await listRecords(col.name, { page: currentPage, perPage, search });
+						? await listUsers({ page: currentPage, perPage, search, sort })
+						: await listRecords(col.name, { page: currentPage, perPage, search, sort });
 			items = res.items ?? [];
 			totalItems = res.total_items ?? items.length;
 		} catch (err) {
@@ -104,6 +105,7 @@
 		untrack(() => {
 			currentPage = 1;
 			search = '';
+			sort = '';
 			refreshRecords(target);
 		});
 	});

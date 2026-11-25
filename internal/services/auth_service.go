@@ -204,7 +204,7 @@ func (s *AuthService) ParseToken(tokenString string) (*AuthClaims, error) {
 }
 
 // ListUsers returns paginated user records from users while enforcing optional row-level API rule SQL.
-func (s *AuthService) ListUsers(ctx context.Context, page, perPage int, search string, ruleSQL string, ruleArgs []any) ([]models.Record, int64, error) {
+func (s *AuthService) ListUsers(ctx context.Context, page, perPage int, search string, ruleSQL string, ruleArgs []any, sortParam ...string) ([]models.Record, int64, error) {
 	offset := (page - 1) * perPage
 	q := strings.TrimSpace(search)
 
@@ -234,7 +234,24 @@ func (s *AuthService) ListUsers(ctx context.Context, page, perPage int, search s
 	}
 
 	listArgs := append(append([]any{}, args...), perPage, offset)
-	rows, err := s.pool.Query(ctx, fmt.Sprintf("SELECT * FROM users%s ORDER BY id DESC LIMIT $%d OFFSET $%d", whereSQL, idx, idx+1), listArgs...)
+	orderSQL := `"id" DESC`
+	if len(sortParam) > 0 {
+		rawSort := strings.TrimSpace(sortParam[0])
+		if rawSort != "" {
+			dir := "ASC"
+			col := rawSort
+			if strings.HasPrefix(col, "-") {
+				dir = "DESC"
+				col = strings.TrimPrefix(col, "-")
+			} else if strings.HasPrefix(col, "+") {
+				col = strings.TrimPrefix(col, "+")
+			}
+			if models.IsValidIdentifier(col) && col != "password_hash" && col != "token_key" {
+				orderSQL = fmt.Sprintf(`"%s" %s`, col, dir)
+			}
+		}
+	}
+	rows, err := s.pool.Query(ctx, fmt.Sprintf("SELECT * FROM users%s ORDER BY %s LIMIT $%d OFFSET $%d", whereSQL, orderSQL, idx, idx+1), listArgs...)
 	if err != nil {
 		return nil, 0, err
 	}

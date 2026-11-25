@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { cubicOut } from 'svelte/easing';
 	import { fly } from 'svelte/transition';
-	import { Calendar, Check, Hash, KeyRound, Mail, ToggleLeft, Trash2, Type } from '@lucide/svelte';
+	import { ArrowDown, ArrowUp, ArrowUpDown, Calendar, Check, Hash, KeyRound, Mail, ToggleLeft, Trash2, Type } from '@lucide/svelte';
 	import type { Collection, RecordRow } from '#lib/api/types.ts';
 
 	interface Props {
@@ -9,6 +9,8 @@
 		items: RecordRow[];
 		loading: boolean;
 		readOnly?: boolean;
+		sort?: string;
+		onSortChange?: (nextSort: string) => void;
 		onSelect?: (row: RecordRow) => void;
 		onDelete: (id: number | string) => void;
 		onBulkDelete?: (ids: (number | string)[]) => void;
@@ -19,10 +21,26 @@
 		items,
 		loading,
 		readOnly = false,
+		sort = '',
+		onSortChange,
 		onSelect,
 		onDelete,
 		onBulkDelete
 	}: Props = $props();
+
+	function getSortDir(col: string): 'asc' | 'desc' | null {
+		if (sort === `-${col}`) return 'desc';
+		if (sort === col || sort === `+${col}`) return 'asc';
+		return null;
+	}
+
+	function cycleSort(col: string) {
+		if (!onSortChange) return;
+		const dir = getSortDir(col);
+		if (dir === null) onSortChange(`-${col}`);
+		else if (dir === 'desc') onSortChange(col);
+		else onSortChange('');
+	}
 
 	let selectedIds = $state<(number | string)[]>([]);
 
@@ -114,23 +132,55 @@
 				{/if}
 				{#each columns as col}
 					{@const t = getFieldType(col)}
-					<th class="px-5 py-3 font-semibold whitespace-nowrap">
-						<span class="inline-flex items-center gap-1.5">
-							{#if t === 'id'}
-								<KeyRound class="h-3.5 w-3.5" />
-							{:else if t === 'email'}
-								<Mail class="h-3.5 w-3.5" />
-							{:else if t === 'integer' || t === 'float' || t === 'number'}
-								<Hash class="h-3.5 w-3.5" />
-							{:else if t === 'boolean'}
-								<ToggleLeft class="h-3.5 w-3.5" />
-							{:else if t === 'date' || t === 'timestamptz' || t === 'datetime' || t === 'autodate'}
-								<Calendar class="h-3.5 w-3.5" />
-							{:else}
-								<Type class="h-3.5 w-3.5" />
-							{/if}
-							{col}
-						</span>
+					{@const dir = getSortDir(col)}
+					<th class="px-3 py-2 font-semibold whitespace-nowrap">
+						{#if onSortChange && collection.type !== 'system'}
+							<button
+								type="button"
+								onclick={() => cycleSort(col)}
+								title={dir === 'desc' ? `Sorted ${col} DESC (click for ASC)` : dir === 'asc' ? `Sorted ${col} ASC (click to clear)` : `Sort by ${col} DESC`}
+								class="group/sort inline-flex cursor-pointer items-center gap-1.5 rounded px-2 py-1 transition hover:bg-muted {dir ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}"
+							>
+								{#if t === 'id'}
+									<KeyRound class="h-3.5 w-3.5" />
+								{:else if t === 'email'}
+									<Mail class="h-3.5 w-3.5" />
+								{:else if t === 'integer' || t === 'float' || t === 'number'}
+									<Hash class="h-3.5 w-3.5" />
+								{:else if t === 'boolean'}
+									<ToggleLeft class="h-3.5 w-3.5" />
+								{:else if t === 'date' || t === 'timestamptz' || t === 'datetime' || t === 'autodate'}
+									<Calendar class="h-3.5 w-3.5" />
+								{:else}
+									<Type class="h-3.5 w-3.5" />
+								{/if}
+								<span>{col}</span>
+								{#if dir === 'desc'}
+									<ArrowDown class="h-3.5 w-3.5 text-primary" />
+								{:else if dir === 'asc'}
+									<ArrowUp class="h-3.5 w-3.5 text-primary" />
+								{:else}
+									<ArrowUpDown class="h-3 w-3 opacity-0 transition group-hover/sort:opacity-60" />
+								{/if}
+							</button>
+						{:else}
+							<span class="inline-flex items-center gap-1.5 px-2 py-1">
+								{#if t === 'id'}
+									<KeyRound class="h-3.5 w-3.5" />
+								{:else if t === 'email'}
+									<Mail class="h-3.5 w-3.5" />
+								{:else if t === 'integer' || t === 'float' || t === 'number'}
+									<Hash class="h-3.5 w-3.5" />
+								{:else if t === 'boolean'}
+									<ToggleLeft class="h-3.5 w-3.5" />
+								{:else if t === 'date' || t === 'timestamptz' || t === 'datetime' || t === 'autodate'}
+									<Calendar class="h-3.5 w-3.5" />
+								{:else}
+									<Type class="h-3.5 w-3.5" />
+								{/if}
+								{col}
+							</span>
+						{/if}
 					</th>
 				{/each}
 				{#if !readOnly}

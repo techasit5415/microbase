@@ -125,7 +125,7 @@ func (h *AuthController) ListUsers(c echo.Context) error {
 		return response.Error(c, http.StatusForbidden, "FORBIDDEN", "access denied by users list api rule")
 	}
 
-	users, total, err := h.service.ListUsers(c.Request().Context(), page, perPage, c.QueryParam("search"), ruleSQL, ruleArgs)
+	users, total, err := h.service.ListUsers(c.Request().Context(), page, perPage, c.QueryParam("search"), ruleSQL, ruleArgs, c.QueryParam("sort"))
 	if err != nil {
 		return response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 	}

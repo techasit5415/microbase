@@ -6,11 +6,13 @@ export async function listUsers(params?: {
 	page?: number;
 	perPage?: number;
 	search?: string;
+	sort?: string;
 }): Promise<ListResult> {
 	const qs = new URLSearchParams();
 	if (params?.page) qs.set('page', String(params.page));
 	if (params?.perPage) qs.set('per_page', String(params.perPage));
 	if (params?.search) qs.set('search', params.search);
+	if (params?.sort) qs.set('sort', params.sort);
 	const query = qs.toString() ? `?${qs.toString()}` : '';
 	return apiRequest<ListResult>(`/api/users${query}`);
 }
