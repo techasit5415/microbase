@@ -36,40 +36,57 @@ jobs:
           npm ci
           npm run build
 
-      - name: Build cross-platform binaries & checksums
+      - name: Build all PocketBase-style zip archives & checksums
         env:
           VERSION: ${{ github.ref_name }}
         run: |
+          VER="${VERSION#v}"
           OUT="dist/${VERSION}"
           mkdir -p "${OUT}"
           LDFLAGS="-s -w -X github.com/techasit5415/microbase/internal/config.Version=${VERSION}"
 
-          for target in "linux amd64" "linux arm64" "windows amd64" "darwin amd64" "darwin arm64"; do
+          TARGETS=(
+            "darwin amd64 amd64"
+            "darwin arm64 arm64"
+            "linux amd64 amd64"
+            "linux arm64 arm64"
+            "linux arm armv7"
+            "linux ppc64le ppc64le"
+            "linux s390x s390x"
+            "windows amd64 amd64"
+            "windows arm64 arm64"
+          )
+
+          for target in "${TARGETS[@]}"; do
             set -- $target
             GOOS=$1
             GOARCH=$2
+            LABEL=$3
+            GOARM=""
+            [ "$LABEL" = "armv7" ] && GOARM="7"
+
             BIN="microbase"
             [ "$GOOS" = "windows" ] && BIN="microbase.exe"
-            STAGE="${OUT}/stage_${GOOS}_${GOARCH}"
+
+            STAGE="${OUT}/stage_${GOOS}_${LABEL}"
             mkdir -p "${STAGE}"
-            echo "Building ${GOOS}/${GOARCH}..."
-            CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="${LDFLAGS}" -o "${STAGE}/${BIN}" ./cmd/server
+            echo "Building ${GOOS}/${LABEL}..."
+            CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH GOARM=$GOARM \
+              go build -ldflags="${LDFLAGS}" -o "${STAGE}/${BIN}" ./cmd/server
             [ -f README.md ] && cp README.md "${STAGE}/"
             [ -f .env.example ] && cp .env.example "${STAGE}/"
-            if [ "$GOOS" = "windows" ]; then
-              (cd "${STAGE}" && zip -q -r "../../microbase_${VERSION}_${GOOS}_${GOARCH}.zip" .)
-            else
-              tar -czf "${OUT}/microbase_${VERSION}_${GOOS}_${GOARCH}.tar.gz" -C "${STAGE}" .
-            fi
+
+            (cd "${STAGE}" && zip -q -r "../../microbase_${VER}_${GOOS}_${LABEL}.zip" .)
             rm -rf "${STAGE}"
           done
 
-          (cd sdk && npm pack --pack-destination "../${OUT}")
-          (cd "${OUT}" && sha256sum * > checksums.txt)
+          (cd "${OUT}" && sha256sum *.zip > checksums.txt)
+          ls -lh "${OUT}"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          name: ${{ github.ref_name }} Release
           generate_release_notes: true
           files: dist/${{ github.ref_name }}/*
 
