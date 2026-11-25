@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount, type Snippet } from 'svelte';
 	import { Database, Eye, EyeOff, KeyRound, Lock, LogIn, User } from '@lucide/svelte';
-	import { ADMIN_TOKEN_KEY, apiRequest } from '#lib/api/client.ts';
+	import { ADMIN_TOKEN_KEY, AUTH_EXPIRED_EVENT, apiRequest } from '#lib/api/client.ts';
+	import { appSettings } from '#lib/stores/appSettings.svelte.ts';
 	import { toast } from '#lib/stores/toast.svelte.ts';
 
 	interface Props {
@@ -29,23 +30,47 @@
 	let submitting = $state(false);
 	let errorMsg = $state('');
 
-	onMount(async () => {
-		try {
-			const [status, methods] = await Promise.all([
-				apiRequest<{ has_superuser: boolean }>('/api/superusers/status'),
-				apiRequest<{ oauth2?: { providers?: OAuthMethod[] } }>('/api/auth/methods').catch(() => ({
-					oauth2: { providers: [] }
-				}))
-			]);
-			hasSuperuser = status.has_superuser;
-			oauthProviders = methods?.oauth2?.providers ?? [];
-			const token = localStorage.getItem(ADMIN_TOKEN_KEY);
-			authenticated = hasSuperuser && Boolean(token);
-		} catch {
-			authenticated = true;
-		} finally {
-			checking = false;
-		}
+	onMount(() => {
+		const handleAuthExpired = () => {
+			authenticated = false;
+			errorMsg = 'Session expired. Please sign in again.';
+		};
+		window.addEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
+
+		(async () => {
+			try {
+				const [status, methods] = await Promise.all([
+					apiRequest<{ has_superuser: boolean }>('/api/superusers/status'),
+					apiRequest<{ oauth2?: { providers?: OAuthMethod[] } }>('/api/auth/methods').catch(() => ({
+						oauth2: { providers: [] }
+					}))
+				]);
+				hasSuperuser = status.has_superuser;
+				oauthProviders = methods?.oauth2?.providers ?? [];
+				const token = localStorage.getItem(ADMIN_TOKEN_KEY);
+				if (hasSuperuser && token) {
+					const verify = await fetch('/api/settings/app', {
+						headers: { Authorization: `Bearer ${token}` }
+					});
+					if (verify.status === 401) {
+						localStorage.removeItem(ADMIN_TOKEN_KEY);
+						authenticated = false;
+					} else {
+						authenticated = true;
+					}
+				} else {
+					authenticated = false;
+				}
+			} catch {
+				authenticated = true;
+			} finally {
+				checking = false;
+			}
+		})();
+
+		return () => {
+			window.removeEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
+		};
 	});
 
 	async function handleSubmit(e: SubmitEvent) {
@@ -80,6 +105,7 @@
 			const wasSetup = !hasSuperuser;
 			hasSuperuser = true;
 			authenticated = true;
+			appSettings.load();
 			toast.success(wasSetup ? 'Superuser account created' : 'Signed in as Superuser');
 		} catch (err) {
 			errorMsg = err instanceof Error ? err.message : 'Authentication failed';
