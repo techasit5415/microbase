@@ -50,6 +50,22 @@
 	let boolValues = $state<Record<string, boolean>>({});
 	let relationOptions = $state<Record<string, RelationOption[]>>({});
 	let openRelationPicker = $state<string | null>(null);
+	let hoveredRelationTooltip = $state<{ json: string; x: number; y: number } | null>(null);
+
+	function showRelTooltip(e: MouseEvent, rec: RecordRow | undefined) {
+		if (!rec) return;
+		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		const clean: Record<string, unknown> = {};
+		for (const [k, v] of Object.entries(rec)) {
+			if (k === 'password_hash' || k === 'token_key') continue;
+			clean[k] = v;
+		}
+		hoveredRelationTooltip = {
+			json: JSON.stringify(clean, null, 2),
+			x: Math.min(window.innerWidth - 340, Math.max(16, rect.left)),
+			y: rect.bottom + 8
+		};
+	}
 	let uploadingField = $state<string | null>(null);
 	let dragOverField = $state<string | null>(null);
 	let email = $state('');
@@ -650,9 +666,16 @@
 									{#each selectedList as sid (sid)}
 										{@const matched = (relationOptions[field.name] ?? []).find((o) => o.id === sid)}
 										<span
-											title={matched?.record ? JSON.stringify(matched.record, null, 2) : sid}
 											class="inline-flex items-center gap-1.5 rounded-md bg-secondary px-2.5 py-1 text-[13px] text-foreground"
 										>
+											<span
+												role="presentation"
+												onmouseenter={(e) => showRelTooltip(e, matched?.record)}
+												onmouseleave={() => (hoveredRelationTooltip = null)}
+												class="inline-flex cursor-help items-center text-muted-foreground transition hover:text-foreground"
+											>
+												<Eye class="h-4 w-4" />
+											</span>
 											<span class="rounded bg-background/85 px-2 py-0.5 font-mono text-[13px]">{sid}</span>
 											<button
 												type="button"
@@ -890,3 +913,12 @@
 		</div>
 	</form>
 </Drawer>
+
+{#if hoveredRelationTooltip}
+	<div
+		style="left: {hoveredRelationTooltip.x}px; top: {hoveredRelationTooltip.y}px;"
+		class="pointer-events-none fixed z-70 max-h-72 w-80 overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900 p-3 text-zinc-100 shadow-2xl"
+	>
+		<pre class="overflow-auto font-mono text-xs leading-relaxed whitespace-pre-wrap break-all">{hoveredRelationTooltip.json}</pre>
+	</div>
+{/if}
