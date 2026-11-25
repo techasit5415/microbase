@@ -1,10 +1,22 @@
-# Binaries
+# Compiled binaries
 microbase
+server
 bin/
 *.exe
+*.out
 
-# Environment
+# Environment secrets (ห้าม push ขึ้น GitHub เด็ดขาด!)
 .env
+.env.local
 
-# Storage
+# Local uploaded files
 storage/
+
+# Test & coverage
+*.test
+coverage.out
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store

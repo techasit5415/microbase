@@ -10,31 +10,43 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	"github.com/techasit5415/microbase/internal/cache"
 	"github.com/techasit5415/microbase/internal/config"
+	"github.com/techasit5415/microbase/internal/database"
 	"github.com/techasit5415/microbase/internal/routes"
 )
 
 func main() {
-	// 1. ตั้งค่า Structured Logger (log/slog)
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
-	// 2. โหลด Config (.env)
 	cfg := config.Load()
-
-	// 3. เตรียม Cache (In-Memory หรือ Redis อัตโนมัติ)
 	ctx := context.Background()
+
+	// Connect to PostgreSQL if DATABASE_URL is configured.
+	var pool *pgxpool.Pool
+	if cfg.DatabaseURL != "" {
+		var err error
+		pool, err = database.Connect(ctx, cfg.DatabaseURL)
+		if err != nil {
+			slog.Error("postgresql connection failed", "error", err)
+			os.Exit(1)
+		}
+		defer pool.Close()
+	} else {
+		slog.Warn("DATABASE_URL is not set; running without database")
+	}
+
+	// Initialize cache store (Redis if REDIS_URL is set, otherwise In-Memory).
 	cacheStore := cache.NewStore(ctx, cfg.RedisURL)
 	defer cacheStore.Close()
 
-	// 4. สร้าง Echo Server และผูก Routes
 	e := echo.New()
 	e.HideBanner = true
-	routes.Register(e, cacheStore)
+	routes.Register(e, pool, cacheStore)
 
-	// 5. รัน Server ใน Goroutine เพื่อให้รองรับ Graceful Shutdown
 	addr := ":" + cfg.Port
 	go func() {
 		slog.Info("microbase server started", "url", "http://localhost"+addr)
@@ -44,7 +56,7 @@ func main() {
 		}
 	}()
 
-	// 6. รอสัญญาณปิดโปรแกรม (Ctrl+C / SIGTERM) เพื่อปิดอย่างปลอดภัย
+	// Wait for interrupt signal to gracefully shut down the server.
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 	<-quit
