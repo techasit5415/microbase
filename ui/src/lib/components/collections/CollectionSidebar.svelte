@@ -1,6 +1,5 @@
 <script lang="ts">
-	import { cubicOut } from 'svelte/easing';
-	import { slide } from 'svelte/transition';
+	import { onMount } from 'svelte';
 	import { ChevronUp, Folder, Plus, Search, Users } from '@lucide/svelte';
 	import type { Collection } from '#lib/api/types.ts';
 	import { appSettings } from '#lib/stores/appSettings.svelte.ts';
@@ -15,16 +14,72 @@
 		onOpenCreate: () => void;
 	}
 
+	const STORAGE_KEY = 'microbase_sidebar_width';
+	const DEFAULT_WIDTH = 240;
+	const MIN_WIDTH = 180;
+	const MAX_WIDTH = 480;
+
 	let { collections, systemTables, activeName, onSelect, onDelete, onOpenCreate }: Props = $props();
 	let filter = $state('');
 	let showSystem = $state(false);
+	let sidebarWidth = $state(DEFAULT_WIDTH);
+	let resizing = $state(false);
+	let startX = 0;
+	let startWidth = DEFAULT_WIDTH;
 
 	let filtered = $derived(
 		collections.filter((c) => c.name.toLowerCase().includes(filter.trim().toLowerCase()))
 	);
+
+	onMount(() => {
+		try {
+			const saved = Number(localStorage.getItem(STORAGE_KEY));
+			if (!Number.isNaN(saved) && saved >= MIN_WIDTH && saved <= MAX_WIDTH) {
+				sidebarWidth = saved;
+			}
+		} catch {
+			// Ignore storage errors
+		}
+	});
+
+	function startResize(e: PointerEvent) {
+		e.preventDefault();
+		resizing = true;
+		startX = e.clientX;
+		startWidth = sidebarWidth;
+		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+	}
+
+	function onResizeMove(e: PointerEvent) {
+		if (!resizing) return;
+		const next = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, Math.round(startWidth + (e.clientX - startX))));
+		sidebarWidth = next;
+	}
+
+	function endResize() {
+		if (!resizing) return;
+		resizing = false;
+		try {
+			localStorage.setItem(STORAGE_KEY, String(sidebarWidth));
+		} catch {
+			// Ignore storage errors
+		}
+	}
+
+	function resetWidth() {
+		sidebarWidth = DEFAULT_WIDTH;
+		try {
+			localStorage.setItem(STORAGE_KEY, String(DEFAULT_WIDTH));
+		} catch {
+			// Ignore
+		}
+	}
 </script>
 
-<aside class="flex h-full min-h-0 w-60 shrink-0 flex-col overflow-hidden border-r border-border bg-card">
+<aside
+	style="width: {sidebarWidth}px;"
+	class="relative flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-border bg-card {resizing ? 'select-none' : ''}"
+>
 	<div class="shrink-0 border-b border-border p-3">
 		<div class="relative">
 			<Search class="pointer-events-none absolute top-2.5 left-2.5 h-3.5 w-3.5 text-muted-foreground" />
@@ -64,7 +119,7 @@
 						<button
 							type="button"
 							onclick={() => onSelect(sys.name)}
-							class="flex w-full cursor-pointer items-center gap-2.5 rounded-md px-3 py-2 text-left text-[13px] transition {activeName ===
+							class="flex w-full shrink-0 cursor-pointer items-center gap-2.5 rounded-md px-3 py-2 text-left text-[13px] transition {activeName ===
 							sys.name
 								? 'bg-accent font-medium text-foreground'
 								: 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'}"
@@ -83,15 +138,31 @@
 	</div>
 
 	{#if !appSettings.data.hide_controls}
-	<div class="flex h-14 shrink-0 items-center border-t border-border px-3">
-		<button
-			type="button"
-			onclick={onOpenCreate}
-			class="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-md border-2 border-primary/80 bg-transparent px-3 py-2 text-xs font-semibold text-primary transition hover:bg-primary hover:text-primary-foreground"
-		>
-			<Plus class="h-3.5 w-3.5" />
-			New collection
-		</button>
-	</div>
+		<div class="flex h-14 shrink-0 items-center border-t border-border px-3">
+			<button
+				type="button"
+				onclick={onOpenCreate}
+				class="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-md border-2 border-primary/80 bg-transparent px-3 py-2 text-xs font-semibold text-primary transition hover:bg-primary hover:text-primary-foreground"
+			>
+				<Plus class="h-3.5 w-3.5" />
+				New collection
+			</button>
+		</div>
 	{/if}
+
+	<!-- Drag-to-resize handle on right border (double-click to reset) -->
+	<div
+		role="separator"
+		aria-orientation="vertical"
+		aria-label="Resize collections sidebar"
+		title="Drag to resize (double-click to reset)"
+		onpointerdown={startResize}
+		onpointermove={onResizeMove}
+		onpointerup={endResize}
+		onpointercancel={endResize}
+		ondblclick={resetWidth}
+		class="absolute top-0 right-0 z-20 h-full w-1.5 cursor-col-resize transition-colors {resizing
+			? 'bg-primary/60'
+			: 'bg-transparent hover:bg-primary/35'}"
+	></div>
 </aside>
