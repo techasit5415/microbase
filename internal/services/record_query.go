@@ -17,6 +17,18 @@ func buildWhereClause(
 	args := make([]any, 0)
 	idx := 1
 
+	// Enforce collection "list" API rule (including row-level SQL expressions).
+	claims, _ := opts.AuthClaims.(*AuthClaims)
+	ruleSQL, ruleArgs, nextRuleIdx, ruleErr := CompileAPIRule(col, "list", claims, nil, idx)
+	if ruleErr != nil {
+		return "", nil, 0, ruleErr
+	}
+	if ruleSQL != "" {
+		clauses = append(clauses, "("+ruleSQL+")")
+		args = append(args, ruleArgs...)
+		idx = nextRuleIdx
+	}
+
 	// Exact-match filters (whitelisted against collection schema).
 	for key, val := range opts.Filters {
 		if _, ok := allowed[key]; !ok && !reservedColumns[key] {
@@ -47,7 +59,6 @@ func buildWhereClause(
 	}
 
 	if strings.TrimSpace(opts.FilterExpr) != "" {
-		claims, _ := opts.AuthClaims.(*AuthClaims)
 		fSQL, fArgs, nextIdx, err := ParseFilterToSQL(opts.FilterExpr, allowed, claims, idx)
 		if err != nil {
 			return "", nil, 0, fmt.Errorf("%w: %v", ErrInvalidInput, err)

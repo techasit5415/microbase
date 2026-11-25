@@ -15,20 +15,54 @@ import (
 
 // AuthController handles user registration, login, and profile endpoints.
 type AuthController struct {
-	service *services.AuthService
+	service     *services.AuthService
+	collections *services.CollectionService
 }
 
 // NewAuthController constructs an AuthController.
-func NewAuthController(svc *services.AuthService) *AuthController {
-	return &AuthController{service: svc}
+func NewAuthController(svc *services.AuthService, colSvc *services.CollectionService) *AuthController {
+	return &AuthController{service: svc, collections: colSvc}
 }
 
-// Register handles POST /api/auth/register.
+func (h *AuthController) usersCollection(c echo.Context) *models.Collection {
+	if h.collections == nil {
+		return nil
+	}
+	col, err := h.collections.GetByName(c.Request().Context(), "users")
+	if err != nil {
+		return nil
+	}
+	return col
+}
+
+func (h *AuthController) maskHiddenUserFields(col *models.Collection, claims *services.AuthClaims, rec models.Record) models.Record {
+	if col == nil || (claims != nil && claims.Role == "superuser") {
+		return rec
+	}
+	for _, f := range col.Fields {
+		if f.Hidden {
+			delete(rec, f.Name)
+		}
+	}
+	return rec
+}
+
+// Register handles POST /api/auth/register (enforces users "create" API rule).
 func (h *AuthController) Register(c echo.Context) error {
-	var req models.RegisterRequest
-	if err := c.Bind(&req); err != nil {
+	var raw map[string]any
+	if err := json.NewDecoder(c.Request().Body).Decode(&raw); err != nil {
 		return response.Error(c, http.StatusBadRequest, "INVALID_JSON", "invalid request body")
 	}
+	claims := middlewares.GetAuthClaims(c)
+	if usersCol := h.usersCollection(c); usersCol != nil {
+		if err := services.EvalCreateRule(usersCol, claims, raw); err != nil {
+			return response.Error(c, http.StatusForbidden, "FORBIDDEN", "access denied by users create api rule")
+		}
+	}
+
+	email, _ := raw["email"].(string)
+	password, _ := raw["password"].(string)
+	req := models.RegisterRequest{Email: email, Password: password}
 
 	res, err := h.service.Register(c.Request().Context(), req)
 	if errors.Is(err, services.ErrInvalidInput) {
@@ -74,7 +108,7 @@ func (h *AuthController) Me(c echo.Context) error {
 	return response.OK(c, user)
 }
 
-// ListUsers handles GET /api/users for the Auth Collection view.
+// ListUsers handles GET /api/users (enforces users "list" API rule including row-level SQL).
 func (h *AuthController) ListUsers(c echo.Context) error {
 	page, _ := strconv.Atoi(c.QueryParam("page"))
 	perPage, _ := strconv.Atoi(c.QueryParam("per_page"))
@@ -85,9 +119,19 @@ func (h *AuthController) ListUsers(c echo.Context) error {
 		perPage = 20
 	}
 
-	users, total, err := h.service.ListUsers(c.Request().Context(), page, perPage, c.QueryParam("search"))
+	claims := middlewares.GetAuthClaims(c)
+	usersCol := h.usersCollection(c)
+	ruleSQL, ruleArgs, _, ruleErr := services.CompileAPIRule(usersCol, "list", claims, nil, 1)
+	if ruleErr != nil {
+		return response.Error(c, http.StatusForbidden, "FORBIDDEN", "access denied by users list api rule")
+	}
+
+	users, total, err := h.service.ListUsers(c.Request().Context(), page, perPage, c.QueryParam("search"), ruleSQL, ruleArgs)
 	if err != nil {
 		return response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+	}
+	for i := range users {
+		users[i] = h.maskHiddenUserFields(usersCol, claims, users[i])
 	}
 	return response.OK(c, map[string]any{
 		"page":        page,
@@ -97,19 +141,55 @@ func (h *AuthController) ListUsers(c echo.Context) error {
 	})
 }
 
-// DeleteUser handles DELETE /api/users/:id.
+// GetUser handles GET /api/users/:id (enforces users "view" API rule including row-level SQL).
+func (h *AuthController) GetUser(c echo.Context) error {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		return response.Error(c, http.StatusBadRequest, "INVALID_ID", "user id must be an integer")
+	}
+	claims := middlewares.GetAuthClaims(c)
+	usersCol := h.usersCollection(c)
+	ruleSQL, ruleArgs, _, ruleErr := services.CompileAPIRule(usersCol, "view", claims, nil, 2)
+	if ruleErr != nil {
+		return response.Error(c, http.StatusForbidden, "FORBIDDEN", "access denied by users view api rule")
+	}
+
+	u, err := h.service.GetUserRecord(c.Request().Context(), id, ruleSQL, ruleArgs)
+	if errors.Is(err, services.ErrForbidden) {
+		return response.Error(c, http.StatusForbidden, "FORBIDDEN", "access denied by users view api rule")
+	}
+	if errors.Is(err, services.ErrRecordNotFound) {
+		return response.Error(c, http.StatusNotFound, "NOT_FOUND", "user not found")
+	}
+	if err != nil {
+		return response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+	}
+	return response.OK(c, h.maskHiddenUserFields(usersCol, claims, u))
+}
+
+// DeleteUser handles DELETE /api/users/:id (enforces users "delete" API rule including row-level SQL).
 func (h *AuthController) DeleteUser(c echo.Context) error {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		return response.Error(c, http.StatusBadRequest, "INVALID_ID", "user id must be an integer")
 	}
-	if err := h.service.DeleteUser(c.Request().Context(), id); err != nil {
+	claims := middlewares.GetAuthClaims(c)
+	usersCol := h.usersCollection(c)
+	ruleSQL, ruleArgs, _, ruleErr := services.CompileAPIRule(usersCol, "delete", claims, nil, 2)
+	if ruleErr != nil {
+		return response.Error(c, http.StatusForbidden, "FORBIDDEN", "access denied by users delete api rule")
+	}
+
+	if err := h.service.DeleteUser(c.Request().Context(), id, ruleSQL, ruleArgs); err != nil {
+		if errors.Is(err, services.ErrForbidden) {
+			return response.Error(c, http.StatusForbidden, "FORBIDDEN", "access denied by users delete api rule")
+		}
 		return response.Error(c, http.StatusNotFound, "NOT_FOUND", "user not found")
 	}
 	return response.OK(c, map[string]any{"deleted": id})
 }
 
-// UpdateUser handles PATCH /api/users/:id (supports email, role, password, and custom _users fields).
+// UpdateUser handles PATCH /api/users/:id (enforces users "update" API rule including row-level SQL).
 func (h *AuthController) UpdateUser(c echo.Context) error {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -119,10 +199,16 @@ func (h *AuthController) UpdateUser(c echo.Context) error {
 	if err := json.NewDecoder(c.Request().Body).Decode(&raw); err != nil {
 		return response.Error(c, http.StatusBadRequest, "INVALID_JSON", "invalid request body")
 	}
+	claims := middlewares.GetAuthClaims(c)
+	usersCol := h.usersCollection(c)
 	email, _ := raw["email"].(string)
 	role, _ := raw["role"].(string)
 	password, _ := raw["password"].(string)
-	u, err := h.service.UpdateUser(c.Request().Context(), id, email, role, password, raw)
+
+	u, err := h.service.UpdateUser(c.Request().Context(), id, email, role, password, raw, usersCol, claims)
+	if errors.Is(err, services.ErrForbidden) {
+		return response.Error(c, http.StatusForbidden, "FORBIDDEN", "access denied by users update api rule")
+	}
 	if errors.Is(err, services.ErrInvalidInput) {
 		return response.Error(c, http.StatusBadRequest, "INVALID_INPUT", err.Error())
 	}
@@ -135,5 +221,5 @@ func (h *AuthController) UpdateUser(c echo.Context) error {
 	if err != nil {
 		return response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 	}
-	return response.OK(c, u)
+	return response.OK(c, h.maskHiddenUserFields(usersCol, claims, u))
 }

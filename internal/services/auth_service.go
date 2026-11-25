@@ -169,25 +169,38 @@ func (s *AuthService) ParseToken(tokenString string) (*AuthClaims, error) {
 	return claims, nil
 }
 
-// ListUsers returns paginated user records including any custom columns added to _users (never exposing password_hash).
-func (s *AuthService) ListUsers(ctx context.Context, page, perPage int, search string) ([]models.Record, int64, error) {
+// ListUsers returns paginated user records from _users while enforcing optional row-level API rule SQL.
+func (s *AuthService) ListUsers(ctx context.Context, page, perPage int, search string, ruleSQL string, ruleArgs []any) ([]models.Record, int64, error) {
 	offset := (page - 1) * perPage
 	q := strings.TrimSpace(search)
 
-	var total int64
+	clauses := make([]string, 0, 2)
+	args := make([]any, 0, len(ruleArgs)+3)
+	idx := 1
+
+	if ruleSQL != "" {
+		clauses = append(clauses, "("+ruleSQL+")")
+		args = append(args, ruleArgs...)
+		idx += len(ruleArgs)
+	}
 	if q != "" {
-		_ = s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM _users WHERE email ILIKE $1`, "%"+q+"%").Scan(&total)
-	} else {
-		_ = s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM _users`).Scan(&total)
+		clauses = append(clauses, fmt.Sprintf("email ILIKE $%d", idx))
+		args = append(args, "%"+q+"%")
+		idx++
 	}
 
-	var rows pgx.Rows
-	var err error
-	if q != "" {
-		rows, err = s.pool.Query(ctx, `SELECT * FROM _users WHERE email ILIKE $1 ORDER BY id DESC LIMIT $2 OFFSET $3`, "%"+q+"%", perPage, offset)
-	} else {
-		rows, err = s.pool.Query(ctx, `SELECT * FROM _users ORDER BY id DESC LIMIT $1 OFFSET $2`, perPage, offset)
+	whereSQL := ""
+	if len(clauses) > 0 {
+		whereSQL = " WHERE " + strings.Join(clauses, " AND ")
 	}
+
+	var total int64
+	if err := s.pool.QueryRow(ctx, "SELECT COUNT(*) FROM _users"+whereSQL, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	listArgs := append(append([]any{}, args...), perPage, offset)
+	rows, err := s.pool.Query(ctx, fmt.Sprintf("SELECT * FROM _users%s ORDER BY id DESC LIMIT $%d OFFSET $%d", whereSQL, idx, idx+1), listArgs...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -213,32 +226,98 @@ func (s *AuthService) ListUsers(ctx context.Context, page, perPage int, search s
 	return items, total, rows.Err()
 }
 
-// DeleteUser removes a user account by ID.
-func (s *AuthService) DeleteUser(ctx context.Context, id int64) error {
-	tag, err := s.pool.Exec(ctx, `DELETE FROM _users WHERE id = $1`, id)
+func (s *AuthService) userExists(ctx context.Context, id int64) bool {
+	var one int
+	return s.pool.QueryRow(ctx, `SELECT 1 FROM _users WHERE id = $1`, id).Scan(&one) == nil
+}
+
+// GetUserRecord fetches a single user record from _users while enforcing optional row-level API rule SQL (starting at $2).
+func (s *AuthService) GetUserRecord(ctx context.Context, id int64, ruleSQL string, ruleArgs []any) (models.Record, error) {
+	query := `SELECT * FROM _users WHERE id = $1`
+	args := []any{id}
+	if ruleSQL != "" {
+		query += " AND (" + ruleSQL + ")"
+		args = append(args, ruleArgs...)
+	}
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		if ruleSQL != "" && s.userExists(ctx, id) {
+			return nil, ErrForbidden
+		}
+		return nil, ErrRecordNotFound
+	}
+	descs := rows.FieldDescriptions()
+	vals, err := rows.Values()
+	if err != nil {
+		return nil, err
+	}
+	rec := make(models.Record, len(descs))
+	for i, fd := range descs {
+		col := string(fd.Name)
+		if col == "password_hash" {
+			continue
+		}
+		rec[col] = vals[i]
+	}
+	return rec, nil
+}
+
+// DeleteUser removes a user account by ID while enforcing optional row-level API rule SQL (starting at $2).
+func (s *AuthService) DeleteUser(ctx context.Context, id int64, ruleSQL string, ruleArgs []any) error {
+	query := `DELETE FROM _users WHERE id = $1`
+	args := []any{id}
+	if ruleSQL != "" {
+		query += " AND (" + ruleSQL + ")"
+		args = append(args, ruleArgs...)
+	}
+	tag, err := s.pool.Exec(ctx, query, args...)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
+		if ruleSQL != "" && s.userExists(ctx, id) {
+			return ErrForbidden
+		}
 		return ErrRecordNotFound
 	}
 	return nil
 }
 
-// UpdateUser updates a user's email, role, optional password, and any custom columns on _users.
-func (s *AuthService) UpdateUser(ctx context.Context, id int64, email, role, newPassword string, custom map[string]any) (models.Record, error) {
-	email = strings.ToLower(strings.TrimSpace(email))
-	if !strings.Contains(email, "@") {
-		return nil, fmt.Errorf("%w: valid email is required", ErrInvalidInput)
-	}
-	role = strings.TrimSpace(role)
-	if role == "" {
-		role = "user"
+// UpdateUser updates a user's email, role, optional password, and custom _users columns while enforcing the users "update" API rule.
+func (s *AuthService) UpdateUser(ctx context.Context, id int64, email, role, newPassword string, custom map[string]any, usersCol *models.Collection, claims *AuthClaims) (models.Record, error) {
+	setClauses := []string{"updated_at = NOW()"}
+	args := []any{id}
+	argIdx := 2
+
+	if strings.TrimSpace(email) != "" {
+		email = strings.ToLower(strings.TrimSpace(email))
+		if !strings.Contains(email, "@") {
+			return nil, fmt.Errorf("%w: valid email is required", ErrInvalidInput)
+		}
+		setClauses = append(setClauses, fmt.Sprintf("email = $%d", argIdx))
+		args = append(args, email)
+		argIdx++
 	}
 
-	setClauses := []string{"email = $2", "role = $3", "updated_at = NOW()"}
-	args := []any{id, email, role}
-	argIdx := 4
+	if strings.TrimSpace(role) != "" {
+		// Prevent non-admin/non-superuser from escalating their own role.
+		if claims == nil || (claims.Role != "superuser" && claims.Role != "admin") {
+			role = ""
+		}
+	}
+	if strings.TrimSpace(role) != "" {
+		setClauses = append(setClauses, fmt.Sprintf("role = $%d", argIdx))
+		args = append(args, strings.TrimSpace(role))
+		argIdx++
+	}
 
 	if newPassword != "" {
 		if len(newPassword) < 8 {
@@ -262,7 +341,18 @@ func (s *AuthService) UpdateUser(ctx context.Context, id int64, email, role, new
 		argIdx++
 	}
 
-	query := fmt.Sprintf(`UPDATE _users SET %s WHERE id = $1 RETURNING *`, strings.Join(setClauses, ", "))
+	ruleSQL, ruleArgs, _, ruleErr := CompileAPIRule(usersCol, "update", claims, custom, argIdx)
+	if ruleErr != nil {
+		return nil, ruleErr
+	}
+
+	wherePart := "id = $1"
+	if ruleSQL != "" {
+		wherePart += " AND (" + ruleSQL + ")"
+		args = append(args, ruleArgs...)
+	}
+
+	query := fmt.Sprintf(`UPDATE _users SET %s WHERE %s RETURNING *`, strings.Join(setClauses, ", "), wherePart)
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -280,6 +370,9 @@ func (s *AuthService) UpdateUser(ctx context.Context, id int64, email, role, new
 				return nil, ErrEmailExists
 			}
 			return nil, err
+		}
+		if ruleSQL != "" && s.userExists(ctx, id) {
+			return nil, ErrForbidden
 		}
 		return nil, ErrRecordNotFound
 	}

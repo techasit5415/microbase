@@ -47,9 +47,6 @@ func (h *RecordController) List(c echo.Context) error {
 		AuthClaims: middlewares.GetAuthClaims(c),
 	}
 
-	if err := h.enforceRule(c, "list"); err != nil {
-		return handleRecordError(c, err)
-	}
 	result, err := h.service.List(c.Request().Context(), c.Param("name"), opts)
 	if err != nil {
 		return handleRecordError(c, err)
@@ -69,10 +66,7 @@ func (h *RecordController) List(c echo.Context) error {
 func (h *RecordController) Get(c echo.Context) error {
 	id := c.Param("id")
 
-	if err := h.enforceRule(c, "view"); err != nil {
-		return handleRecordError(c, err)
-	}
-	rec, err := h.service.GetByID(c.Request().Context(), c.Param("name"), id)
+	rec, err := h.service.GetByID(c.Request().Context(), c.Param("name"), id, middlewares.GetAuthClaims(c))
 	if err != nil {
 		return handleRecordError(c, err)
 	}
@@ -91,10 +85,7 @@ func (h *RecordController) Create(c echo.Context) error {
 		return response.Error(c, http.StatusBadRequest, "INVALID_JSON", "invalid request body")
 	}
 
-	if err := h.enforceRule(c, "create"); err != nil {
-		return handleRecordError(c, err)
-	}
-	rec, err := h.service.Create(c.Request().Context(), c.Param("name"), data)
+	rec, err := h.service.Create(c.Request().Context(), c.Param("name"), data, middlewares.GetAuthClaims(c))
 	if err != nil {
 		return handleRecordError(c, err)
 	}
@@ -111,10 +102,7 @@ func (h *RecordController) Update(c echo.Context) error {
 		return response.Error(c, http.StatusBadRequest, "INVALID_JSON", "invalid request body")
 	}
 
-	if err := h.enforceRule(c, "update"); err != nil {
-		return handleRecordError(c, err)
-	}
-	rec, err := h.service.Update(c.Request().Context(), c.Param("name"), id, data)
+	rec, err := h.service.Update(c.Request().Context(), c.Param("name"), id, data, middlewares.GetAuthClaims(c))
 	if err != nil {
 		return handleRecordError(c, err)
 	}
@@ -125,10 +113,7 @@ func (h *RecordController) Update(c echo.Context) error {
 func (h *RecordController) Delete(c echo.Context) error {
 	id := c.Param("id")
 
-	if err := h.enforceRule(c, "delete"); err != nil {
-		return handleRecordError(c, err)
-	}
-	if err := h.service.Delete(c.Request().Context(), c.Param("name"), id); err != nil {
+	if err := h.service.Delete(c.Request().Context(), c.Param("name"), id, middlewares.GetAuthClaims(c)); err != nil {
 		return handleRecordError(c, err)
 	}
 	return response.OK(c, map[string]any{"deleted": id})
@@ -141,6 +126,9 @@ func (h *RecordController) VectorSearch(c echo.Context) error {
 		return response.Error(c, http.StatusBadRequest, "INVALID_JSON", "invalid vector search payload")
 	}
 
+	if err := h.enforceRule(c, "list"); err != nil {
+		return handleRecordError(c, err)
+	}
 	items, err := h.service.VectorSearch(c.Request().Context(), c.Param("name"), req)
 	if err != nil {
 		return handleRecordError(c, err)

@@ -77,8 +77,8 @@ func (s *RecordService) List(ctx context.Context, colName string, opts models.Li
 	}, nil
 }
 
-// GetByID fetches a single record by its numeric ID.
-func (s *RecordService) GetByID(ctx context.Context, colName string, rawID string) (models.Record, error) {
+// GetByID fetches a single record by its ID while enforcing the collection's row-level "view" API rule.
+func (s *RecordService) GetByID(ctx context.Context, colName string, rawID string, claims *AuthClaims) (models.Record, error) {
 	col, err := s.collections.GetByName(ctx, colName)
 	if err != nil {
 		return nil, err
@@ -88,7 +88,20 @@ func (s *RecordService) GetByID(ctx context.Context, colName string, rawID strin
 	if idErr != nil {
 		return nil, idErr
 	}
-	rows, err := s.pool.Query(ctx, fmt.Sprintf(`SELECT * FROM "%s" WHERE "id" = $1`, col.Name), idVal)
+
+	ruleSQL, ruleArgs, _, ruleErr := CompileAPIRule(col, "view", claims, nil, 2)
+	if ruleErr != nil {
+		return nil, ruleErr
+	}
+
+	query := fmt.Sprintf(`SELECT * FROM "%s" WHERE "id" = $1`, col.Name)
+	args := []any{idVal}
+	if ruleSQL != "" {
+		query += " AND (" + ruleSQL + ")"
+		args = append(args, ruleArgs...)
+	}
+
+	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("get record: %w", err)
 	}
@@ -99,13 +112,21 @@ func (s *RecordService) GetByID(ctx context.Context, colName string, rawID strin
 		return nil, err
 	}
 	if len(items) == 0 {
+		if ruleSQL != "" && s.recordExists(ctx, col.Name, idVal) {
+			return nil, ErrForbidden
+		}
 		return nil, ErrRecordNotFound
 	}
 	return items[0], nil
 }
 
+func (s *RecordService) recordExists(ctx context.Context, tableName string, idVal any) bool {
+	var one int
+	return s.pool.QueryRow(ctx, fmt.Sprintf(`SELECT 1 FROM "%s" WHERE "id" = $1`, tableName), idVal).Scan(&one) == nil
+}
+
 // Create validates input against the collection schema and inserts a new record.
-func (s *RecordService) Create(ctx context.Context, colName string, data models.Record) (models.Record, error) {
+func (s *RecordService) Create(ctx context.Context, colName string, data models.Record, claims *AuthClaims) (models.Record, error) {
 	col, err := s.collections.GetByName(ctx, colName)
 	if err != nil {
 		return nil, err
@@ -123,6 +144,10 @@ func (s *RecordService) Create(ctx context.Context, colName string, data models.
 				data[f.Name] = GenerateFromPattern(f.AutogeneratePattern)
 			}
 		}
+	}
+
+	if err := EvalCreateRule(col, claims, data); err != nil {
+		return nil, err
 	}
 
 	for _, f := range col.Fields {
@@ -170,7 +195,7 @@ func (s *RecordService) Create(ctx context.Context, colName string, data models.
 }
 
 // Update modifies specified fields on an existing record and updates updated_at.
-func (s *RecordService) Update(ctx context.Context, colName string, rawID string, data models.Record) (models.Record, error) {
+func (s *RecordService) Update(ctx context.Context, colName string, rawID string, data models.Record, claims *AuthClaims) (models.Record, error) {
 	col, err := s.collections.GetByName(ctx, colName)
 	if err != nil {
 		return nil, err
@@ -203,8 +228,19 @@ func (s *RecordService) Update(ctx context.Context, colName string, rawID string
 	}
 	args = append(args, idVal)
 
-	updateSQL := fmt.Sprintf(`UPDATE "%s" SET %s WHERE "id" = $%d RETURNING *`,
-		col.Name, strings.Join(setClauses, ", "), idx)
+	ruleSQL, ruleArgs, _, ruleErr := CompileAPIRule(col, "update", claims, data, idx+1)
+	if ruleErr != nil {
+		return nil, ruleErr
+	}
+
+	wherePart := fmt.Sprintf(`"id" = $%d`, idx)
+	if ruleSQL != "" {
+		wherePart += " AND (" + ruleSQL + ")"
+		args = append(args, ruleArgs...)
+	}
+
+	updateSQL := fmt.Sprintf(`UPDATE "%s" SET %s WHERE %s RETURNING *`,
+		col.Name, strings.Join(setClauses, ", "), wherePart)
 
 	rows, err := s.pool.Query(ctx, updateSQL, args...)
 	if err != nil {
@@ -217,13 +253,16 @@ func (s *RecordService) Update(ctx context.Context, colName string, rawID string
 		return nil, err
 	}
 	if len(items) == 0 {
+		if ruleSQL != "" && s.recordExists(ctx, col.Name, idVal) {
+			return nil, ErrForbidden
+		}
 		return nil, ErrRecordNotFound
 	}
 	return items[0], nil
 }
 
-// Delete removes a record by ID.
-func (s *RecordService) Delete(ctx context.Context, colName string, rawID string) error {
+// Delete removes a record by ID while enforcing the collection's row-level "delete" API rule.
+func (s *RecordService) Delete(ctx context.Context, colName string, rawID string, claims *AuthClaims) error {
 	col, err := s.collections.GetByName(ctx, colName)
 	if err != nil {
 		return err
@@ -233,11 +272,27 @@ func (s *RecordService) Delete(ctx context.Context, colName string, rawID string
 	if idErr != nil {
 		return idErr
 	}
-	tag, err := s.pool.Exec(ctx, fmt.Sprintf(`DELETE FROM "%s" WHERE "id" = $1`, col.Name), idVal)
+
+	ruleSQL, ruleArgs, _, ruleErr := CompileAPIRule(col, "delete", claims, nil, 2)
+	if ruleErr != nil {
+		return ruleErr
+	}
+
+	query := fmt.Sprintf(`DELETE FROM "%s" WHERE "id" = $1`, col.Name)
+	args := []any{idVal}
+	if ruleSQL != "" {
+		query += " AND (" + ruleSQL + ")"
+		args = append(args, ruleArgs...)
+	}
+
+	tag, err := s.pool.Exec(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("delete record: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
+		if ruleSQL != "" && s.recordExists(ctx, col.Name, idVal) {
+			return ErrForbidden
+		}
 		return ErrRecordNotFound
 	}
 	return nil

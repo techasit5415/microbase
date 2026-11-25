@@ -117,12 +117,19 @@ type filterParser struct {
 	pos     int
 	allowed map[string]models.FieldDef
 	claims  *AuthClaims
+	body    map[string]any
 	args    []any
 	nextArg int
 }
 
 // ParseFilterToSQL compiles a PocketBase filter string into a safe parameterized PostgreSQL WHERE snippet.
 func ParseFilterToSQL(expr string, allowed map[string]models.FieldDef, claims *AuthClaims, startArgIdx int) (string, []any, int, error) {
+	return ParseFilterToSQLWithBody(expr, allowed, claims, nil, startArgIdx)
+}
+
+// ParseFilterToSQLWithBody compiles a PocketBase filter or API rule expression into parameterized PostgreSQL SQL.
+// Supports column identifiers on either side, @request.auth.*, @request.body.*, &&, ||, (), and =, !=, >, >=, <, <=, ~, !~.
+func ParseFilterToSQLWithBody(expr string, allowed map[string]models.FieldDef, claims *AuthClaims, body map[string]any, startArgIdx int) (string, []any, int, error) {
 	toks, err := tokenizeFilter(expr)
 	if err != nil {
 		return "", nil, startArgIdx, err
@@ -131,6 +138,7 @@ func ParseFilterToSQL(expr string, allowed map[string]models.FieldDef, claims *A
 		toks:    toks,
 		allowed: allowed,
 		claims:  claims,
+		body:    body,
 		nextArg: startArgIdx,
 	}
 	sql, err := p.parseOr()
@@ -145,6 +153,21 @@ func ParseFilterToSQL(expr string, allowed map[string]models.FieldDef, claims *A
 
 func (p *filterParser) peek() fToken { return p.toks[p.pos] }
 func (p *filterParser) next() fToken { t := p.toks[p.pos]; p.pos++; return t }
+
+func (p *filterParser) isColumnIdent(tok fToken) bool {
+	if tok.kind != fTokIdent {
+		return false
+	}
+	lower := strings.ToLower(tok.val)
+	if lower == "true" || lower == "false" || lower == "null" || strings.HasPrefix(lower, "@request.") {
+		return false
+	}
+	if tok.val == "id" || tok.val == "created_at" || tok.val == "updated_at" {
+		return true
+	}
+	_, ok := p.allowed[tok.val]
+	return ok
+}
 
 func (p *filterParser) parseOr() (string, error) {
 	left, err := p.parseAnd()
@@ -178,6 +201,21 @@ func (p *filterParser) parseAnd() (string, error) {
 	return left, nil
 }
 
+func flipOperator(op string) string {
+	switch op {
+	case ">":
+		return "<"
+	case ">=":
+		return "<="
+	case "<":
+		return ">"
+	case "<=":
+		return ">="
+	default:
+		return op
+	}
+}
+
 func (p *filterParser) parseAtom() (string, error) {
 	if p.peek().kind == fTokLParen {
 		p.next()
@@ -193,46 +231,89 @@ func (p *filterParser) parseAtom() (string, error) {
 	}
 
 	lhs := p.next()
-	if lhs.kind != fTokIdent {
-		return "", fmt.Errorf("expected field name, got %q", lhs.val)
-	}
 	op := p.next()
 	if op.kind != fTokOp {
 		return "", fmt.Errorf("expected operator after %q, got %q", lhs.val, op.val)
 	}
 	rhs := p.next()
 
-	val, isNull, err := p.resolveValue(rhs)
-	if err != nil {
-		return "", err
+	lhsIsCol := p.isColumnIdent(lhs)
+	rhsIsCol := p.isColumnIdent(rhs)
+
+	// Case 1: Column vs Column (e.g., col1 != col2)
+	if lhsIsCol && rhsIsCol {
+		lSQL := fmt.Sprintf(`"%s"`, lhs.val)
+		rSQL := fmt.Sprintf(`"%s"`, rhs.val)
+		switch op.val {
+		case "~":
+			return fmt.Sprintf("CAST(%s AS TEXT) ILIKE ('%%' || CAST(%s AS TEXT) || '%%')", lSQL, rSQL), nil
+		case "!~":
+			return fmt.Sprintf("CAST(%s AS TEXT) NOT ILIKE ('%%' || CAST(%s AS TEXT) || '%%')", lSQL, rSQL), nil
+		default:
+			return fmt.Sprintf("%s %s %s", lSQL, op.val, rSQL), nil
+		}
 	}
 
-	// Allow @request.auth.* on LHS for API rules evaluated statically or inline
-	if strings.HasPrefix(lhs.val, "@request.auth.") {
-		lhsVal, _, _ := p.resolveValue(lhs)
-		ok := fmt.Sprint(lhsVal) == fmt.Sprint(val)
-		if op.val == "!=" {
-			ok = !ok
+	// Case 2: Both sides are static literals / @request.* values -> evaluate immediately
+	if !lhsIsCol && !rhsIsCol {
+		// Reject unknown bare identifiers that aren't literals or @request.*
+		if lhs.kind == fTokIdent && !isLiteralOrRequestToken(lhs.val) {
+			return "", fmt.Errorf("unknown filter field %q", lhs.val)
 		}
-		if ok {
+		lhsVal, lhsNull, err := p.resolveValue(lhs)
+		if err != nil {
+			return "", err
+		}
+		rhsVal, rhsNull, err := p.resolveValue(rhs)
+		if err != nil {
+			return "", err
+		}
+		if evalComparison(lhsVal, lhsNull, op.val, rhsVal, rhsNull) {
 			return "TRUE", nil
 		}
 		return "FALSE", nil
 	}
 
-	if _, ok := p.allowed[lhs.val]; !ok && lhs.val != "id" && lhs.val != "created_at" && lhs.val != "updated_at" {
-		return "", fmt.Errorf("unknown filter field %q", lhs.val)
+	// Case 3: One side is a column, the other is a value/literal/@request.*
+	colTok := lhs
+	valTok := rhs
+	effOp := op.val
+	if !lhsIsCol && rhsIsCol {
+		colTok = rhs
+		valTok = lhs
+		effOp = flipOperator(op.val)
 	}
 
-	colSQL := fmt.Sprintf(`"%s"`, lhs.val)
+	val, isNull, err := p.resolveValue(valTok)
+	if err != nil {
+		return "", err
+	}
+
+	colSQL := fmt.Sprintf(`"%s"`, colTok.val)
 	if isNull {
-		if op.val == "=" {
+		if effOp == "=" {
 			return colSQL + " IS NULL", nil
 		}
 		return colSQL + " IS NOT NULL", nil
 	}
 
-	switch op.val {
+	// When comparing against @request.auth.id (which may be int64 or "" when unauthenticated),
+	// safely compare as TEXT so BIGINT vs TEXT columns never throw a PostgreSQL cast error.
+	if valTok.kind == fTokIdent && strings.EqualFold(valTok.val, "@request.auth.id") && (effOp == "=" || effOp == "!=") {
+		strVal := fmt.Sprint(val)
+		if strVal == "" {
+			if effOp == "=" {
+				return "FALSE", nil
+			}
+			return "TRUE", nil
+		}
+		p.args = append(p.args, strVal)
+		idx := p.nextArg
+		p.nextArg++
+		return fmt.Sprintf("CAST(%s AS TEXT) %s $%d", colSQL, effOp, idx), nil
+	}
+
+	switch effOp {
 	case "~":
 		p.args = append(p.args, "%"+fmt.Sprint(val)+"%")
 		idx := p.nextArg
@@ -247,8 +328,13 @@ func (p *filterParser) parseAtom() (string, error) {
 		p.args = append(p.args, val)
 		idx := p.nextArg
 		p.nextArg++
-		return fmt.Sprintf("%s %s $%d", colSQL, op.val, idx), nil
+		return fmt.Sprintf("%s %s $%d", colSQL, effOp, idx), nil
 	}
+}
+
+func isLiteralOrRequestToken(val string) bool {
+	lower := strings.ToLower(val)
+	return lower == "true" || lower == "false" || lower == "null" || strings.HasPrefix(lower, "@request.")
 }
 
 func (p *filterParser) resolveValue(tok fToken) (any, bool, error) {
@@ -264,32 +350,267 @@ func (p *filterParser) resolveValue(tok fToken) (any, bool, error) {
 		return n, false, err
 	case fTokIdent:
 		lower := strings.ToLower(tok.val)
-		switch lower {
-		case "true":
+		switch {
+		case lower == "true":
 			return true, false, nil
-		case "false":
+		case lower == "false":
 			return false, false, nil
-		case "null":
+		case lower == "null":
 			return nil, true, nil
-		case "@request.auth.id":
+		case lower == "@request.auth.id":
 			if p.claims == nil {
 				return "", false, nil
 			}
-			return p.claims.UserID, false, nil
-		case "@request.auth.email":
+			return strconv.FormatInt(p.claims.UserID, 10), false, nil
+		case lower == "@request.auth.email":
 			if p.claims == nil {
 				return "", false, nil
 			}
 			return p.claims.Email, false, nil
-		case "@request.auth.role":
+		case lower == "@request.auth.role":
 			if p.claims == nil {
 				return "", false, nil
 			}
 			return p.claims.Role, false, nil
+		case strings.HasPrefix(lower, "@request.body."):
+			field := tok.val[len("@request.body."):]
+			if p.body == nil {
+				return nil, true, nil
+			}
+			v, ok := p.body[field]
+			if !ok || v == nil {
+				return nil, true, nil
+			}
+			return v, false, nil
 		default:
 			return tok.val, false, nil
 		}
 	default:
 		return nil, false, fmt.Errorf("unexpected value token %q", tok.val)
 	}
+}
+
+// EvalFilterOnData evaluates a PocketBase expression in-memory against a record/payload map (used for create rules).
+func EvalFilterOnData(expr string, data map[string]any, claims *AuthClaims) (bool, error) {
+	toks, err := tokenizeFilter(expr)
+	if err != nil {
+		return false, err
+	}
+	ev := &dataRuleEval{
+		toks:   toks,
+		data:   data,
+		claims: claims,
+	}
+	ok, err := ev.evalOr()
+	if err != nil {
+		return false, err
+	}
+	if ev.peek().kind != fTokEOF {
+		return false, fmt.Errorf("unexpected token %q in rule", ev.peek().val)
+	}
+	return ok, nil
+}
+
+type dataRuleEval struct {
+	toks   []fToken
+	pos    int
+	data   map[string]any
+	claims *AuthClaims
+}
+
+func (e *dataRuleEval) peek() fToken { return e.toks[e.pos] }
+func (e *dataRuleEval) next() fToken { t := e.toks[e.pos]; e.pos++; return t }
+
+func (e *dataRuleEval) evalOr() (bool, error) {
+	left, err := e.evalAnd()
+	if err != nil {
+		return false, err
+	}
+	for e.peek().kind == fTokOr {
+		e.next()
+		right, err := e.evalAnd()
+		if err != nil {
+			return false, err
+		}
+		left = left || right
+	}
+	return left, nil
+}
+
+func (e *dataRuleEval) evalAnd() (bool, error) {
+	left, err := e.evalAtom()
+	if err != nil {
+		return false, err
+	}
+	for e.peek().kind == fTokAnd {
+		e.next()
+		right, err := e.evalAtom()
+		if err != nil {
+			return false, err
+		}
+		left = left && right
+	}
+	return left, nil
+}
+
+func (e *dataRuleEval) evalAtom() (bool, error) {
+	if e.peek().kind == fTokLParen {
+		e.next()
+		inner, err := e.evalOr()
+		if err != nil {
+			return false, err
+		}
+		if e.peek().kind != fTokRParen {
+			return false, fmt.Errorf("missing closing ')' in rule")
+		}
+		e.next()
+		return inner, nil
+	}
+	lhs := e.next()
+	op := e.next()
+	if op.kind != fTokOp {
+		return false, fmt.Errorf("expected operator after %q, got %q", lhs.val, op.val)
+	}
+	rhs := e.next()
+	lv, lNull := e.resolve(lhs)
+	rv, rNull := e.resolve(rhs)
+	return evalComparison(lv, lNull, op.val, rv, rNull), nil
+}
+
+func (e *dataRuleEval) resolve(tok fToken) (any, bool) {
+	switch tok.kind {
+	case fTokString:
+		return tok.val, false
+	case fTokNumber:
+		if strings.Contains(tok.val, ".") {
+			f, _ := strconv.ParseFloat(tok.val, 64)
+			return f, false
+		}
+		n, _ := strconv.ParseInt(tok.val, 10, 64)
+		return n, false
+	case fTokIdent:
+		lower := strings.ToLower(tok.val)
+		switch {
+		case lower == "true":
+			return true, false
+		case lower == "false":
+			return false, false
+		case lower == "null":
+			return nil, true
+		case lower == "@request.auth.id":
+			if e.claims == nil {
+				return "", false
+			}
+			return strconv.FormatInt(e.claims.UserID, 10), false
+		case lower == "@request.auth.email":
+			if e.claims == nil {
+				return "", false
+			}
+			return e.claims.Email, false
+		case lower == "@request.auth.role":
+			if e.claims == nil {
+				return "", false
+			}
+			return e.claims.Role, false
+		case strings.HasPrefix(lower, "@request.body."):
+			field := tok.val[len("@request.body."):]
+			if e.data == nil {
+				return nil, true
+			}
+			v, ok := e.data[field]
+			if !ok || v == nil {
+				return nil, true
+			}
+			return v, false
+		default:
+			if e.data != nil {
+				if v, ok := e.data[tok.val]; ok {
+					if v == nil {
+						return nil, true
+					}
+					return v, false
+				}
+			}
+			return nil, true
+		}
+	default:
+		return nil, true
+	}
+}
+
+func toFloat64(v any) (float64, bool) {
+	switch n := v.(type) {
+	case int:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case float64:
+		return n, true
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(n), 64)
+		return f, err == nil
+	default:
+		return 0, false
+	}
+}
+
+func evalComparison(lhs any, lNull bool, op string, rhs any, rNull bool) bool {
+	if lNull || rNull {
+		switch op {
+		case "=":
+			return lNull && rNull
+		case "!=":
+			return lNull != rNull
+		default:
+			return false
+		}
+	}
+	ls := fmt.Sprint(lhs)
+	rs := fmt.Sprint(rhs)
+	switch op {
+	case "=":
+		if lf, lok := toFloat64(lhs); lok {
+			if rf, rok := toFloat64(rhs); rok {
+				return lf == rf
+			}
+		}
+		return ls == rs
+	case "!=":
+		if lf, lok := toFloat64(lhs); lok {
+			if rf, rok := toFloat64(rhs); rok {
+				return lf != rf
+			}
+		}
+		return ls != rs
+	case "~":
+		return strings.Contains(strings.ToLower(ls), strings.ToLower(rs))
+	case "!~":
+		return !strings.Contains(strings.ToLower(ls), strings.ToLower(rs))
+	case ">", ">=", "<", "<=":
+		if lf, lok := toFloat64(lhs); lok {
+			if rf, rok := toFloat64(rhs); rok {
+				switch op {
+				case ">":
+					return lf > rf
+				case ">=":
+					return lf >= rf
+				case "<":
+					return lf < rf
+				case "<=":
+					return lf <= rf
+				}
+			}
+		}
+		switch op {
+		case ">":
+			return ls > rs
+		case ">=":
+			return ls >= rs
+		case "<":
+			return ls < rs
+		case "<=":
+			return ls <= rs
+		}
+	}
+	return false
 }
