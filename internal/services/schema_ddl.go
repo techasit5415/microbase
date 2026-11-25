@@ -28,10 +28,10 @@ func buildCreateTableSQL(req models.CreateCollectionRequest) (string, error) {
 	if req.Type == "auth" {
 		columns = append(columns,
 			`"email" TEXT UNIQUE NOT NULL`,
-			`"password_hash" TEXT`,
-			`"verified" BOOLEAN NOT NULL DEFAULT FALSE`,
+			`"password_hash" TEXT NOT NULL DEFAULT ''`,
+			`"token_key" TEXT UNIQUE NOT NULL DEFAULT ''`,
 			`"email_visibility" BOOLEAN NOT NULL DEFAULT FALSE`,
-			`"role" TEXT NOT NULL DEFAULT 'user'`,
+			`"verified" BOOLEAN NOT NULL DEFAULT FALSE`,
 		)
 	}
 	seen := make(map[string]bool)

@@ -25,7 +25,6 @@
 	let relationOptions = $state<Record<string, { value: string; label: string }[]>>({});
 	let uploadingField = $state<string | null>(null);
 	let email = $state('');
-	let role = $state('user');
 	let verified = $state(false);
 	let emailVisibility = $state(false);
 	let password = $state('');
@@ -37,7 +36,7 @@
 	let isSuperuser = $derived(collection.name === '_superusers');
 	let isAuth = $derived(collection.type === 'auth' || isSuperuser);
 	let customFields = $derived(
-		(collection.fields ?? []).filter((f) => !(isAuth && ['email', 'role', 'verified', 'email_visibility'].includes(f.name)))
+		(collection.fields ?? []).filter((f) => !(isAuth && ['email', 'password', 'tokenKey', 'token_key', 'verified', 'email_visibility', 'emailVisibility'].includes(f.name)))
 	);
 
 	async function loadRelationChoices(fields: FieldDef[]) {
@@ -79,7 +78,6 @@
 			values = nextVals;
 			boolValues = nextBools;
 			email = editingRecord && editingRecord.email ? String(editingRecord.email) : '';
-			role = editingRecord && editingRecord.role ? String(editingRecord.role) : 'user';
 			verified = Boolean(editingRecord?.verified);
 			emailVisibility = Boolean(editingRecord?.email_visibility);
 			password = '';
@@ -178,7 +176,6 @@
 					await updateUser(editingRecord.id, {
 						...(customPayload ?? {}),
 						email: email.trim(),
-						role: role.trim() || 'user',
 						verified,
 						email_visibility: emailVisibility,
 						password: password || undefined
@@ -188,7 +185,6 @@
 						...(customPayload ?? {}),
 						email: email.trim(),
 						password,
-						role: role.trim() || 'user',
 						verified,
 						email_visibility: emailVisibility
 					});
@@ -274,17 +270,6 @@
 							</div>
 							<Switch checked={emailVisibility} onChange={(v) => (emailVisibility = v)} />
 						</div>
-					</div>
-					<div>
-						<label for="u-role" class="mb-1.5 block text-xs font-medium">role</label>
-						<input
-							id="u-role"
-							type="text"
-							value={role}
-							oninput={(e) => (role = e.currentTarget.value)}
-							placeholder="user or admin"
-							class="w-full rounded-md border border-input bg-card px-3.5 py-2.5 font-mono text-sm outline-none focus:border-ring"
-						/>
 					</div>
 				{/if}
 				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">

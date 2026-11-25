@@ -78,6 +78,9 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		`UPDATE _collections SET type = 'auth' WHERE name = 'users';`,
 		`ALTER TABLE _users ADD COLUMN IF NOT EXISTS verified BOOLEAN NOT NULL DEFAULT FALSE;`,
 		`ALTER TABLE _users ADD COLUMN IF NOT EXISTS email_visibility BOOLEAN NOT NULL DEFAULT FALSE;`,
+		`ALTER TABLE _users ADD COLUMN IF NOT EXISTS token_key TEXT NOT NULL DEFAULT '';`,
+		`UPDATE _users SET token_key = md5(random()::text || clock_timestamp()::text || id::text) WHERE token_key = '';`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_token_key ON _users (token_key) WHERE token_key <> '';`,
 		`ALTER TABLE _users ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT '';`,
 		`ALTER TABLE _users ADD COLUMN IF NOT EXISTS avatar TEXT NOT NULL DEFAULT '';`,
 		`INSERT INTO _collections (name, fields, api_rules, indexes)

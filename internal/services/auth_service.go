@@ -62,14 +62,15 @@ func (s *AuthService) RegisterWithExtras(ctx context.Context, rawEmail, password
 		return nil, err
 	}
 
-	cols := []string{"email", "password_hash"}
-	placeholders := []string{"$1", "$2"}
-	args := []any{email, hash}
-	idx := 3
+	tokenKey := GenerateFromPattern("[a-zA-Z0-9]{50}")
+	cols := []string{"email", "password_hash", "token_key"}
+	placeholders := []string{"$1", "$2", "$3"}
+	args := []any{email, hash, tokenKey}
+	idx := 4
 
 	isPrivileged := claims != nil && (claims.Role == "superuser" || claims.Role == "admin")
 	for k, v := range extras {
-		if !models.IsValidIdentifier(k) || k == "id" || k == "email" || k == "password" || k == "password_hash" || k == "created_at" || k == "updated_at" {
+		if !models.IsValidIdentifier(k) || k == "id" || k == "email" || k == "password" || k == "password_hash" || k == "token_key" || k == "created_at" || k == "updated_at" {
 			continue
 		}
 		if k == "role" && !isPrivileged {
@@ -247,7 +248,7 @@ func (s *AuthService) ListUsers(ctx context.Context, page, perPage int, search s
 		rec := make(models.Record, len(descs))
 		for i, fd := range descs {
 			col := string(fd.Name)
-			if col == "password_hash" {
+			if col == "password_hash" || col == "token_key" {
 				continue
 			}
 			rec[col] = vals[i]
@@ -293,7 +294,7 @@ func (s *AuthService) GetUserRecord(ctx context.Context, id int64, ruleSQL strin
 	rec := make(models.Record, len(descs))
 	for i, fd := range descs {
 		col := string(fd.Name)
-		if col == "password_hash" {
+		if col == "password_hash" || col == "token_key" {
 			continue
 		}
 		rec[col] = vals[i]
@@ -364,7 +365,7 @@ func (s *AuthService) UpdateUser(ctx context.Context, id int64, email, role, new
 	}
 
 	for k, v := range custom {
-		if !models.IsValidIdentifier(k) || k == "id" || k == "email" || k == "role" || k == "password" || k == "password_hash" || k == "created_at" || k == "updated_at" {
+		if !models.IsValidIdentifier(k) || k == "id" || k == "email" || k == "role" || k == "password" || k == "password_hash" || k == "token_key" || k == "created_at" || k == "updated_at" {
 			continue
 		}
 		setClauses = append(setClauses, fmt.Sprintf(`"%s" = $%d`, k, argIdx))
@@ -415,7 +416,7 @@ func (s *AuthService) UpdateUser(ctx context.Context, id int64, email, role, new
 	rec := make(models.Record, len(descs))
 	for i, fd := range descs {
 		col := string(fd.Name)
-		if col == "password_hash" {
+		if col == "password_hash" || col == "token_key" {
 			continue
 		}
 		rec[col] = vals[i]

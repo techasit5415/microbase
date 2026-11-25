@@ -38,8 +38,8 @@
 		if (collection.type === 'auth' || collection.name === 'users') {
 			const custom = (collection.fields ?? [])
 				.map((f) => f.name)
-				.filter((n) => !['id', 'email', 'role', 'created_at', 'updated_at'].includes(n));
-			return ['id', 'email', 'role', ...custom, 'created_at'];
+				.filter((n) => !['id', 'email', 'verified', 'email_visibility', 'created_at', 'updated_at'].includes(n));
+			return ['id', 'email', 'verified', ...custom, 'created_at'];
 		}
 		return ['id', ...(collection.fields ?? []).map((f) => f.name), 'created_at'];
 	});

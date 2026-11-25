@@ -67,10 +67,10 @@
 	const authSystemFields = [
 		{ name: 'id', icon: 'text', badges: ['Required'] },
 		{ name: 'password', icon: 'lock', badges: ['Required', 'Hidden'] },
+		{ name: 'tokenKey', icon: 'text', badges: ['Required', 'Hidden'] },
 		{ name: 'email', icon: 'mail', badges: ['Required'] },
-		{ name: 'email_visibility', icon: 'bool', badges: [] },
-		{ name: 'verified', icon: 'bool', badges: [] },
-		{ name: 'role', icon: 'text', badges: [] }
+		{ name: 'emailVisibility', icon: 'bool', badges: [] },
+		{ name: 'verified', icon: 'bool', badges: [] }
 	];
 
 	const baseSystemFields = [{ name: 'id', icon: 'text', badges: ['Required'] }];
@@ -80,7 +80,7 @@
 	let availableIndexCols = $derived.by(() => {
 		const userCols = fields.map((f) => f.name.trim()).filter((n) => n !== '');
 		const sysCols = isAuth
-			? ['id', 'email', 'verified', 'role', 'created_at', 'updated_at']
+			? ['id', 'email', 'token_key', 'email_visibility', 'verified', 'created_at', 'updated_at']
 			: ['id', 'created_at', 'updated_at'];
 		return Array.from(new Set([...sysCols, ...userCols]));
 	});
@@ -113,7 +113,7 @@
 				idType = editing.id_type === 'text' ? 'text' : 'serial';
 				idAutogen = editing.id_autogenerate_pattern || '[a-z0-9]{15}';
 				fields = (editing.fields ?? [])
-					.filter((f) => !(editing.name === 'users' && ['email', 'role'].includes(f.name)))
+					.filter((f) => !(editing.name === 'users' && ['email', 'password', 'tokenKey', 'token_key', 'emailVisibility', 'email_visibility', 'verified'].includes(f.name)))
 					.map((f) => ({
 						...f,
 						original_name: f.name,
@@ -626,7 +626,7 @@
 				<!-- Unique constraints and indexes -->
 				<div class="mt-6 border-t border-border pt-5">
 					<div class="mb-2.5 text-xs font-semibold text-foreground">
-						Unique constraints and indexes ({indexes.length})
+						Unique constraints and indexes ({indexes.length + (isAuth ? 2 : 0)})
 					</div>
 					<div class="flex flex-wrap items-center gap-2">
 						{#each indexes as idx, pos (idx.name + pos)}
