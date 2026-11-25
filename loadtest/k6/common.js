@@ -56,11 +56,11 @@ export function ensureBenchCollection(adminToken) {
     JSON.stringify(payload),
     { headers: jsonHeaders(adminToken), tags: { name: 'setup_collection' } }
   );
-  if (res.status !== 201 && res.status !== 200) {
-    console.warn(`Setup collection failed (${res.status}): ${res.body}`);
-    return false;
+  if (res.status === 201 || res.status === 200 || res.status === 409) {
+    return true;
   }
-  return true;
+  console.warn(`Setup collection failed (${res.status}): ${res.body}`);
+  return false;
 }
 
 export function cleanupBenchCollection(adminToken, created) {
