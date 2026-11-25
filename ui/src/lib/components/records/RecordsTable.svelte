@@ -52,6 +52,18 @@
 
 	let selectedIds = $state<(number | string)[]>([]);
 	let hoveredTooltip = $state<{ json: string; x: number; y: number } | null>(null);
+	let showSlowLoading = $state(false);
+
+	$effect(() => {
+		if (!loading) {
+			showSlowLoading = false;
+			return;
+		}
+		const timer = setTimeout(() => {
+			showSlowLoading = true;
+		}, 250);
+		return () => clearTimeout(timer);
+	});
 
 	$effect(() => {
 		collection.name;
@@ -332,7 +344,7 @@
 				{/if}
 			</tr>
 		</thead>
-		<tbody class="divide-y divide-border transition-opacity duration-150 {loading && items.length > 0 ? 'opacity-65' : 'opacity-100'}">
+		<tbody class="divide-y divide-border transition-opacity duration-150 {showSlowLoading && items.length > 0 ? 'opacity-65' : 'opacity-100'}">
 			{#if loading && items.length === 0}
 				<tr>
 					<td colspan={columns.length + 2} class="px-5 py-12 text-center text-xs text-muted-foreground">
@@ -375,7 +387,7 @@
 						{#each columns as col}
 							{@const t = getFieldType(col)}
 							{@const val = row[col]}
-							<td class="max-w-xs px-5 py-2.5 whitespace-nowrap">
+							<td class="max-w-xs min-w-28 px-5 py-2.5 whitespace-nowrap">
 								{#if t === 'id' && val !== null && val !== undefined}
 									<button
 										type="button"
