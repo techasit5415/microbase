@@ -146,6 +146,8 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStor
 		// Webhooks, Realtime SSE, File Storage, System Tables, Logs.
 		api.GET("/webhooks", webhookCtrl.List, adminOnly)
 		api.POST("/webhooks", webhookCtrl.Create, adminOnly)
+		api.PATCH("/webhooks/:id", webhookCtrl.Toggle, adminOnly)
+		api.POST("/webhooks/:id/test", webhookCtrl.Test, adminOnly)
 		api.DELETE("/webhooks/:id", webhookCtrl.Delete, adminOnly)
 		api.GET("/realtime", realtimeCtrl.Stream)
 		api.POST("/files", fileCtrl.Upload)

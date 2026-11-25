@@ -202,6 +202,7 @@ func (s *RecordService) Create(ctx context.Context, colName string, data models.
 	if err != nil {
 		return nil, err
 	}
+	s.publish("create", col.Name, items[0])
 	return items[0], nil
 }
 
@@ -269,6 +270,7 @@ func (s *RecordService) Update(ctx context.Context, colName string, rawID string
 		}
 		return nil, ErrRecordNotFound
 	}
+	s.publish("update", col.Name, items[0])
 	return items[0], nil
 }
 
@@ -306,6 +308,7 @@ func (s *RecordService) Delete(ctx context.Context, colName string, rawID string
 		}
 		return ErrRecordNotFound
 	}
+	s.publish("delete", col.Name, map[string]any{"id": idVal})
 	return nil
 }
 func (s *RecordService) publish(action, colName string, record any) {

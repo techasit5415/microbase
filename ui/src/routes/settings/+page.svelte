@@ -10,7 +10,10 @@
 		HardDrive,
 		Home,
 		Mail,
+		Play,
 		Plus,
+		RefreshCw,
+		ShieldCheck,
 		Terminal,
 		Trash2,
 		Upload
@@ -23,6 +26,7 @@
 	import MailSettingsCard from '#lib/components/settings/MailSettingsCard.svelte';
 	import S3StorageCard from '#lib/components/settings/S3StorageCard.svelte';
 	import Select from '#lib/components/ui/Select.svelte';
+	import Switch from '#lib/components/ui/Switch.svelte';
 	import { confirmAction } from '#lib/stores/confirm.svelte.ts';
 	import { toast } from '#lib/stores/toast.svelte.ts';
 
@@ -35,12 +39,17 @@
 
 	interface WebhookRow {
 		id: number;
-		provider: 'webhook' | 'discord' | 'fcm';
+		provider: 'generic' | 'discord' | 'fcm';
 		collection: string;
 		event: string;
 		url: string;
-		auth_token?: string;
+		has_token?: boolean;
+		has_secret?: boolean;
+		headers?: Record<string, string>;
+		max_retries?: number;
 		enabled: boolean;
+		last_run_at?: string;
+		last_status?: string;
 	}
 
 	type SectionKey =
@@ -59,7 +68,11 @@
 	let redisUrl = $state('');
 	let savingRedis = $state(false);
 	let webhooks = $state<WebhookRow[]>([]);
-	let hookProvider = $state<'discord' | 'fcm' | 'webhook'>('discord');
+	let hookProvider = $state<'discord' | 'fcm' | 'generic'>('discord');
+	let hookSecret = $state('');
+	let hookHeadersJson = $state('');
+	let hookMaxRetries = $state(3);
+	let testingHookId = $state<number | null>(null);
 	let hookCol = $state('*');
 	let hookEvent = $state('create');
 	let hookUrl = $state('');
@@ -83,7 +96,7 @@
 	const providerOptions = [
 		{ value: 'discord', label: 'Discord Webhook' },
 		{ value: 'fcm', label: 'Firebase FCM' },
-		{ value: 'webhook', label: 'Generic HTTP' }
+		{ value: 'generic', label: 'Generic HTTP' }
 	];
 
 	const eventOptions = [
@@ -137,6 +150,15 @@
 	async function addWebhook(e: SubmitEvent) {
 		e.preventDefault();
 		if (!hookUrl.trim()) return;
+		let headers: Record<string, string> = {};
+		if (hookHeadersJson.trim()) {
+			try {
+				headers = JSON.parse(hookHeadersJson);
+			} catch {
+				toast.error('Custom headers must be valid JSON (e.g. {"X-API-Key": "123"})');
+				return;
+			}
+		}
 		try {
 			await apiRequest('/api/webhooks', {
 				method: 'POST',
@@ -145,15 +167,47 @@
 					collection: hookCol.trim() || '*',
 					event: hookEvent,
 					url: hookUrl.trim(),
-					auth_token: hookAuthToken.trim()
+					auth_token: hookAuthToken.trim(),
+					secret: hookSecret.trim(),
+					headers,
+					max_retries: Number(hookMaxRetries) || 3
 				})
 			});
 			hookUrl = '';
 			hookAuthToken = '';
+			hookSecret = '';
+			hookHeadersJson = '';
 			toast.success('Notification hook added');
 			await loadAll();
 		} catch (err) {
 			toast.error(err);
+		}
+	}
+
+	async function toggleWebhook(w: WebhookRow, next: boolean) {
+		try {
+			await apiRequest(`/api/webhooks/${w.id}`, {
+				method: 'PATCH',
+				body: JSON.stringify({ enabled: next })
+			});
+			w.enabled = next;
+			toast.success(`Webhook #${w.id} ${next ? 'enabled' : 'paused'}`);
+		} catch (err) {
+			toast.error(err);
+		}
+	}
+
+	async function testWebhook(id: number) {
+		testingHookId = id;
+		try {
+			const res = await apiRequest<{ status: string }>(`/api/webhooks/${id}/test`, { method: 'POST' });
+			toast.success(`Test sent: ${res.status}`);
+			await loadAll();
+		} catch (err) {
+			toast.error(err, 'Webhook test failed');
+			await loadAll();
+		} finally {
+			testingHookId = null;
 		}
 	}
 
@@ -381,6 +435,30 @@
 										<Plus class="h-3.5 w-3.5" /> Add Hook
 									</button>
 								</div>
+								<div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
+									<input
+										type="password"
+										bind:value={hookSecret}
+										placeholder="Signing Secret (HMAC-SHA256, optional)"
+										class="rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring"
+									/>
+									<input
+										type="text"
+										bind:value={hookHeadersJson}
+										placeholder={'Custom Headers JSON (e.g. {"X-Key":"abc"})'}
+										class="rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring"
+									/>
+									<div class="flex items-center gap-2 rounded-md border border-input bg-background px-3 py-1.5 text-xs">
+										<span class="text-muted-foreground">Retries:</span>
+										<input
+											type="number"
+											min="1"
+											max="5"
+											bind:value={hookMaxRetries}
+											class="w-12 bg-transparent font-mono outline-none"
+										/>
+									</div>
+								</div>
 								{#if hookProvider === 'fcm'}
 									<input
 										type="password"
@@ -394,19 +472,54 @@
 							{#if webhooks.length > 0}
 								<div class="mt-4 divide-y divide-border rounded-md border border-border">
 									{#each webhooks as w (w.id)}
-										<div class="flex items-center justify-between gap-3 px-3.5 py-2.5 text-xs">
-											<div class="min-w-0 flex-1">
-												<span class="rounded bg-muted px-1.5 py-0.5 font-mono font-semibold">{w.provider}</span>
-												<span class="mx-1.5 font-mono text-muted-foreground">{w.collection}:{w.event}</span>
-												<span class="truncate font-mono text-foreground">{w.url}</span>
+										<div class="flex flex-wrap items-center justify-between gap-3 px-3.5 py-3 text-xs">
+											<div class="min-w-0 flex-1 space-y-1">
+												<div class="flex flex-wrap items-center gap-1.5">
+													<span class="rounded bg-muted px-1.5 py-0.5 font-mono font-semibold">{w.provider}</span>
+													<span class="font-mono text-muted-foreground">{w.collection}:{w.event}</span>
+													{#if w.has_secret}
+														<span class="inline-flex items-center gap-0.5 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
+															<ShieldCheck class="h-3 w-3" /> HMAC
+														</span>
+													{/if}
+													<span class="rounded bg-muted/70 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">retry {w.max_retries ?? 3}x</span>
+												</div>
+												<div class="truncate font-mono text-foreground">{w.url}</div>
+												{#if w.last_status}
+													<div class="flex items-center gap-2 text-[11px]">
+														<span
+															class="rounded px-1.5 py-0.5 font-mono {w.last_status.startsWith('error')
+																? 'bg-destructive/15 text-destructive'
+																: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'}"
+														>
+															{w.last_status}
+														</span>
+													</div>
+												{/if}
 											</div>
-											<button
-												type="button"
-												onclick={() => removeWebhook(w.id)}
-												class="cursor-pointer rounded p-1 text-muted-foreground hover:text-destructive"
-											>
-												<Trash2 class="h-3.5 w-3.5" />
-											</button>
+											<div class="flex items-center gap-2">
+												<Switch checked={w.enabled} onChange={(v) => toggleWebhook(w, v)} />
+												<button
+													type="button"
+													disabled={testingHookId === w.id}
+													onclick={() => testWebhook(w.id)}
+													class="inline-flex cursor-pointer items-center gap-1 rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium transition hover:bg-muted disabled:opacity-50"
+												>
+													{#if testingHookId === w.id}
+														<RefreshCw class="h-3 w-3 animate-spin" />
+													{:else}
+														<Play class="h-3 w-3" />
+													{/if}
+													Test
+												</button>
+												<button
+													type="button"
+													onclick={() => removeWebhook(w.id)}
+													class="cursor-pointer rounded p-1 text-muted-foreground hover:text-destructive"
+												>
+													<Trash2 class="h-3.5 w-3.5" />
+												</button>
+											</div>
 										</div>
 									{/each}
 								</div>
