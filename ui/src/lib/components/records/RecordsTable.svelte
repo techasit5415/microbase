@@ -155,13 +155,15 @@
 									<Type class="h-3.5 w-3.5" />
 								{/if}
 								<span>{col}</span>
-								{#if dir === 'desc'}
-									<ArrowDown class="h-3.5 w-3.5 text-primary" />
-								{:else if dir === 'asc'}
-									<ArrowUp class="h-3.5 w-3.5 text-primary" />
-								{:else}
-									<ArrowUpDown class="h-3 w-3 opacity-0 transition group-hover/sort:opacity-60" />
-								{/if}
+								<span class="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+									{#if dir === 'desc'}
+										<ArrowDown class="h-3.5 w-3.5 text-primary" />
+									{:else if dir === 'asc'}
+										<ArrowUp class="h-3.5 w-3.5 text-primary" />
+									{:else}
+										<ArrowUpDown class="h-3 w-3 opacity-0 transition group-hover/sort:opacity-60" />
+									{/if}
+								</span>
 							</button>
 						{:else}
 							<span class="inline-flex items-center gap-1.5 px-2 py-1">
@@ -188,8 +190,8 @@
 				{/if}
 			</tr>
 		</thead>
-		<tbody class="divide-y divide-border">
-			{#if loading}
+		<tbody class="divide-y divide-border transition-opacity duration-150 {loading && items.length > 0 ? 'opacity-65' : 'opacity-100'}">
+			{#if loading && items.length === 0}
 				<tr>
 					<td colspan={columns.length + 2} class="px-5 py-12 text-center text-xs text-muted-foreground">
 						Loading records...
