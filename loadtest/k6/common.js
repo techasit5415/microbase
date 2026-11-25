@@ -38,15 +38,17 @@ export function ensureBenchCollection(adminToken) {
   const payload = {
     name: BENCH_COLLECTION,
     type: 'base',
-    list_rule: '',
-    view_rule: '',
-    create_rule: '',
-    update_rule: '',
-    delete_rule: '',
+    api_rules: {
+      list: '',
+      view: '',
+      create: '',
+      update: '',
+      delete: '',
+    },
     fields: [
       { name: 'title', type: 'text', required: true },
       { name: 'score', type: 'number', required: false },
-      { name: 'active', type: 'bool', required: false },
+      { name: 'active', type: 'boolean', required: false },
     ],
   };
   const res = http.post(
@@ -54,7 +56,11 @@ export function ensureBenchCollection(adminToken) {
     JSON.stringify(payload),
     { headers: jsonHeaders(adminToken), tags: { name: 'setup_collection' } }
   );
-  return res.status === 201 || res.status === 200;
+  if (res.status !== 201 && res.status !== 200) {
+    console.warn(`Setup collection failed (${res.status}): ${res.body}`);
+    return false;
+  }
+  return true;
 }
 
 export function cleanupBenchCollection(adminToken, created) {
@@ -65,25 +71,34 @@ export function cleanupBenchCollection(adminToken, created) {
   });
 }
 
-export function setupTestUser() {
+export function setupTestUser(adminToken) {
   const email = `k6_bench_${Date.now()}@bench.local`;
   const password = 'K6BenchPassword123!';
   const regRes = http.post(
     `${BASE_URL}/api/auth/register`,
     JSON.stringify({ email, password, passwordConfirm: password }),
-    { headers: jsonHeaders(), tags: { name: 'setup_register' } }
+    { headers: jsonHeaders(adminToken), tags: { name: 'setup_register' } }
   );
   if (regRes.status !== 201 && regRes.status !== 200) {
     console.warn(`User register skipped (${regRes.status}): ${regRes.body}`);
-    return { email: '', password: '', token: '' };
+    return { id: null, email: '', password: '', token: '' };
   }
+  const userId = regRes.json('id') || regRes.json('user.id') || null;
   const loginRes = http.post(
     `${BASE_URL}/api/auth/login`,
     JSON.stringify({ email, password }),
     { headers: jsonHeaders(), tags: { name: 'setup_login' } }
   );
   const token = loginRes.status === 200 ? (loginRes.json('token') || '') : '';
-  return { email, password, token };
+  return { id: userId, email, password, token };
+}
+
+export function cleanupTestUser(adminToken, user) {
+  if (!adminToken || !user || !user.id) return;
+  http.del(`${BASE_URL}/api/users/${user.id}`, null, {
+    headers: jsonHeaders(adminToken),
+    tags: { name: 'teardown_user' },
+  });
 }
 
 export function checkHealth() {

@@ -4,6 +4,7 @@ import {
   ensureBenchCollection,
   cleanupBenchCollection,
   setupTestUser,
+  cleanupTestUser,
   checkHealth,
   checkAuthMe,
   runCrudCycle,
@@ -21,7 +22,7 @@ export const options = {
 export function setup() {
   const adminToken = loginAdmin();
   const createdCollection = ensureBenchCollection(adminToken);
-  const user = setupTestUser();
+  const user = setupTestUser(adminToken);
   return { adminToken, createdCollection, user };
 }
 
@@ -36,4 +37,5 @@ export default function (data) {
 
 export function teardown(data) {
   cleanupBenchCollection(data.adminToken, data.createdCollection);
+  cleanupTestUser(data.adminToken, data.user);
 }
