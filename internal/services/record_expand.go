@@ -9,6 +9,7 @@ import (
 )
 
 // ExpandRecords resolves PocketBase-style ?expand=field1,field2 relation fields on a slice of records.
+// Supports both single-value relations (expanded to object) and multi-value JSONB relations (expanded to array).
 func (s *RecordService) ExpandRecords(ctx context.Context, col *models.Collection, items []models.Record, expandParam string, claims *AuthClaims) {
 	if col == nil || len(items) == 0 || strings.TrimSpace(expandParam) == "" {
 		return
@@ -43,15 +44,42 @@ func (s *RecordService) ExpandRecords(ctx context.Context, col *models.Collectio
 		if err != nil {
 			continue
 		}
+
+		idSet := map[string]bool{}
 		ids := []string{}
+		addID := func(v any) {
+			if v == nil {
+				return
+			}
+			s := strings.TrimSpace(fmt.Sprint(v))
+			if s != "" && !idSet[s] {
+				idSet[s] = true
+				ids = append(ids, s)
+			}
+		}
+
 		for _, rec := range items {
-			if rec[fname] != nil {
-				ids = append(ids, fmt.Sprint(rec[fname]))
+			raw := rec[fname]
+			if raw == nil {
+				continue
+			}
+			switch arr := raw.(type) {
+			case []any:
+				for _, elem := range arr {
+					addID(elem)
+				}
+			case []string:
+				for _, elem := range arr {
+					addID(elem)
+				}
+			default:
+				addID(raw)
 			}
 		}
 		if len(ids) == 0 {
 			continue
 		}
+
 		query := fmt.Sprintf(`SELECT * FROM "%s" WHERE id::text = ANY($1::text[])`, targetTable)
 		args := []any{ids}
 		if rule != "" {
@@ -71,14 +99,37 @@ func (s *RecordService) ExpandRecords(ctx context.Context, col *models.Collectio
 		for _, rec := range related {
 			byID[fmt.Sprint(rec["id"])] = VisibleRecord(target, claims, rec)
 		}
+
 		for _, rec := range items {
-			if rel, ok := byID[fmt.Sprint(rec[fname])]; ok {
-				exp, _ := rec["expand"].(map[string]any)
-				if exp == nil {
-					exp = map[string]any{}
-					rec["expand"] = exp
+			raw := rec[fname]
+			if raw == nil {
+				continue
+			}
+			switch arr := raw.(type) {
+			case []any:
+				matched := make([]models.Record, 0, len(arr))
+				for _, elem := range arr {
+					if rel, ok := byID[fmt.Sprint(elem)]; ok {
+						matched = append(matched, rel)
+					}
 				}
-				exp[fname] = rel
+				if len(matched) > 0 {
+					exp, _ := rec["expand"].(map[string]any)
+					if exp == nil {
+						exp = map[string]any{}
+						rec["expand"] = exp
+					}
+					exp[fname] = matched
+				}
+			default:
+				if rel, ok := byID[fmt.Sprint(raw)]; ok {
+					exp, _ := rec["expand"].(map[string]any)
+					if exp == nil {
+						exp = map[string]any{}
+						rec["expand"] = exp
+					}
+					exp[fname] = rel
+				}
 			}
 		}
 	}

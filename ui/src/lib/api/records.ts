@@ -7,6 +7,7 @@ export interface ListRecordsParams {
 	search?: string;
 	filter?: string;
 	sort?: string;
+	expand?: string;
 }
 
 export async function listRecords(
@@ -18,6 +19,7 @@ export async function listRecords(
 	if (params?.perPage) qs.set('per_page', String(params.perPage));
 	if (params?.search) qs.set('search', params.search);
 	if (params?.sort) qs.set('sort', params.sort);
+	if (params?.expand) qs.set('expand', params.expand);
 
 	const query = qs.toString() ? `?${qs.toString()}` : '';
 	return apiRequest<ListResult>(`/api/collections/${encodeURIComponent(colName)}/records${query}`);

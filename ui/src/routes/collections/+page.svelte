@@ -81,12 +81,14 @@
 	async function refreshRecords(col: Collection = activeCol) {
 		loading = true;
 		try {
+			const expand = (col.fields ?? [])
+				.filter((f) => f.type === 'relation' && f.collection_name)
+				.map((f) => f.name)
+				.join(',');
 			const res =
 				col.type === 'system'
 					? await listSystemTable(col.name)
-					: col.type === 'auth'
-						? await listUsers({ page: currentPage, perPage, search, sort })
-						: await listRecords(col.name, { page: currentPage, perPage, search, sort });
+					: await listRecords(col.name, { page: currentPage, perPage, search, sort, expand });
 			items = res.items ?? [];
 			totalItems = res.total_items ?? items.length;
 		} catch (err) {
@@ -223,6 +225,7 @@
 
 	<RecordsTable
 		collection={activeCol}
+		allCollections={mainCollections}
 		{items}
 		{loading}
 		readOnly={(activeCol.type === 'system' && activeCol.name !== '_superusers') || activeCol.type === 'view'}

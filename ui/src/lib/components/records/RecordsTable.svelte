@@ -1,11 +1,32 @@
 <script lang="ts">
 	import { cubicOut } from 'svelte/easing';
 	import { fly } from 'svelte/transition';
-	import { ArrowDown, ArrowUp, ArrowUpDown, Calendar, Check, Hash, KeyRound, Mail, ToggleLeft, Trash2, Type } from '@lucide/svelte';
-	import type { Collection, RecordRow } from '#lib/api/types.ts';
+	import {
+		ArrowDown,
+		ArrowRight,
+		ArrowUp,
+		ArrowUpDown,
+		Braces,
+		Calendar,
+		Check,
+		Copy,
+		Eye,
+		FileImage,
+		Hash,
+		KeyRound,
+		List,
+		Mail,
+		Share2,
+		ToggleLeft,
+		Trash2,
+		Type
+	} from '@lucide/svelte';
+	import type { Collection, FieldDef, RecordRow } from '#lib/api/types.ts';
+	import { toast } from '#lib/stores/toast.svelte.ts';
 
 	interface Props {
 		collection: Collection;
+		allCollections?: Collection[];
 		items: RecordRow[];
 		loading: boolean;
 		readOnly?: boolean;
@@ -18,6 +39,7 @@
 
 	let {
 		collection,
+		allCollections = [],
 		items,
 		loading,
 		readOnly = false,
@@ -27,6 +49,50 @@
 		onDelete,
 		onBulkDelete
 	}: Props = $props();
+
+	let selectedIds = $state<(number | string)[]>([]);
+	let hoveredTooltip = $state<{ json: string; x: number; y: number } | null>(null);
+
+	$effect(() => {
+		collection.name;
+		items;
+		selectedIds = [];
+	});
+
+	let collectionMap = $derived.by(() => {
+		const m: Record<string, Collection> = {};
+		for (const c of allCollections) m[c.name] = c;
+		return m;
+	});
+
+	let fieldMap = $derived.by(() => {
+		const m: Record<string, FieldDef> = {};
+		for (const f of collection.fields ?? []) m[f.name] = f;
+		return m;
+	});
+
+	let columns = $derived.by(() => {
+		if (collection.type === 'system' || collection.type === 'view') {
+			return items.length > 0 ? Object.keys(items[0]) : ['id'];
+		}
+		if (collection.type === 'auth' || collection.name === 'users') {
+			const custom = (collection.fields ?? [])
+				.map((f) => f.name)
+				.filter((n) => !['id', 'email', 'verified', 'email_visibility', 'created_at', 'updated_at'].includes(n));
+			return ['id', 'email', 'email_visibility', 'verified', ...custom, 'created_at'];
+		}
+		return ['id', ...(collection.fields ?? []).map((f) => f.name), 'created_at'];
+	});
+
+	let allSelectableIds = $derived(
+		items
+			.map((r) => r.id)
+			.filter((id): id is number | string => typeof id === 'number' || typeof id === 'string')
+	);
+
+	let allSelected = $derived(
+		allSelectableIds.length > 0 && selectedIds.length === allSelectableIds.length
+	);
 
 	function getSortDir(col: string): 'asc' | 'desc' | null {
 		if (sort === `-${col}`) return 'desc';
@@ -41,38 +107,6 @@
 		else if (dir === 'desc') onSortChange(col);
 		else onSortChange('');
 	}
-
-	let selectedIds = $state<(number | string)[]>([]);
-
-	// Clear selection when collection or items change
-	$effect(() => {
-		collection.name;
-		items;
-		selectedIds = [];
-	});
-
-	let columns = $derived.by(() => {
-		if (collection.type === 'system' || collection.type === 'view') {
-			return items.length > 0 ? Object.keys(items[0]) : ['id'];
-		}
-		if (collection.type === 'auth' || collection.name === 'users') {
-			const custom = (collection.fields ?? [])
-				.map((f) => f.name)
-				.filter((n) => !['id', 'email', 'verified', 'email_visibility', 'created_at', 'updated_at'].includes(n));
-			return ['id', 'email', 'verified', ...custom, 'created_at'];
-		}
-		return ['id', ...(collection.fields ?? []).map((f) => f.name), 'created_at'];
-	});
-
-	let allSelectableIds = $derived(
-		items
-			.map((r) => r.id)
-			.filter((id): id is number | string => typeof id === 'number' || typeof id === 'string')
-	);
-
-	let allSelected = $derived(
-		allSelectableIds.length > 0 && selectedIds.length === allSelectableIds.length
-	);
 
 	function toggleOne(id: number | string) {
 		if (selectedIds.includes(id)) {
@@ -89,12 +123,104 @@
 	function getFieldType(col: string): string {
 		if (col === 'id') return 'id';
 		if (col === 'email') return 'email';
+		if (col === 'verified' || col === 'email_visibility') return 'boolean';
 		if (col === 'created_at' || col === 'updated_at') return 'date';
-		return (collection.fields ?? []).find((f) => f.name === col)?.type ?? 'text';
+		return fieldMap[col]?.type ?? 'text';
+	}
+
+	function copyText(e: MouseEvent, text: string) {
+		e.stopPropagation();
+		navigator.clipboard?.writeText(text).catch(() => {});
+		toast.success(`Copied ${text}`);
+	}
+
+	function showRecordTooltip(e: MouseEvent, rec: RecordRow | undefined) {
+		if (!rec) return;
+		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		const clean: Record<string, unknown> = {};
+		for (const [k, v] of Object.entries(rec)) {
+			if (k === 'password_hash' || k === 'token_key') continue;
+			clean[k] = v;
+		}
+		hoveredTooltip = {
+			json: JSON.stringify(clean, null, 2),
+			x: Math.min(window.innerWidth - 340, Math.max(16, rect.left)),
+			y: Math.min(window.innerHeight - 280, rect.bottom + 8)
+		};
+	}
+
+	function hideRecordTooltip() {
+		hoveredTooltip = null;
+	}
+
+	// PocketBase-style relation display label:
+	// 1. Target collection's presentable=true fields
+	// 2. Fallback common label fields: name, title, email, username
+	// 3. Otherwise null (shows copyable ID pill instead)
+	function getRelationDisplayLabel(targetColName: string | undefined, rec: RecordRow | undefined): string | null {
+		if (!rec) return null;
+		const targetCol = targetColName ? collectionMap[targetColName] : undefined;
+		if (targetCol) {
+			const presentable = (targetCol.fields ?? [])
+				.filter((f) => f.presentable)
+				.map((f) => rec[f.name])
+				.filter((v) => v !== null && v !== undefined && String(v).trim() !== '')
+				.map((v) => String(v).trim());
+			if (presentable.length > 0) {
+				return presentable.join(', ');
+			}
+		}
+		for (const key of ['name', 'title', 'email', 'username']) {
+			const v = rec[key];
+			if (typeof v === 'string' && v.trim() !== '') {
+				return v.trim();
+			}
+		}
+		return null;
+	}
+
+	function getRelationPills(
+		row: RecordRow,
+		col: string
+	): Array<{ id: string; label: string | null; record?: RecordRow }> {
+		const raw = row[col];
+		if (raw === null || raw === undefined || raw === '') return [];
+		const targetColName = fieldMap[col]?.collection_name;
+		const expandObj = (row.expand as Record<string, unknown> | undefined)?.[col];
+
+		const ids: string[] = Array.isArray(raw)
+			? raw.map((x) => String(x)).filter(Boolean)
+			: [String(raw)];
+
+		const expandedById: Record<string, RecordRow> = {};
+		if (Array.isArray(expandObj)) {
+			for (const item of expandObj) {
+				if (item && typeof item === 'object' && 'id' in item) {
+					expandedById[String((item as RecordRow).id)] = item as RecordRow;
+				}
+			}
+		} else if (expandObj && typeof expandObj === 'object' && 'id' in expandObj) {
+			expandedById[String((expandObj as RecordRow).id)] = expandObj as RecordRow;
+		}
+
+		return ids.map((id) => {
+			const rec = expandedById[id];
+			return {
+				id,
+				label: getRelationDisplayLabel(targetColName, rec),
+				record: rec
+			};
+		});
+	}
+
+	function getSelectPills(val: unknown): string[] {
+		if (val === null || val === undefined || val === '') return [];
+		if (Array.isArray(val)) return val.map((v) => String(v)).filter(Boolean);
+		return [String(val)];
 	}
 
 	function formatCell(val: unknown): string {
-		if (val === null || val === undefined) return 'N/A';
+		if (val === null || val === undefined || val === '') return 'N/A';
 		if (typeof val === 'object') return JSON.stringify(val);
 		const str = String(val);
 		const iso = str.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})(?:\.(\d+))?(?:Z|[+-]\d{2}:\d{2})$/);
@@ -145,6 +271,14 @@
 									<KeyRound class="h-3.5 w-3.5" />
 								{:else if t === 'email'}
 									<Mail class="h-3.5 w-3.5" />
+								{:else if t === 'relation'}
+									<Share2 class="h-3.5 w-3.5" />
+								{:else if t === 'select'}
+									<List class="h-3.5 w-3.5" />
+								{:else if t === 'file'}
+									<FileImage class="h-3.5 w-3.5" />
+								{:else if t === 'json'}
+									<Braces class="h-3.5 w-3.5" />
 								{:else if t === 'integer' || t === 'float' || t === 'number'}
 									<Hash class="h-3.5 w-3.5" />
 								{:else if t === 'boolean'}
@@ -171,6 +305,14 @@
 									<KeyRound class="h-3.5 w-3.5" />
 								{:else if t === 'email'}
 									<Mail class="h-3.5 w-3.5" />
+								{:else if t === 'relation'}
+									<Share2 class="h-3.5 w-3.5" />
+								{:else if t === 'select'}
+									<List class="h-3.5 w-3.5" />
+								{:else if t === 'file'}
+									<FileImage class="h-3.5 w-3.5" />
+								{:else if t === 'json'}
+									<Braces class="h-3.5 w-3.5" />
 								{:else if t === 'integer' || t === 'float' || t === 'number'}
 									<Hash class="h-3.5 w-3.5" />
 								{:else if t === 'boolean'}
@@ -186,7 +328,7 @@
 					</th>
 				{/each}
 				{#if !readOnly}
-					<th class="w-16 px-5 py-3 text-right font-medium"></th>
+					<th class="w-10 px-3 py-3 text-right font-medium"></th>
 				{/if}
 			</tr>
 		</thead>
@@ -209,18 +351,15 @@
 					{@const isChecked = rid !== null && selectedIds.includes(rid)}
 					<tr
 						onclick={() => !readOnly && onSelect?.(row)}
-						class="transition {isChecked ? 'bg-muted/75' : 'bg-card hover:bg-muted/60'} {!readOnly && onSelect ? 'cursor-pointer' : ''}"
+						class="group transition {isChecked ? 'bg-muted/75' : 'bg-card hover:bg-muted/50'} {!readOnly && onSelect ? 'cursor-pointer' : ''}"
 					>
 						{#if !readOnly && onBulkDelete}
-							<td class="px-4 py-3">
+							<td class="w-11 px-4 py-2.5" onclick={(e) => e.stopPropagation()}>
 								{#if rid !== null}
 									<button
 										type="button"
-										aria-label="Select record"
-										onclick={(e) => {
-											e.stopPropagation();
-											toggleOne(rid);
-										}}
+										aria-label="Select record {rid}"
+										onclick={() => toggleOne(rid)}
 										class="flex h-4 w-4 cursor-pointer items-center justify-center rounded border transition {isChecked
 											? 'border-foreground bg-foreground text-background'
 											: 'border-border bg-background hover:border-foreground/60'}"
@@ -232,45 +371,105 @@
 								{/if}
 							</td>
 						{/if}
+
 						{#each columns as col}
+							{@const t = getFieldType(col)}
 							{@const val = row[col]}
-							<td class="max-w-xs truncate px-5 py-3">
-								{#if col === 'id'}
-									<span class="rounded bg-muted px-2 py-0.5 font-mono text-xs text-foreground">
-										{val}
-									</span>
-								{:else if isImageFileUrl(val)}
-									<img
-										src="{val}?thumb=64x64"
-										alt={col}
-										class="h-8 w-8 rounded border border-border object-cover"
-									/>
-								{:else if typeof val === 'boolean'}
-									<span
-										class="rounded px-2 py-0.5 text-xs font-medium {val
-											? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'
-											: 'bg-muted text-muted-foreground'}"
+							<td class="max-w-xs px-5 py-2.5 whitespace-nowrap">
+								{#if t === 'id' && val !== null && val !== undefined}
+									<button
+										type="button"
+										title="Copy ID"
+										onclick={(e) => copyText(e, String(val))}
+										class="inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-secondary px-2 py-1 font-mono text-xs text-foreground transition hover:bg-secondary/80"
 									>
-										{val ? 'True' : 'False'}
-									</span>
+										<Copy class="h-3 w-3 text-muted-foreground" />
+										<span>{String(val)}</span>
+									</button>
+								{:else if t === 'boolean'}
+									{#if val === true || val === 'true'}
+										<span class="inline-flex rounded-md bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+											True
+										</span>
+									{:else if val === false || val === 'false'}
+										<span class="inline-flex rounded-md bg-secondary px-2 py-0.5 text-xs font-medium text-muted-foreground">
+											False
+										</span>
+									{:else}
+										<span class="text-muted-foreground/60">N/A</span>
+									{/if}
+								{:else if t === 'select'}
+									{@const pills = getSelectPills(val)}
+									{#if pills.length === 0}
+										<span class="text-muted-foreground/60">N/A</span>
+									{:else}
+										<div class="inline-flex flex-wrap items-center gap-1">
+											{#each pills as pill (pill)}
+												<span class="inline-flex rounded-md bg-secondary px-2 py-0.5 text-xs font-medium text-foreground">
+													{pill}
+												</span>
+											{/each}
+										</div>
+									{/if}
+								{:else if t === 'relation'}
+									{@const rels = getRelationPills(row, col)}
+									{#if rels.length === 0}
+										<span class="text-muted-foreground/60">N/A</span>
+									{:else}
+										<div class="inline-flex flex-wrap items-center gap-1.5">
+											{#each rels.slice(0, 3) as rel (rel.id)}
+												<span
+													onclick={(e) => e.stopPropagation()}
+													role="presentation"
+													class="inline-flex items-center gap-1.5 rounded-md bg-secondary px-2 py-1 text-xs text-foreground"
+												>
+													<span
+														role="presentation"
+														onmouseenter={(e) => showRecordTooltip(e, rel.record)}
+														onmouseleave={hideRecordTooltip}
+														class="inline-flex cursor-help items-center text-muted-foreground transition hover:text-foreground"
+													>
+														<Eye class="h-3.5 w-3.5" />
+													</span>
+													{#if rel.label}
+														<span class="max-w-44 truncate font-medium">{rel.label}</span>
+													{:else}
+														<button
+															type="button"
+															title="Copy ID"
+															onclick={(e) => copyText(e, rel.id)}
+															class="inline-flex cursor-pointer items-center gap-1 rounded bg-background/80 px-1.5 py-0.5 font-mono text-xs text-foreground transition hover:bg-background"
+														>
+															<Copy class="h-3 w-3 text-muted-foreground" />
+															<span>{rel.id}</span>
+														</button>
+													{/if}
+												</span>
+											{/each}
+											{#if rels.length > 3}
+												<span class="rounded-md bg-secondary px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+													+{rels.length - 3}
+												</span>
+											{/if}
+										</div>
+									{/if}
+								{:else if isImageFileUrl(val)}
+									<img src={val} alt={col} class="h-8 w-8 rounded border border-border object-cover" />
+								{:else if val === null || val === undefined || val === ''}
+									<span class="text-muted-foreground/60">N/A</span>
 								{:else}
-									<span class="text-xs text-foreground">{formatCell(val)}</span>
+									<span class="block max-w-xs truncate {t === 'json' || t === 'date' || t === 'timestamptz' || t === 'datetime' || t === 'autodate' ? 'font-mono text-xs' : ''}">
+										{formatCell(val)}
+									</span>
 								{/if}
 							</td>
 						{/each}
-						{#if !readOnly && rid !== null}
-							<td class="px-5 py-3 text-right">
-								<button
-									type="button"
-									title="Delete record"
-									onclick={(e) => {
-										e.stopPropagation();
-										onDelete(rid);
-									}}
-									class="cursor-pointer rounded p-1.5 text-muted-foreground transition hover:bg-destructive/15 hover:text-destructive"
-								>
-									<Trash2 class="h-3.5 w-3.5" />
-								</button>
+
+						{#if !readOnly}
+							<td class="w-10 px-3 py-2.5 text-right">
+								<span class="inline-flex items-center justify-center text-muted-foreground/60 transition group-hover:translate-x-0.5 group-hover:text-foreground">
+									<ArrowRight class="h-4 w-4" />
+								</span>
 							</td>
 						{/if}
 					</tr>
@@ -279,21 +478,31 @@
 		</tbody>
 	</table>
 
-	<!-- Floating PocketBase Bulkbar -->
-	{#if !readOnly && onBulkDelete && selectedIds.length > 0}
-		<div transition:fly={{ y: 24, duration: 180, easing: cubicOut }} class="sticky bottom-4 z-20 mx-auto mt-4 flex w-fit items-center gap-3 rounded-full border border-border bg-foreground px-5 py-2.5 text-xs text-background shadow-xl">
-			<span>Selected <strong>{selectedIds.length}</strong> record{selectedIds.length > 1 ? 's' : ''}</span>
+	<!-- PocketBase-style floating bulk actions bar -->
+	{#if selectedIds.length > 0 && onBulkDelete}
+		<div
+			transition:fly={{ y: 20, duration: 180, easing: cubicOut }}
+			class="sticky bottom-4 left-1/2 z-20 mx-auto flex w-fit items-center gap-4 rounded-full border border-border bg-card px-5 py-2.5 text-xs shadow-lg"
+		>
+			<span>
+				Selected <strong class="text-foreground">{selectedIds.length}</strong>
+				{selectedIds.length === 1 ? 'record' : 'records'}
+			</span>
 			<button
 				type="button"
 				onclick={() => (selectedIds = [])}
-				class="cursor-pointer rounded-full bg-background/15 px-3 py-1 text-xs font-medium transition hover:bg-background/25"
+				class="cursor-pointer rounded-full px-2.5 py-1 text-muted-foreground transition hover:bg-muted hover:text-foreground"
 			>
 				Reset
 			</button>
 			<button
 				type="button"
-				onclick={() => onBulkDelete([...selectedIds])}
-				class="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-destructive px-3.5 py-1 text-xs font-semibold text-white transition hover:opacity-90"
+				onclick={() => {
+					const toDelete = [...selectedIds];
+					selectedIds = [];
+					onBulkDelete(toDelete);
+				}}
+				class="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-destructive px-3.5 py-1 font-semibold text-white transition hover:opacity-90"
 			>
 				<Trash2 class="h-3.5 w-3.5" />
 				Delete selected
@@ -301,3 +510,12 @@
 		</div>
 	{/if}
 </div>
+
+{#if hoveredTooltip}
+	<div
+		style="left: {hoveredTooltip.x}px; top: {hoveredTooltip.y}px;"
+		class="pointer-events-none fixed z-70 max-h-72 w-80 overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900 p-3 text-zinc-100 shadow-2xl"
+	>
+		<pre class="overflow-auto font-mono text-xs leading-relaxed whitespace-pre-wrap break-all">{hoveredTooltip.json}</pre>
+	</div>
+{/if}
