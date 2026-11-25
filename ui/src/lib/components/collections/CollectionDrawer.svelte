@@ -214,6 +214,19 @@
 		fields = fields.filter((_, i) => i !== index);
 	}
 
+	function duplicateField(index: number) {
+		const src = fields[index];
+		if (!src) return;
+		const clone: FieldDef = {
+			...src,
+			original_name: undefined,
+			name: generateDefaultFieldName(src.name || src.type),
+			values: src.values ? [...src.values] : undefined,
+			mime_types: src.mime_types ? [...src.mime_types] : undefined
+		};
+		fields = [...fields.slice(0, index + 1), clone, ...fields.slice(index + 1)];
+	}
+
 	function openNewIndex() {
 		editingIndexPos = null;
 		showIndexModal = true;
@@ -539,7 +552,7 @@
 				</div>
 			{:else if activeTab === 'fields' && !isView}
 				<!-- PocketBase Stacked Fields Table -->
-				<div class="divide-y divide-border overflow-hidden rounded-md border border-border bg-muted/45">
+				<div class="divide-y divide-border overflow-visible rounded-md border border-border bg-muted/45">
 					{#each systemFieldsList as sf (sf.name)}
 						<div>
 							<div class="flex items-center justify-between px-3 py-2.5 text-muted-foreground">
@@ -632,6 +645,7 @@
 							{availableCollections}
 							stacked={true}
 							onRemove={() => removeField(i)}
+							onDuplicate={() => duplicateField(i)}
 						/>
 					{/each}
 

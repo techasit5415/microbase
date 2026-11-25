@@ -1,5 +1,8 @@
 <script lang="ts">
+	import { cubicOut } from 'svelte/easing';
+	import { fly, slide } from 'svelte/transition';
 	import {
+		MoreHorizontal,
 		Braces,
 		Calendar,
 		CalendarCheck,
@@ -28,6 +31,7 @@
 		availableCollections?: string[];
 		stacked?: boolean;
 		onRemove: () => void;
+		onDuplicate?: () => void;
 	}
 
 	let {
@@ -35,10 +39,40 @@
 		isExisting = false,
 		availableCollections = [],
 		stacked = false,
-		onRemove
+		onRemove,
+		onDuplicate
 	}: Props = $props();
 
 	let expanded = $state(false);
+	let choicesPopoverOpen = $state(false);
+	let moreMenuOpen = $state(false);
+
+	const autodateModeOptions = [
+		{ value: 'create', label: 'Create' },
+		{ value: 'update', label: 'Update' },
+		{ value: 'create_update', label: 'Create/Update' }
+	];
+
+	let autodateMode = $derived(
+		field.on_create !== false && field.on_update
+			? 'create_update'
+			: field.on_update
+				? 'update'
+				: 'create'
+	);
+
+	function setAutodateMode(mode: string) {
+		if (mode === 'create') {
+			field.on_create = true;
+			field.on_update = false;
+		} else if (mode === 'update') {
+			field.on_create = false;
+			field.on_update = true;
+		} else {
+			field.on_create = true;
+			field.on_update = true;
+		}
+	}
 
 	$effect(() => {
 		if (
@@ -169,31 +203,85 @@
 					disabled={isExisting}
 				/>
 			</div>
-			<div class="w-24 shrink-0">
+			<div class="w-28 shrink-0">
 				<Select
 					bind:value={
 						() => String((field.max_select ?? 1) > 1 ? 99 : 1),
 						(v) => (field.max_select = Number(v))
 					}
 					options={selectModeOptions}
-					disabled={isExisting}
 				/>
 			</div>
-		{:else if field.type === 'file' || field.type === 'select'}
-			<div class="w-24 shrink-0">
+		{:else if field.type === 'select'}
+			<!-- PocketBase inline Add choices* popover -->
+			<div class="relative w-36 shrink-0">
+				<button
+					type="button"
+					onclick={() => (choicesPopoverOpen = !choicesPopoverOpen)}
+					class="flex w-full cursor-pointer items-center justify-between truncate rounded-md border border-transparent bg-background/60 px-2.5 py-1.5 text-left text-xs transition hover:border-border {(field.values?.length ?? 0) > 0
+						? 'font-medium text-foreground'
+						: 'text-muted-foreground'}"
+				>
+					<span class="truncate">
+						{(field.values?.length ?? 0) > 0 ? field.values!.join(', ') : 'Add choices*'}
+					</span>
+				</button>
+				{#if choicesPopoverOpen}
+					<div
+						transition:fly={{ y: -4, duration: 140, easing: cubicOut }}
+						class="absolute top-full left-0 z-40 mt-1.5 w-60 rounded-lg border border-border bg-card p-3 shadow-xl"
+					>
+						<div class="mb-1.5 flex items-center justify-between text-xs font-medium text-muted-foreground">
+							<span>New-line separated choices:</span>
+							<button
+								type="button"
+								onclick={() => (choicesPopoverOpen = false)}
+								class="cursor-pointer rounded p-0.5 hover:bg-muted hover:text-foreground"
+							>
+								<X class="h-3 w-3" />
+							</button>
+						</div>
+						<textarea
+							rows="4"
+							value={(field.values ?? []).join('\n')}
+							oninput={(e) => {
+								field.values = e.currentTarget.value
+									.split(/\r?\n/)
+									.map((v) => v.trim())
+									.filter(Boolean);
+							}}
+							placeholder={'option1\noption2\noption3'}
+							class="w-full rounded-md bg-secondary/75 px-2.5 py-2 font-mono text-xs text-foreground outline-none focus:ring-2 focus:ring-foreground/15"
+						></textarea>
+					</div>
+				{/if}
+			</div>
+			<div class="w-28 shrink-0">
 				<Select
 					bind:value={
 						() => String((field.max_select ?? 1) > 1 ? 99 : 1),
 						(v) => (field.max_select = Number(v))
 					}
 					options={selectModeOptions}
-					disabled={isExisting}
+				/>
+			</div>
+		{:else if field.type === 'file'}
+			<div class="w-28 shrink-0">
+				<Select
+					bind:value={
+						() => String((field.max_select ?? 1) > 1 ? 99 : 1),
+						(v) => (field.max_select = Number(v))
+					}
+					options={selectModeOptions}
 				/>
 			</div>
 		{:else if field.type === 'autodate'}
-			<span class="rounded bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground">
-				{field.on_update ? 'Create/Update' : 'Create'}
-			</span>
+			<div class="w-36 shrink-0" title="Auto set on">
+				<Select
+					bind:value={() => autodateMode, (v) => setAutodateMode(v)}
+					options={autodateModeOptions}
+				/>
+			</div>
 		{:else}
 			<span class="rounded bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground">
 				{field.type}
@@ -233,7 +321,7 @@
 	</div>
 
 	{#if expanded}
-		<div class="space-y-3.5 border-t border-border/60 bg-muted/20 px-4 py-3.5">
+		<div transition:slide={{ duration: 180, easing: cubicOut }} class="space-y-3.5 border-t border-border/60 bg-muted/20 px-4 py-3.5">
 			{#if field.type === 'relation'}
 				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					<div>
@@ -584,8 +672,9 @@
 				/>
 			</div>
 
-			<!-- Bottom flags -->
-			<div class="flex flex-wrap items-center gap-5 pt-1">
+			<!-- Bottom flags + PocketBase ... (Duplicate / Remove) menu -->
+			<div class="flex flex-wrap items-center justify-between gap-4 pt-1">
+			<div class="flex flex-wrap items-center gap-5">
 				<Switch
 					checked={Boolean(field.required)}
 					onChange={(v) => (field.required = v)}
@@ -607,6 +696,46 @@
 					label="Unique"
 					disabled={isExisting}
 				/>
+			</div>
+			<div class="relative">
+				<button
+					type="button"
+					onclick={() => (moreMenuOpen = !moreMenuOpen)}
+					title="Field actions"
+					class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-muted text-muted-foreground transition hover:bg-accent hover:text-foreground"
+				>
+					<MoreHorizontal class="h-4 w-4" />
+				</button>
+				{#if moreMenuOpen}
+					<div
+						transition:fly={{ y: -4, duration: 130, easing: cubicOut }}
+						class="absolute right-0 bottom-full z-40 mb-1.5 w-32 rounded-lg border border-border bg-card p-1 shadow-xl"
+					>
+						{#if onDuplicate}
+							<button
+								type="button"
+								onclick={() => {
+									moreMenuOpen = false;
+									onDuplicate();
+								}}
+								class="flex w-full cursor-pointer items-center rounded-md px-3 py-1.5 text-left text-xs font-medium text-foreground transition hover:bg-muted"
+							>
+								Duplicate
+							</button>
+						{/if}
+						<button
+							type="button"
+							onclick={() => {
+								moreMenuOpen = false;
+								onRemove();
+							}}
+							class="flex w-full cursor-pointer items-center rounded-md px-3 py-1.5 text-left text-xs font-medium text-destructive transition hover:bg-destructive/10"
+						>
+							Remove
+						</button>
+					</div>
+				{/if}
+			</div>
 			</div>
 		</div>
 	{/if}
