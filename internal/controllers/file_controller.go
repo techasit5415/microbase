@@ -117,7 +117,7 @@ func parseThumbSpec(spec string) (int, int, bool) {
 	}
 	w, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
 	h, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
-	if err1 != nil || err2 != nil || (w <= 0 && h <= 0) || w > 2048 || h > 2048 {
+	if err1 != nil || err2 != nil || (w < 0 || h < 0 || (w == 0 && h == 0)) || w > 2048 || h > 2048 {
 		return 0, 0, false
 	}
 	return w, h, true
@@ -134,10 +134,13 @@ func resizeImage(r io.Reader, targetW, targetH int) ([]byte, string, bool) {
 		return nil, "", false
 	}
 	if targetW == 0 {
-		targetW = srcW * targetH / srcH
+		targetW = max(1, srcW*targetH/srcH)
 	}
 	if targetH == 0 {
-		targetH = srcH * targetW / srcW
+		targetH = max(1, srcH*targetW/srcW)
+	}
+	if targetW < 1 || targetH < 1 || targetW > 2048 || targetH > 2048 {
+		return nil, "", false
 	}
 	dst := image.NewRGBA(image.Rect(0, 0, targetW, targetH))
 	for y := 0; y < targetH; y++ {

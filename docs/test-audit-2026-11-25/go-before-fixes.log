@@ -1,0 +1,63 @@
+?   	github.com/techasit5415/microbase/cmd/server	[no test files]
+--- FAIL: TestCounterPreservesFixedWindow (0.00s)
+    memory_test.go:40: counter moved its expiry; continuous requests never reset
+2026/11/25 23:34:06 INFO cache backend switched backend=memory
+FAIL
+FAIL	github.com/techasit5415/microbase/internal/cache	0.005s
+?   	github.com/techasit5415/microbase/internal/config	[no test files]
+--- FAIL: TestThumbnailRejectsNegativeDimensions (0.00s)
+    file_controller_test.go:19: accepted -1x10
+    file_controller_test.go:19: accepted 10x-1
+--- FAIL: TestThumbnailPreservesAtLeastOnePixel (0.00s)
+    file_controller_test.go:28: small thumbnail failed
+FAIL
+FAIL	github.com/techasit5415/microbase/internal/controllers	0.014s
+ok  	github.com/techasit5415/microbase/internal/database	0.322s
+ok  	github.com/techasit5415/microbase/internal/middlewares	0.013s
+ok  	github.com/techasit5415/microbase/internal/models	0.004s
+ok  	github.com/techasit5415/microbase/internal/oauth	0.007s
+ok  	github.com/techasit5415/microbase/internal/realtime	0.006s
+?   	github.com/techasit5415/microbase/internal/response	[no test files]
+ok  	github.com/techasit5415/microbase/internal/routes	0.009s
+--- FAIL: TestPasswordRejectsMalformedHashes (0.03s)
+panic: runtime error: invalid memory address or nil pointer dereference [recovered, repanicked]
+[signal SIGSEGV: segmentation violation code=0x1 addr=0xd8 pc=0x8f7161]
+
+goroutine 94 [running]:
+testing.tRunner.func1.2({0xfb1910, 0x10e2a40})
+	/home/bornzi/.local/go/src/testing/testing.go:2125 +0x232
+testing.tRunner.func1()
+	/home/bornzi/.local/go/src/testing/testing.go:2128 +0x329
+panic({0xfb1910?, 0x10e2a40?})
+	/home/bornzi/.local/go/src/runtime/panic.go:859 +0x125
+golang.org/x/crypto/blake2b.(*digest).Write(0x0, {0x3cabc0dc93f0?, 0x4, 0x48efb3?})
+	/home/bornzi/go/pkg/mod/golang.org/x/crypto@v0.57.0/blake2b/blake2b.go:218 +0x21
+golang.org/x/crypto/argon2.blake2bHash({0x114dea0, 0x0, 0x0}, {0x3cabc0dc9490, 0x400, 0x400})
+	/home/bornzi/go/pkg/mod/golang.org/x/crypto@v0.57.0/argon2/blake2b.go:26 +0xba
+golang.org/x/crypto/argon2.extractKey({0x3cabc5022000?, 0x10000?, 0x10000?}, 0x1?, 0x10000?, 0x4?)
+	/home/bornzi/go/pkg/mod/golang.org/x/crypto@v0.57.0/argon2/argon2.go:258 +0x1ca
+golang.org/x/crypto/argon2.deriveKey(0x2, {0x3cabc0e07e60?, 0xcf1a40?, 0x106dce0?}, {0x114dea0?, 0x1003c90?, 0x491a01?}, {0x0, 0x0, 0x0}, ...)
+	/home/bornzi/go/pkg/mod/golang.org/x/crypto@v0.57.0/argon2/argon2.go:120 +0x1c5
+golang.org/x/crypto/argon2.IDKey(...)
+	/home/bornzi/go/pkg/mod/golang.org/x/crypto@v0.57.0/argon2/argon2.go:102
+github.com/techasit5415/microbase/internal/services.VerifyPassword({0x988666, 0x8}, {0x989b03?, 0xcf1a40?})
+	/home/bornzi/microbase/internal/services/password.go:52 +0x19e
+github.com/techasit5415/microbase/internal/services.TestPasswordRejectsMalformedHashes(0x3cabc0d72008)
+	/home/bornzi/microbase/internal/services/security_test.go:23 +0xd8
+testing.tRunner(0x3cabc0d72008, 0x106add0)
+	/home/bornzi/.local/go/src/testing/testing.go:2195 +0xea
+created by testing.(*T).Run in goroutine 1
+	/home/bornzi/.local/go/src/testing/testing.go:2260 +0x4d4
+FAIL	github.com/techasit5415/microbase/internal/services	0.275s
+--- FAIL: TestS3ObjectKeysAreNotDoubleEscaped (0.00s)
+    storage_test.go:56: key "folder/a b.txt" got path "/bucket/folder/a%20b.txt" want "/bucket/folder/a b.txt"
+    storage_test.go:56: key "ไทย.txt" got path "/bucket/%E0%B9%84%E0%B8%97%E0%B8%A2.txt" want "/bucket/ไทย.txt"
+    storage_test.go:56: key "a+b%20.txt" got path "/bucket/a+b%2520.txt" want "/bucket/a+b%20.txt"
+    storage_test.go:56: key "folder/a b.txt" got path "/folder/a%20b.txt" want "/folder/a b.txt"
+    storage_test.go:56: key "ไทย.txt" got path "/%E0%B9%84%E0%B8%97%E0%B8%A2.txt" want "/ไทย.txt"
+    storage_test.go:56: key "a+b%20.txt" got path "/a+b%2520.txt" want "/a+b%20.txt"
+FAIL
+FAIL	github.com/techasit5415/microbase/internal/storage	0.071s
+?   	github.com/techasit5415/microbase/ui	[no test files]
+?   	github.com/techasit5415/microbase/ui/node_modules/flatted/golang/pkg/flatted	[no test files]
+FAIL

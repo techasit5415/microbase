@@ -152,7 +152,13 @@ func ParseFilterToSQLWithBody(expr string, allowed map[string]models.FieldDef, c
 }
 
 func (p *filterParser) peek() fToken { return p.toks[p.pos] }
-func (p *filterParser) next() fToken { t := p.toks[p.pos]; p.pos++; return t }
+func (p *filterParser) next() fToken {
+	t := p.peek()
+	if t.kind != fTokEOF {
+		p.pos++
+	}
+	return t
+}
 
 func (p *filterParser) isColumnIdent(tok fToken) bool {
 	if tok.kind != fTokIdent {
@@ -294,7 +300,10 @@ func (p *filterParser) parseAtom() (string, error) {
 		if effOp == "=" {
 			return colSQL + " IS NULL", nil
 		}
-		return colSQL + " IS NOT NULL", nil
+		if effOp == "!=" {
+			return colSQL + " IS NOT NULL", nil
+		}
+		return "FALSE", nil
 	}
 
 	// When comparing against @request.auth.id (which may be int64 or "" when unauthenticated),
@@ -422,7 +431,13 @@ type dataRuleEval struct {
 }
 
 func (e *dataRuleEval) peek() fToken { return e.toks[e.pos] }
-func (e *dataRuleEval) next() fToken { t := e.toks[e.pos]; e.pos++; return t }
+func (e *dataRuleEval) next() fToken {
+	t := e.peek()
+	if t.kind != fTokEOF {
+		e.pos++
+	}
+	return t
+}
 
 func (e *dataRuleEval) evalOr() (bool, error) {
 	left, err := e.evalAnd()
@@ -475,6 +490,16 @@ func (e *dataRuleEval) evalAtom() (bool, error) {
 		return false, fmt.Errorf("expected operator after %q, got %q", lhs.val, op.val)
 	}
 	rhs := e.next()
+	for _, tok := range []fToken{lhs, rhs} {
+		if tok.kind != fTokIdent && tok.kind != fTokString && tok.kind != fTokNumber {
+			return false, fmt.Errorf("expected rule operand, got %q", tok.val)
+		}
+		if tok.kind == fTokNumber {
+			if _, err := strconv.ParseFloat(tok.val, 64); err != nil {
+				return false, err
+			}
+		}
+	}
 	lv, lNull := e.resolve(lhs)
 	rv, rNull := e.resolve(rhs)
 	return evalComparison(lv, lNull, op.val, rv, rNull), nil

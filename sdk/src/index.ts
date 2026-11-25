@@ -195,15 +195,18 @@ export class CollectionClient<T = Record<string, unknown>> {
   }
 
   subscribe(callback: (event: RealtimeEvent<T>) => void): () => void {
-    const url = `${this.client.baseUrl}/api/realtime?collection=${encodeURIComponent(this.name)}`;
+    const params = new URLSearchParams({ collection: this.name });
+    if (this.client.authStore.token) params.set('token', this.client.authStore.token);
+    const url = `${this.client.baseUrl}/api/realtime?${params}`;
     const es = new EventSource(url);
-    es.onmessage = (e) => {
+    const onEvent = (e: MessageEvent) => {
       try {
         callback(JSON.parse(e.data) as RealtimeEvent<T>);
       } catch {
         // ignore keepalive frames
       }
     };
+    for (const action of ['create', 'update', 'delete']) es.addEventListener(action, onEvent as EventListener);
     return () => es.close();
   }
 }
@@ -244,7 +247,7 @@ export class Microbase {
     const res = await fetch(`${this.baseUrl}/api/files`, { method: 'POST', headers, body: form });
     const json = await res.json();
     if (!res.ok) {
-      throw new MicrobaseError(res.status, json?.error?.code ?? 'UPLOAD_ERROR', json?.error?.message ?? res.statusText);
+      throw new MicrobaseError(res.status, json?.code ?? json?.error?.code ?? 'UPLOAD_ERROR', json?.message ?? json?.error?.message ?? res.statusText);
     }
     return json.data ?? json;
   }
@@ -262,11 +265,11 @@ export class Microbase {
     if (!res.ok) {
       throw new MicrobaseError(
         res.status,
-        json?.error?.code ?? 'REQUEST_FAILED',
-        json?.error?.message ?? res.statusText
+        json?.code ?? json?.error?.code ?? 'REQUEST_FAILED',
+        json?.message ?? json?.error?.message ?? res.statusText
       );
     }
-    return (json.data !== undefined ? json.data : json) as T;
+    return json as T;
   }
 }
 

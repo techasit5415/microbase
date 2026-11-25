@@ -3,12 +3,13 @@ package services
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/techasit5415/microbase/internal/models"
 )
 
 // VectorSearch ranks records by cosine distance (<=>) against a pgvector column.
-func (s *RecordService) VectorSearch(ctx context.Context, colName string, req models.VectorSearchRequest) ([]models.Record, error) {
+func (s *RecordService) VectorSearch(ctx context.Context, colName string, req models.VectorSearchRequest, claims *AuthClaims) ([]models.Record, error) {
 	col, err := s.collections.GetByName(ctx, colName)
 	if err != nil {
 		return nil, err
@@ -31,13 +32,22 @@ func (s *RecordService) VectorSearch(ctx context.Context, colName string, req mo
 		limit = 100
 	}
 
+	rule, ruleArgs, _, err := CompileAPIRule(col, "list", claims, nil, 3)
+	if err != nil {
+		return nil, err
+	}
 	vecLiteral := formatVectorLiteral(req.Vector)
 	querySQL := fmt.Sprintf(
 		`SELECT *, ("%s" <=> $1::vector) AS "_distance" FROM "%s" WHERE "%s" IS NOT NULL ORDER BY "%s" <=> $1::vector ASC LIMIT $2`,
 		field.Name, col.Name, field.Name, field.Name,
 	)
 
-	rows, err := s.pool.Query(ctx, querySQL, vecLiteral, limit)
+	args := []any{vecLiteral, limit}
+	if rule != "" {
+		querySQL = strings.Replace(querySQL, " ORDER BY ", " AND ("+rule+") ORDER BY ", 1)
+		args = append(args, ruleArgs...)
+	}
+	rows, err := s.pool.Query(ctx, querySQL, args...)
 	if err != nil {
 		return nil, fmt.Errorf("vector search: %w", err)
 	}

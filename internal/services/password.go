@@ -49,6 +49,9 @@ func VerifyPassword(password, encoded string) (bool, error) {
 		return false, err
 	}
 
+	if len(salt) != saltLen || len(expectedHash) != argonKeyLen {
+		return false, errors.New("invalid password hash length")
+	}
 	actualHash := argon2.IDKey([]byte(password), salt, argonTime, argonMemory, argonThreads, uint32(len(expectedHash)))
 	return subtle.ConstantTimeCompare(actualHash, expectedHash) == 1, nil
 }

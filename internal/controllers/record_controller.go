@@ -38,11 +38,11 @@ func (h *RecordController) List(c echo.Context) error {
 	}
 
 	opts := models.ListOptions{
-		Page:    page,
-		PerPage: perPage,
-		Sort:    c.QueryParam("sort"),
-		Search:  c.QueryParam("search"),
-		Filters: filters,
+		Page:       page,
+		PerPage:    perPage,
+		Sort:       c.QueryParam("sort"),
+		Search:     c.QueryParam("search"),
+		Filters:    filters,
 		FilterExpr: c.QueryParam("filter"),
 		AuthClaims: middlewares.GetAuthClaims(c),
 	}
@@ -53,7 +53,7 @@ func (h *RecordController) List(c echo.Context) error {
 	}
 	if exp := c.QueryParam("expand"); exp != "" {
 		if col, colErr := h.collections.GetByName(c.Request().Context(), c.Param("name")); colErr == nil {
-			h.service.ExpandRecords(c.Request().Context(), col, result.Items, exp)
+			h.service.ExpandRecords(c.Request().Context(), col, result.Items, exp, middlewares.GetAuthClaims(c))
 		}
 	}
 	for i := range result.Items {
@@ -72,7 +72,7 @@ func (h *RecordController) Get(c echo.Context) error {
 	}
 	if exp := c.QueryParam("expand"); exp != "" {
 		if col, colErr := h.collections.GetByName(c.Request().Context(), c.Param("name")); colErr == nil {
-			h.service.ExpandRecords(c.Request().Context(), col, []models.Record{rec}, exp)
+			h.service.ExpandRecords(c.Request().Context(), col, []models.Record{rec}, exp, middlewares.GetAuthClaims(c))
 		}
 	}
 	return response.OK(c, projectFields(h.maskHidden(c, rec), c.QueryParam("fields")))
@@ -89,7 +89,7 @@ func (h *RecordController) Create(c echo.Context) error {
 	if err != nil {
 		return handleRecordError(c, err)
 	}
-	return response.Created(c, rec)
+	return response.Created(c, h.maskHidden(c, rec))
 }
 
 // Update handles PATCH /api/collections/:name/records/:id.
@@ -129,9 +129,12 @@ func (h *RecordController) VectorSearch(c echo.Context) error {
 	if err := h.enforceRule(c, "list"); err != nil {
 		return handleRecordError(c, err)
 	}
-	items, err := h.service.VectorSearch(c.Request().Context(), c.Param("name"), req)
+	items, err := h.service.VectorSearch(c.Request().Context(), c.Param("name"), req, middlewares.GetAuthClaims(c))
 	if err != nil {
 		return handleRecordError(c, err)
+	}
+	for i := range items {
+		items[i] = h.maskHidden(c, items[i])
 	}
 	return response.OK(c, map[string]any{"items": items})
 }
@@ -164,20 +167,11 @@ func (h *RecordController) enforceRule(c echo.Context, action string) error {
 
 // maskHidden removes fields marked Hidden=true unless the requester is an authenticated superuser.
 func (h *RecordController) maskHidden(c echo.Context, rec models.Record) models.Record {
-	claims := middlewares.GetAuthClaims(c)
-	if claims != nil && claims.Role == "superuser" {
-		return rec
-	}
 	col, err := h.collections.GetByName(c.Request().Context(), c.Param("name"))
 	if err != nil || col == nil {
-		return rec
+		return models.Record{}
 	}
-	for _, f := range col.Fields {
-		if f.Hidden {
-			delete(rec, f.Name)
-		}
-	}
-	return rec
+	return services.VisibleRecord(col, middlewares.GetAuthClaims(c), rec)
 }
 
 // projectFields filters a record map down to only the comma-separated ?fields= keys when specified.

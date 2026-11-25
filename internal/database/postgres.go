@@ -79,12 +79,29 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		`ALTER TABLE _collections ADD COLUMN IF NOT EXISTS view_query TEXT NOT NULL DEFAULT '';`,
 		`ALTER TABLE _collections ADD COLUMN IF NOT EXISTS id_type TEXT NOT NULL DEFAULT 'serial';`,
 		`ALTER TABLE _collections ADD COLUMN IF NOT EXISTS id_autogenerate_pattern TEXT NOT NULL DEFAULT '';`,
+		`CREATE TABLE IF NOT EXISTS _oauth_providers (
+			name          TEXT PRIMARY KEY,
+			display_name  TEXT NOT NULL,
+			enabled       BOOLEAN NOT NULL DEFAULT FALSE,
+			client_id     TEXT NOT NULL DEFAULT '',
+			client_secret TEXT NOT NULL DEFAULT '',
+			issuer_url    TEXT NOT NULL DEFAULT '',
+			updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);`,
 		`ALTER TABLE _oauth_providers ADD COLUMN IF NOT EXISTS auth_url TEXT NOT NULL DEFAULT '';`,
 		`ALTER TABLE _oauth_providers ADD COLUMN IF NOT EXISTS token_url TEXT NOT NULL DEFAULT '';`,
 		`ALTER TABLE _oauth_providers ADD COLUMN IF NOT EXISTS userinfo_url TEXT NOT NULL DEFAULT '';`,
 		`ALTER TABLE _oauth_providers ADD COLUMN IF NOT EXISTS scopes TEXT NOT NULL DEFAULT 'openid email profile';`,
 		`ALTER TABLE _oauth_providers ADD COLUMN IF NOT EXISTS field_mapping JSONB NOT NULL DEFAULT '{}'::jsonb;`,
 		`ALTER TABLE _oauth_providers ADD COLUMN IF NOT EXISTS allowed_claims JSONB NOT NULL DEFAULT '{}'::jsonb;`,
+		`CREATE TABLE IF NOT EXISTS _webhooks (
+			id         BIGSERIAL PRIMARY KEY,
+			collection TEXT NOT NULL,
+			event      TEXT NOT NULL,
+			url        TEXT NOT NULL,
+			enabled    BOOLEAN NOT NULL DEFAULT TRUE,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);`,
 		`ALTER TABLE _webhooks ADD COLUMN IF NOT EXISTS secret TEXT NOT NULL DEFAULT '';`,
 		`ALTER TABLE _webhooks ADD COLUMN IF NOT EXISTS headers JSONB NOT NULL DEFAULT '{}'::jsonb;`,
 		`ALTER TABLE _webhooks ADD COLUMN IF NOT EXISTS max_retries INT NOT NULL DEFAULT 3;`,
@@ -98,23 +115,14 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_token_key ON _users (token_key) WHERE token_key <> '';`,
 		`ALTER TABLE _users ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT '';`,
 		`ALTER TABLE _users ADD COLUMN IF NOT EXISTS avatar TEXT NOT NULL DEFAULT '';`,
-		`INSERT INTO _collections (name, fields, api_rules, indexes)
+		`INSERT INTO _collections (name, type, fields, api_rules, indexes)
 		 VALUES (
-			'users',
+			'users', 'auth',
 			'[{"name":"name","type":"text"},{"name":"avatar","type":"file","max_select":1}]'::jsonb,
 			'{}'::jsonb,
 			'[]'::jsonb
 		 )
 		 ON CONFLICT (name) DO NOTHING;`,
-		`CREATE TABLE IF NOT EXISTS _oauth_providers (
-			name          TEXT PRIMARY KEY,
-			display_name  TEXT NOT NULL,
-			enabled       BOOLEAN NOT NULL DEFAULT FALSE,
-			client_id     TEXT NOT NULL DEFAULT '',
-			client_secret TEXT NOT NULL DEFAULT '',
-			issuer_url    TEXT NOT NULL DEFAULT '',
-			updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
-		);`,
 		`INSERT INTO _oauth_providers (name, display_name) VALUES
 			('google', 'Google'),
 			('discord', 'Discord'),
@@ -132,14 +140,6 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 			last_run_at TIMESTAMPTZ,
 			last_status TEXT NOT NULL DEFAULT '',
 			created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-		);`,
-		`CREATE TABLE IF NOT EXISTS _webhooks (
-			id         BIGSERIAL PRIMARY KEY,
-			collection TEXT NOT NULL,
-			event      TEXT NOT NULL,
-			url        TEXT NOT NULL,
-			enabled    BOOLEAN NOT NULL DEFAULT TRUE,
-			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);`,
 		`CREATE TABLE IF NOT EXISTS _oauth_accounts (
 			id               BIGSERIAL PRIMARY KEY,

@@ -7,17 +7,22 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v4"
+	"github.com/techasit5415/microbase/internal/middlewares"
+	"github.com/techasit5415/microbase/internal/models"
 	"github.com/techasit5415/microbase/internal/realtime"
+	"github.com/techasit5415/microbase/internal/services"
 )
 
 // RealtimeController streams Server-Sent Events (SSE) to connected clients.
 type RealtimeController struct {
-	hub *realtime.Hub
+	hub         *realtime.Hub
+	records     *services.RecordService
+	collections *services.CollectionService
 }
 
 // NewRealtimeController constructs a RealtimeController.
-func NewRealtimeController(hub *realtime.Hub) *RealtimeController {
-	return &RealtimeController{hub: hub}
+func NewRealtimeController(hub *realtime.Hub, records *services.RecordService, collections *services.CollectionService) *RealtimeController {
+	return &RealtimeController{hub: hub, records: records, collections: collections}
 }
 
 // Stream handles GET /api/realtime?collection=<optional>.
@@ -56,6 +61,32 @@ func (h *RealtimeController) Stream(c echo.Context) error {
 			if !open {
 				return nil
 			}
+			col, err := h.collections.GetByName(ctx, evt.Collection)
+			if err != nil {
+				continue
+			}
+			claims := middlewares.GetAuthClaims(c)
+			var rec models.Record
+			switch v := evt.Record.(type) {
+			case models.Record:
+				rec = v
+			case map[string]any:
+				rec = models.Record(v)
+			}
+			if rec == nil || rec["id"] == nil {
+				continue
+			}
+			if evt.Action == "delete" {
+				if !h.records.CanViewSnapshot(ctx, col, claims, evt.Snapshot) {
+					continue
+				}
+			} else {
+				rec, err = h.records.GetByID(ctx, evt.Collection, fmt.Sprint(rec["id"]), claims)
+				if err != nil {
+					continue
+				}
+			}
+			evt.Record = services.VisibleRecord(col, claims, rec)
 			payload, err := json.Marshal(evt)
 			if err != nil {
 				continue

@@ -1,0 +1,11 @@
+
+> ui@0.0.1 test
+> npm run test:unit -- --run --reporter=json --outputFile=../docs/test-audit-2026-11-25/ui-final.json
+
+
+> ui@0.0.1 test:unit
+> vitest --run --reporter=json --outputFile=../docs/test-audit-2026-11-25/ui-final.json
+
+(node:224479) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+JSON report written to /home/bornzi/microbase/docs/test-audit-2026-11-25/ui-final.json

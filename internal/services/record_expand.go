@@ -9,7 +9,7 @@ import (
 )
 
 // ExpandRecords resolves PocketBase-style ?expand=field1,field2 relation fields on a slice of records.
-func (s *RecordService) ExpandRecords(ctx context.Context, col *models.Collection, items []models.Record, expandParam string) {
+func (s *RecordService) ExpandRecords(ctx context.Context, col *models.Collection, items []models.Record, expandParam string, claims *AuthClaims) {
 	if col == nil || len(items) == 0 || strings.TrimSpace(expandParam) == "" {
 		return
 	}
@@ -32,76 +32,50 @@ func (s *RecordService) ExpandRecords(ctx context.Context, col *models.Collectio
 			continue
 		}
 
-		// Collect unique integer IDs referenced across items.
-		idSet := make(map[int64]struct{})
-		for _, rec := range items {
-			switch v := rec[fname].(type) {
-			case int64:
-				idSet[v] = struct{}{}
-			case int32:
-				idSet[int64(v)] = struct{}{}
-			case float64:
-				idSet[int64(v)] = struct{}{}
-			}
-		}
-		if len(idSet) == 0 {
-			continue
-		}
-
-		ids := make([]int64, 0, len(idSet))
-		for id := range idSet {
-			ids = append(ids, id)
-		}
-
-		query := fmt.Sprintf(`SELECT * FROM "%s" WHERE id = ANY($1)`, targetTable)
-		rows, err := s.pool.Query(ctx, query, ids)
+		target, err := s.collections.GetByName(ctx, f.CollectionName)
 		if err != nil {
 			continue
 		}
-		descs := rows.FieldDescriptions()
-		byID := make(map[int64]models.Record, len(ids))
-		for rows.Next() {
-			vals, err := rows.Values()
-			if err != nil {
-				continue
-			}
-			rel := make(models.Record, len(descs))
-			var rid int64
-			for i, fd := range descs {
-				colName := string(fd.Name)
-				if colName == "password_hash" {
-					continue
-				}
-				rel[colName] = vals[i]
-				if colName == "id" {
-					switch tv := vals[i].(type) {
-					case int64:
-						rid = tv
-					case int32:
-						rid = int64(tv)
-					}
-				}
-			}
-			if rid != 0 {
-				byID[rid] = rel
+		if f.Hidden && (claims == nil || claims.Role != "superuser") {
+			continue
+		}
+		rule, ruleArgs, _, err := CompileAPIRule(target, "view", claims, nil, 2)
+		if err != nil {
+			continue
+		}
+		ids := []string{}
+		for _, rec := range items {
+			if rec[fname] != nil {
+				ids = append(ids, fmt.Sprint(rec[fname]))
 			}
 		}
+		if len(ids) == 0 {
+			continue
+		}
+		query := fmt.Sprintf(`SELECT * FROM "%s" WHERE id::text = ANY($1::text[])`, targetTable)
+		args := []any{ids}
+		if rule != "" {
+			query += " AND (" + rule + ")"
+			args = append(args, ruleArgs...)
+		}
+		rows, err := s.pool.Query(ctx, query, args...)
+		if err != nil {
+			continue
+		}
+		related, err := scanRows(rows)
 		rows.Close()
-
+		if err != nil {
+			continue
+		}
+		byID := map[string]models.Record{}
+		for _, rec := range related {
+			byID[fmt.Sprint(rec["id"])] = VisibleRecord(target, claims, rec)
+		}
 		for _, rec := range items {
-			var rid int64
-			switch v := rec[fname].(type) {
-			case int64:
-				rid = v
-			case int32:
-				rid = int64(v)
-			case float64:
-				rid = int64(v)
-			}
-			if rel, found := byID[rid]; found {
+			if rel, ok := byID[fmt.Sprint(rec[fname])]; ok {
 				exp, _ := rec["expand"].(map[string]any)
 				if exp == nil {
-					exp = make(map[string]any)
+					exp = map[string]any{}
 					rec["expand"] = exp
 				}
 				exp[fname] = rel

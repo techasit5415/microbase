@@ -19,8 +19,14 @@ func (s *CollectionService) ExportSchema(ctx context.Context) (*models.SchemaExp
 	exported := make([]models.CreateCollectionRequest, 0, len(cols))
 	for _, c := range cols {
 		exported = append(exported, models.CreateCollectionRequest{
-			Name:   c.Name,
-			Fields: c.Fields,
+			Name:                  c.Name,
+			Type:                  c.Type,
+			ViewQuery:             c.ViewQuery,
+			IDType:                c.IDType,
+			IDAutogeneratePattern: c.IDAutogeneratePattern,
+			Fields:                c.Fields,
+			APIRules:              c.APIRules,
+			Indexes:               c.Indexes,
 		})
 	}
 

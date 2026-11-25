@@ -157,6 +157,17 @@ export function buildAndValidateRecordPayload(
 			}
 			payload[field.name] = raw;
 		} else if (field.type === 'select') {
+   if ((field.max_select ?? 1) > 1) {
+    try {
+     const choices: unknown = JSON.parse(raw);
+     if (!Array.isArray(choices) || choices.length > field.max_select! || !choices.every(v => typeof v === 'string' && (!field.values?.length || field.values.includes(v)))) {
+      return { error: `Field "${field.name}" must contain an array of valid choices within its selection limit.` };
+     }
+     payload[field.name] = choices;
+     continue;
+    } catch { return { error: `Field "${field.name}" contains invalid JSON.` }; }
+   }
+
 			if (field.values?.length && (field.max_select ?? 1) <= 1 && !field.values.includes(raw)) {
 				return { error: `Field "${field.name}" must be one of: ${field.values.join(', ')}.` };
 			}
@@ -175,7 +186,7 @@ export function buildAndValidateRecordPayload(
 			payload[field.name] = n;
 		} else if (field.type === 'float' || field.type === 'number') {
 			const n = Number(raw);
-			if (Number.isNaN(n)) {
+			if (!Number.isFinite(n)) {
 				return { error: `Field "${field.name}" must be a valid number.` };
 			}
 			if (field.only_int && !Number.isInteger(n)) {
@@ -197,7 +208,7 @@ export function buildAndValidateRecordPayload(
 		} else if (field.type === 'vector') {
 			try {
 				const parsed = JSON.parse(raw);
-				if (!Array.isArray(parsed) || !parsed.every((v) => typeof v === 'number')) {
+				if (!Array.isArray(parsed) || !parsed.every((v) => typeof v === 'number' && Number.isFinite(v))) {
 					return { error: `Vector field "${field.name}" must be a JSON array of numbers, e.g. [0.1, 0.2].` };
 				}
 				if (field.dimension && parsed.length !== field.dimension) {

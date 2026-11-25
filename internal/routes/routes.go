@@ -51,7 +51,7 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStor
 		authExtraCtrl := controllers.NewAuthExtraController(pool, authService, cacheStore)
 		superCtrl := controllers.NewSuperuserController(superService)
 		oauthCtrl := controllers.NewOAuthController(oauthService)
-		realtimeCtrl := controllers.NewRealtimeController(hub)
+		realtimeCtrl := controllers.NewRealtimeController(hub, recService, colService)
 		var savedS3 *storage.S3Config
 		var rawS3 string
 		if err := pool.QueryRow(context.Background(), `SELECT value FROM _settings WHERE key = 's3_config'`).Scan(&rawS3); err == nil && rawS3 != "" {
@@ -149,7 +149,7 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStor
 		api.PATCH("/webhooks/:id", webhookCtrl.Toggle, adminOnly)
 		api.POST("/webhooks/:id/test", webhookCtrl.Test, adminOnly)
 		api.DELETE("/webhooks/:id", webhookCtrl.Delete, adminOnly)
-		api.GET("/realtime", realtimeCtrl.Stream)
+		api.GET("/realtime", realtimeCtrl.Stream, middlewares.OptionalAuth(authService))
 		api.POST("/files", fileCtrl.Upload)
 		api.GET("/files/:filename", fileCtrl.Serve)
 		api.GET("/system/:table", systemCtrl.List, adminOnly)

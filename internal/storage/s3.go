@@ -11,7 +11,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"path"
 	"strings"
 	"time"
 )
@@ -46,22 +45,18 @@ func (s *S3Storage) objectURL(key string) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	escapedKey := url.PathEscape(strings.TrimLeft(key, "/"))
-	escapedKey = strings.ReplaceAll(escapedKey, "%2F", "/")
-
+	objectKey := strings.TrimLeft(key, "/")
 	if s.cfg.ForcePathStyle {
-		u.Path = "/" + path.Join(s.cfg.Bucket, escapedKey)
-		if key == "" {
-			u.Path = "/" + s.cfg.Bucket
+		u.Path = "/" + s.cfg.Bucket
+		if objectKey != "" {
+			u.Path += "/" + objectKey
 		}
 	} else {
 		u.Host = s.cfg.Bucket + "." + u.Host
-		if key == "" {
-			u.Path = "/"
-		} else {
-			u.Path = "/" + escapedKey
-		}
+		u.Path = "/" + objectKey
 	}
+	// url.URL.Path contains decoded text; escaping it first encodes percent twice.
+	u.RawPath = ""
 	return u.String(), u.Host, nil
 }
 

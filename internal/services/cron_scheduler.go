@@ -69,12 +69,14 @@ func CronMatches(expr string, t time.Time) bool {
 }
 
 func matchCronField(field string, val, minVal, maxVal int) (bool, error) {
+	matched := false
 	for _, part := range strings.Split(field, ",") {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			return false, fmt.Errorf("empty segment")
 		}
 		step := 1
+		hasStep := strings.Contains(part, "/")
 		if strings.Contains(part, "/") {
 			sp := strings.Split(part, "/")
 			if len(sp) != 2 {
@@ -89,7 +91,7 @@ func matchCronField(field string, val, minVal, maxVal int) (bool, error) {
 		}
 		if part == "*" {
 			if (val-minVal)%step == 0 {
-				return true, nil
+				matched = true
 			}
 			continue
 		}
@@ -104,7 +106,7 @@ func matchCronField(field string, val, minVal, maxVal int) (bool, error) {
 				return false, fmt.Errorf("range out of bounds %q", part)
 			}
 			if val >= lo && val <= hi && (val-lo)%step == 0 {
-				return true, nil
+				matched = true
 			}
 			continue
 		}
@@ -112,11 +114,11 @@ func matchCronField(field string, val, minVal, maxVal int) (bool, error) {
 		if err != nil || num < minVal || num > maxVal {
 			return false, fmt.Errorf("value out of bounds %q", part)
 		}
-		if val == num {
-			return true, nil
+		if val == num || (hasStep && val >= num && (val-num)%step == 0) {
+			matched = true
 		}
 	}
-	return false, nil
+	return matched, nil
 }
 
 // ExecuteCustomCron runs a custom HTTP or SQL cron job and persists last_run_at & last_status.
@@ -194,6 +196,7 @@ func StartCronScheduler(pool *pgxpool.Pool) {
 		now := time.Now()
 		next := now.Truncate(time.Minute).Add(time.Minute)
 		time.Sleep(time.Until(next))
+		runDueCrons(pool, next)
 
 		ticker := time.NewTicker(time.Minute)
 		defer ticker.Stop()
@@ -207,8 +210,8 @@ func StartCronScheduler(pool *pgxpool.Pool) {
 
 func runDueCrons(pool *pgxpool.Pool, now time.Time) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	rows, err := pool.Query(ctx, `SELECT id, expression, kind, target, method, payload, description, enabled FROM _crons WHERE enabled = TRUE`)
-	cancel()
 	if err != nil {
 		return
 	}

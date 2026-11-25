@@ -298,17 +298,28 @@ func (s *RecordService) Delete(ctx context.Context, colName string, rawID string
 		args = append(args, ruleArgs...)
 	}
 
-	tag, err := s.pool.Exec(ctx, query, args...)
+	rows, err := s.pool.Query(ctx, query+" RETURNING *", args...)
 	if err != nil {
 		return fmt.Errorf("delete record: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
+	deleted, err := scanRows(rows)
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	if len(deleted) == 0 {
 		if ruleSQL != "" && s.recordExists(ctx, col.Name, idVal) {
 			return ErrForbidden
 		}
 		return ErrRecordNotFound
 	}
-	s.publish("delete", col.Name, map[string]any{"id": idVal})
+	payload := map[string]any{"id": idVal}
+	if s.hub != nil {
+		s.hub.Publish(realtime.Event{Action: "delete", Collection: col.Name, Record: payload, Snapshot: deleted[0]})
+	}
+	if s.webhooks != nil {
+		s.webhooks.DispatchAsync(col.Name, "delete", payload)
+	}
 	return nil
 }
 func (s *RecordService) publish(action, colName string, record any) {

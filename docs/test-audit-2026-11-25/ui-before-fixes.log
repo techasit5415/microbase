@@ -1,0 +1,67 @@
+
+> ui@0.0.1 test
+> npm run test:unit -- --run
+
+
+> ui@0.0.1 test:unit
+> vitest --run
+
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.1.1 [39m[90m/home/bornzi/microbase/ui[39m
+
+(node:221839) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ [32m✓[39m [30m[42m server [49m[39m src/lib/api/sdk.spec.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 62[2mms[22m[39m
+ [32m✓[39m [30m[42m server [49m[39m src/lib/vitest-examples/greet.spec.ts [2m([22m[2m1 test[22m[2m)[22m[32m 6[2mms[22m[39m
+ [31m❯[39m [30m[42m server [49m[39m src/lib/validation/validators.spec.ts [2m([22m[2m4 tests[22m[2m | [22m[31m2 failed[39m[2m)[22m[32m 20[2mms[22m[39m
+   [32m✓[39m rejects duplicate fields and unknown index columns[32m 2[2mms[22m[39m
+[31m   [31m×[31m rejects non-finite numbers before JSON converts them to null[39m[32m 6[2mms[22m[39m
+[31m   [31m×[31m parses multi-select arrays and validates all choices[39m[32m 9[2mms[22m[39m
+   [32m✓[39m validates required, JSON, vectors and booleans[32m 1[2mms[22m[39m
+ [32m✓[39m [30m[43m client (chromium) [49m[39m src/lib/vitest-examples/Welcome.svelte.spec.ts [2m([22m[2m1 test[22m[2m)[22m[32m 27[2mms[22m[39m
+ [32m✓[39m [30m[43m client (chromium) [49m[39m src/lib/components/records/PaginationBar.svelte.spec.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 182[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 2 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m [30m[42m server [49m[39m src/lib/validation/validators.spec.ts[2m > [22mrejects non-finite numbers before JSON converts them to null
+[31m[1mAssertionError[22m: expected undefined to be defined[39m
+[36m [2m❯[22m src/lib/validation/validators.spec.ts:[2m7:140[22m[39m
+    [90m  5|[39m  expect(validate('posts',[],[{name:'idx_missing',columns:['missing']}]…
+    [90m  6|[39m })[33m;[39m
+    [90m  7|[39m test('rejects non-finite numbers before JSON converts them to null',()…
+    [90m   |[39m                                                                                                                                            [31m^[39m
+    [90m  8|[39m [34mtest[39m([32m'parses multi-select arrays and validates all choices'[39m[33m,[39m()[33m=>[39m{
+    [90m  9|[39m  const fields=[{name:'tags',type:'select',values:['a','b'],max_select:…
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m [30m[42m server [49m[39m src/lib/validation/validators.spec.ts[2m > [22mparses multi-select arrays and validates all choices
+[31m[1mAssertionError[22m: expected { tags: '["a","b"]' } to deeply equal { tags: [ 'a', 'b' ] }[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[2m  {[22m
+[32m-   "tags": [[39m
+[32m-     "a",[39m
+[32m-     "b",[39m
+[32m-   ],[39m
+[31m+   "tags": "[\"a\",\"b\"]",[39m
+[2m  }[22m
+
+[36m [2m❯[22m src/lib/validation/validators.spec.ts:[2m10:54[22m[39m
+    [90m  8|[39m [34mtest[39m([32m'parses multi-select arrays and validates all choices'[39m[33m,[39m()[33m=>[39m{
+    [90m  9|[39m  const fields=[{name:'tags',type:'select',values:['a','b'],max_select:…
+    [90m 10|[39m  expect(build(fields,{tags:'["a","b"]'},{}).payload).toEqual({tags:['a…
+    [90m   |[39m                                                      [31m^[39m
+    [90m 11|[39m  [34mexpect[39m([34mbuild[39m(fields[33m,[39m{tags[33m:[39m[32m'["invalid"]'[39m}[33m,[39m{})[33m.[39merror)[33m.[39m[34mtoBeDefined[39m()[33m;[39m
+    [90m 12|[39m })[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m4 passed[39m[22m[90m (5)[39m
+[2m      Tests [22m [1m[31m2 failed[39m[22m[2m | [22m[1m[32m9 passed[39m[22m[90m (11)[39m
+[2m   Start at [22m 23:34:13
+[2m   Duration [22m 2.44s[2m (worker 62%, import 20%, transform 9%, tests 9%)[22m
+

@@ -117,6 +117,10 @@ func (h *CollectionAuthController) Register(c echo.Context) error {
 	defer rows.Close()
 
 	if !rows.Next() {
+		var pgErr *pgconn.PgError
+		if errors.As(rows.Err(), &pgErr) && pgErr.Code == "23505" {
+			return response.Error(c, http.StatusConflict, "EMAIL_EXISTS", "email already registered")
+		}
 		return response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to create auth record")
 	}
 	descs := rows.FieldDescriptions()

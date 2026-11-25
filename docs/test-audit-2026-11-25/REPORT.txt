@@ -1,0 +1,653 @@
+MICROBASE TEST AUDIT — 2026-11-25 (Asia/Bangkok)
+Project: /home/bornzi/microbase
+
+SUMMARY
+Go test results (including subtests): 40; pass=40; fail=0; skip=0
+UI: total=11; passed=11; failed=0; pending=0
+Go statement coverage: total:												(statements)			19.8%
+
+COMMANDS (working directory /home/bornzi/microbase unless noted)
+MICROBASE_TEST_LOCAL_ENV=1 go test -count=1 -race -coverprofile=docs/test-audit-2026-11-25/coverage.out -json ./...
+go vet ./...
+go tool cover -func=docs/test-audit-2026-11-25/coverage.out
+ui/: npm run check
+ui/: npm test -- --reporter=json --outputFile=../docs/test-audit-2026-11-25/ui-final.json
+ui/: npm run build
+
+GO TEST FILES AND CASE RESULTS
+
+/home/bornzi/microbase/internal/cache/memory_test.go
+  TestMemoryLifecycle: pass
+  TestCounterPreservesFixedWindow: pass
+  TestConcurrentCounter: pass
+  TestSwitchToMemory: pass
+
+/home/bornzi/microbase/internal/controllers/file_controller_test.go
+  TestThumbnailRejectsNegativeDimensions: pass
+  TestThumbnailPreservesAtLeastOnePixel: pass
+  TestFileUploadDownload: pass
+
+/home/bornzi/microbase/internal/database/postgres_test.go
+  TestFreshDatabaseMigrations: pass
+
+/home/bornzi/microbase/internal/middlewares/auth_test.go
+  TestRequireSuperuserGuard: pass
+
+/home/bornzi/microbase/internal/models/validation_test.go
+  TestIdentifierValidation: pass
+  TestFieldTypeBoundaries: pass
+  TestPaginationNormalization: pass
+
+/home/bornzi/microbase/internal/oauth/oidc_test.go
+  TestCheckAllowedClaimsDepartmentLock: pass
+
+/home/bornzi/microbase/internal/realtime/hub_test.go
+  TestHubFiltersAndUnsubscribe: pass
+  TestHubConcurrentPublishAndUnsubscribe: pass
+  TestDeleteSnapshotNeverSerialized: pass
+
+/home/bornzi/microbase/internal/routes/e2e_test.go
+  TestHealthEndpointIncludesVersion: pass
+
+/home/bornzi/microbase/internal/services/bugfix_test.go
+  TestIncompleteFiltersDoNotPanic: pass
+  TestCronRejectsInvalidTrailingSegments: pass
+  TestVisibleRecordDoesNotMutatePublishedRecord: pass
+  TestNullOrderingDoesNotBecomeNotNull: pass
+
+/home/bornzi/microbase/internal/services/cron_scheduler_test.go
+  TestCronExprMatching: pass
+
+/home/bornzi/microbase/internal/services/record_access_test.go
+  TestRelationAndVectorAccess: pass
+
+/home/bornzi/microbase/internal/services/rules_test.go
+  TestCompileAPIRuleRowLevel: pass
+  TestUsersCollectionRowLevelRule: pass
+
+/home/bornzi/microbase/internal/services/security_test.go
+  TestPasswordRoundTrip: pass
+  TestPasswordRejectsMalformedHashes: pass
+  TestGeneratedIDs: pass
+  TestSchemaRejectsInvalidAndDuplicateFields: pass
+
+/home/bornzi/microbase/internal/storage/storage_test.go
+  TestLocalStorageLifecycle: pass
+  TestS3ObjectKeysAreNotDoubleEscaped: pass
+  TestS3HTTPRoundTrip: pass
+
+UI TEST FILES AND CASE RESULTS
+
+/home/bornzi/microbase/ui/src/lib/api/sdk.spec.ts
+  SDK preserves a record with a data field: passed
+  SDK reports backend error code and message: passed
+  SDK receives named realtime events and closes subscription: passed
+
+/home/bornzi/microbase/ui/src/lib/validation/validators.spec.ts
+  rejects duplicate fields and unknown index columns: passed
+  rejects non-finite numbers before JSON converts them to null: passed
+  parses multi-select arrays and validates all choices: passed
+  validates required, JSON, vectors and booleans: passed
+
+/home/bornzi/microbase/ui/src/lib/vitest-examples/greet.spec.ts
+  greet returns a greeting: passed
+
+/home/bornzi/microbase/ui/src/lib/vitest-examples/Welcome.svelte.spec.ts
+  Welcome.svelte renders greetings for host and guest: passed
+
+/home/bornzi/microbase/ui/src/lib/components/records/PaginationBar.svelte.spec.ts
+  first page disables previous and next emits page 2: passed
+  empty collection disables both navigation buttons: passed
+
+CONFIRMED FAILURES FIXED THIS ROUND
+1. internal/cache/memory.go: repeated counter increments extended expiry indefinitely; preserve fixed window. Expired Get now deletes under lock.
+2. internal/services/password.go: empty decoded Argon2 hash caused panic; validate hash/salt lengths.
+3. internal/controllers/file_controller.go: rejected negative thumbnail dimensions; avoid zero-pixel auto dimension and bound computed size.
+4. internal/storage/s3.go: URL keys with spaces/Thai/percent were escaped twice; store decoded URL path.
+5. ui/src/lib/validation/validators.ts: reject Infinity/non-finite numbers and decode/validate multi-select arrays.
+
+EVIDENCE AND LIMITS
+Before-fix logs: /home/bornzi/microbase/docs/test-audit-2026-11-25/go-before-fixes.log; /home/bornzi/microbase/docs/test-audit-2026-11-25/ui-before-fixes.log
+Database tests ran against actual configured PostgreSQL using temporary tables/separate schema; no production rows intentionally changed.
+S3 HTTP tests use a local mock endpoint; NOT a real AWS/R2/MinIO account or full independent signature verification.
+OAuth provider login, real Redis failover, SMTP delivery, external webhooks/FCM, backup restore, and all full-browser admin workflows were NOT verified end to end.
+Existing tests were all selected; no test filters, test.only or exclusions were added. Tests without coverage are not claimed as passed.
+Go coverage is 19.8%, not 100%. UI has component/unit tests, not full app E2E.
+
+SOURCE INVENTORY — each file compiled/typechecked; this does NOT imply behavioral coverage
+/home/bornzi/microbase/cmd/server/main.go
+/home/bornzi/microbase/internal/cache/cache.go
+/home/bornzi/microbase/internal/cache/memory.go
+/home/bornzi/microbase/internal/cache/memory_test.go
+/home/bornzi/microbase/internal/cache/redis.go
+/home/bornzi/microbase/internal/cache/switchable.go
+/home/bornzi/microbase/internal/config/config.go
+/home/bornzi/microbase/internal/config/version.go
+/home/bornzi/microbase/internal/controllers/admin_tools_controller.go
+/home/bornzi/microbase/internal/controllers/auth_controller.go
+/home/bornzi/microbase/internal/controllers/auth_extra_controller.go
+/home/bornzi/microbase/internal/controllers/collection_auth_controller.go
+/home/bornzi/microbase/internal/controllers/collection_controller.go
+/home/bornzi/microbase/internal/controllers/file_controller.go
+/home/bornzi/microbase/internal/controllers/file_controller_test.go
+/home/bornzi/microbase/internal/controllers/health_controller.go
+/home/bornzi/microbase/internal/controllers/oauth_controller.go
+/home/bornzi/microbase/internal/controllers/openapi_controller.go
+/home/bornzi/microbase/internal/controllers/ops_controller.go
+/home/bornzi/microbase/internal/controllers/realtime_controller.go
+/home/bornzi/microbase/internal/controllers/record_controller.go
+/home/bornzi/microbase/internal/controllers/schema_controller.go
+/home/bornzi/microbase/internal/controllers/settings_controller.go
+/home/bornzi/microbase/internal/controllers/superuser_controller.go
+/home/bornzi/microbase/internal/controllers/system_controller.go
+/home/bornzi/microbase/internal/controllers/webhook_controller.go
+/home/bornzi/microbase/internal/database/postgres.go
+/home/bornzi/microbase/internal/database/postgres_test.go
+/home/bornzi/microbase/internal/middlewares/auth.go
+/home/bornzi/microbase/internal/middlewares/auth_test.go
+/home/bornzi/microbase/internal/middlewares/logger.go
+/home/bornzi/microbase/internal/middlewares/ratelimit.go
+/home/bornzi/microbase/internal/models/collection.go
+/home/bornzi/microbase/internal/models/record.go
+/home/bornzi/microbase/internal/models/user.go
+/home/bornzi/microbase/internal/models/validation_test.go
+/home/bornzi/microbase/internal/oauth/discord.go
+/home/bornzi/microbase/internal/oauth/google.go
+/home/bornzi/microbase/internal/oauth/oidc.go
+/home/bornzi/microbase/internal/oauth/oidc_test.go
+/home/bornzi/microbase/internal/oauth/provider.go
+/home/bornzi/microbase/internal/realtime/hub.go
+/home/bornzi/microbase/internal/realtime/hub_test.go
+/home/bornzi/microbase/internal/response/response.go
+/home/bornzi/microbase/internal/routes/e2e_test.go
+/home/bornzi/microbase/internal/routes/routes.go
+/home/bornzi/microbase/internal/services/app_settings.go
+/home/bornzi/microbase/internal/services/auth_service.go
+/home/bornzi/microbase/internal/services/autogen.go
+/home/bornzi/microbase/internal/services/bugfix_test.go
+/home/bornzi/microbase/internal/services/collection_service.go
+/home/bornzi/microbase/internal/services/cron_scheduler.go
+/home/bornzi/microbase/internal/services/cron_scheduler_test.go
+/home/bornzi/microbase/internal/services/filter_parser.go
+/home/bornzi/microbase/internal/services/oauth_service.go
+/home/bornzi/microbase/internal/services/password.go
+/home/bornzi/microbase/internal/services/record_access_test.go
+/home/bornzi/microbase/internal/services/record_expand.go
+/home/bornzi/microbase/internal/services/record_helpers.go
+/home/bornzi/microbase/internal/services/record_query.go
+/home/bornzi/microbase/internal/services/record_service.go
+/home/bornzi/microbase/internal/services/record_vector.go
+/home/bornzi/microbase/internal/services/record_visibility.go
+/home/bornzi/microbase/internal/services/rules.go
+/home/bornzi/microbase/internal/services/rules_test.go
+/home/bornzi/microbase/internal/services/schema_ddl.go
+/home/bornzi/microbase/internal/services/schema_portability.go
+/home/bornzi/microbase/internal/services/security_test.go
+/home/bornzi/microbase/internal/services/superuser_service.go
+/home/bornzi/microbase/internal/services/webhook_service.go
+/home/bornzi/microbase/internal/storage/local.go
+/home/bornzi/microbase/internal/storage/s3.go
+/home/bornzi/microbase/internal/storage/storage.go
+/home/bornzi/microbase/internal/storage/storage_test.go
+/home/bornzi/microbase/sdk/src/index.ts
+/home/bornzi/microbase/ui/src/+layout.ts
+/home/bornzi/microbase/ui/src/app.d.ts
+/home/bornzi/microbase/ui/src/app.html
+/home/bornzi/microbase/ui/src/lib/api/client.ts
+/home/bornzi/microbase/ui/src/lib/api/collections.ts
+/home/bornzi/microbase/ui/src/lib/api/oauth.ts
+/home/bornzi/microbase/ui/src/lib/api/records.ts
+/home/bornzi/microbase/ui/src/lib/api/sdk.spec.ts
+/home/bornzi/microbase/ui/src/lib/api/system.ts
+/home/bornzi/microbase/ui/src/lib/api/types.ts
+/home/bornzi/microbase/ui/src/lib/api/users.ts
+/home/bornzi/microbase/ui/src/lib/assets/favicon.svg
+/home/bornzi/microbase/ui/src/lib/components/collections/CollectionDrawer.svelte
+/home/bornzi/microbase/ui/src/lib/components/collections/CollectionItem.svelte
+/home/bornzi/microbase/ui/src/lib/components/collections/CollectionSidebar.svelte
+/home/bornzi/microbase/ui/src/lib/components/collections/FieldRowInput.svelte
+/home/bornzi/microbase/ui/src/lib/components/collections/IndexModal.svelte
+/home/bornzi/microbase/ui/src/lib/components/collections/NewFieldPicker.svelte
+/home/bornzi/microbase/ui/src/lib/components/layout/IconRail.svelte
+/home/bornzi/microbase/ui/src/lib/components/layout/SuperuserGate.svelte
+/home/bornzi/microbase/ui/src/lib/components/layout/ThemeToggle.svelte
+/home/bornzi/microbase/ui/src/lib/components/oauth/AuthOptionsTab.svelte
+/home/bornzi/microbase/ui/src/lib/components/oauth/ProviderIcon.svelte
+/home/bornzi/microbase/ui/src/lib/components/records/ApiPreviewDrawer.svelte
+/home/bornzi/microbase/ui/src/lib/components/records/PaginationBar.svelte
+/home/bornzi/microbase/ui/src/lib/components/records/PaginationBar.svelte.spec.ts
+/home/bornzi/microbase/ui/src/lib/components/records/RecordFormDialog.svelte
+/home/bornzi/microbase/ui/src/lib/components/records/RecordsTable.svelte
+/home/bornzi/microbase/ui/src/lib/components/records/RecordsToolbar.svelte
+/home/bornzi/microbase/ui/src/lib/components/settings/ApplicationCard.svelte
+/home/bornzi/microbase/ui/src/lib/components/settings/BackupsCard.svelte
+/home/bornzi/microbase/ui/src/lib/components/settings/CronsCard.svelte
+/home/bornzi/microbase/ui/src/lib/components/settings/DatabaseCard.svelte
+/home/bornzi/microbase/ui/src/lib/components/settings/MailSettingsCard.svelte
+/home/bornzi/microbase/ui/src/lib/components/settings/RateLimitsCard.svelte
+/home/bornzi/microbase/ui/src/lib/components/settings/S3StorageCard.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/ConfirmDialog.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/Drawer.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/Select.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/Switch.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/Toaster.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/badge/badge.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/badge/index.ts
+/home/bornzi/microbase/ui/src/lib/components/ui/button/button.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/button/index.ts
+/home/bornzi/microbase/ui/src/lib/components/ui/card/card-action.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/card/card-content.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/card/card-description.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/card/card-footer.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/card/card-header.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/card/card-title.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/card/card.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/card/index.ts
+/home/bornzi/microbase/ui/src/lib/components/ui/dialog/dialog-close.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/dialog/dialog-content.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/dialog/dialog-description.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/dialog/dialog-footer.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/dialog/dialog-header.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/dialog/dialog-overlay.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/dialog/dialog-portal.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/dialog/dialog-title.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/dialog/dialog-trigger.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/dialog/dialog.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/dialog/index.ts
+/home/bornzi/microbase/ui/src/lib/components/ui/input/index.ts
+/home/bornzi/microbase/ui/src/lib/components/ui/input/input.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/table/index.ts
+/home/bornzi/microbase/ui/src/lib/components/ui/table/table-body.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/table/table-caption.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/table/table-cell.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/table/table-footer.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/table/table-head.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/table/table-header.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/table/table-row.svelte
+/home/bornzi/microbase/ui/src/lib/components/ui/table/table.svelte
+/home/bornzi/microbase/ui/src/lib/index.ts
+/home/bornzi/microbase/ui/src/lib/stores/appSettings.svelte.ts
+/home/bornzi/microbase/ui/src/lib/stores/confirm.svelte.ts
+/home/bornzi/microbase/ui/src/lib/stores/toast.svelte.ts
+/home/bornzi/microbase/ui/src/lib/utils/highlight.ts
+/home/bornzi/microbase/ui/src/lib/utils.ts
+/home/bornzi/microbase/ui/src/lib/validation/validators.spec.ts
+/home/bornzi/microbase/ui/src/lib/validation/validators.ts
+/home/bornzi/microbase/ui/src/lib/vitest-examples/Welcome.svelte
+/home/bornzi/microbase/ui/src/lib/vitest-examples/Welcome.svelte.spec.ts
+/home/bornzi/microbase/ui/src/lib/vitest-examples/greet.spec.ts
+/home/bornzi/microbase/ui/src/lib/vitest-examples/greet.ts
+/home/bornzi/microbase/ui/src/routes/+error.svelte
+/home/bornzi/microbase/ui/src/routes/+layout.svelte
+/home/bornzi/microbase/ui/src/routes/+layout.ts
+/home/bornzi/microbase/ui/src/routes/+page.svelte
+/home/bornzi/microbase/ui/src/routes/collections/+page.svelte
+/home/bornzi/microbase/ui/src/routes/layout.css
+/home/bornzi/microbase/ui/src/routes/logs/+page.svelte
+/home/bornzi/microbase/ui/src/routes/settings/+page.svelte
+/home/bornzi/microbase/ui/src/routes/sql/+page.svelte
+
+PER-FUNCTION GO COVERAGE (0.0% identifies unexercised functions)
+github.com/techasit5415/microbase/cmd/server/main.go:22:					main				0.0%
+github.com/techasit5415/microbase/internal/cache/cache.go:23:					NewStore			0.0%
+github.com/techasit5415/microbase/internal/cache/memory.go:20:					NewMemoryStore			100.0%
+github.com/techasit5415/microbase/internal/cache/memory.go:26:					Get				100.0%
+github.com/techasit5415/microbase/internal/cache/memory.go:40:					Set				85.7%
+github.com/techasit5415/microbase/internal/cache/memory.go:52:					Delete				100.0%
+github.com/techasit5415/microbase/internal/cache/memory.go:59:					Incr				100.0%
+github.com/techasit5415/microbase/internal/cache/memory.go:82:					Backend				100.0%
+github.com/techasit5415/microbase/internal/cache/memory.go:83:					Close				100.0%
+github.com/techasit5415/microbase/internal/cache/redis.go:15:					NewRedisStore			0.0%
+github.com/techasit5415/microbase/internal/cache/redis.go:30:					Get				0.0%
+github.com/techasit5415/microbase/internal/cache/redis.go:38:					Set				0.0%
+github.com/techasit5415/microbase/internal/cache/redis.go:42:					Delete				0.0%
+github.com/techasit5415/microbase/internal/cache/redis.go:46:					Incr				0.0%
+github.com/techasit5415/microbase/internal/cache/redis.go:57:					Backend				0.0%
+github.com/techasit5415/microbase/internal/cache/redis.go:58:					Close				0.0%
+github.com/techasit5415/microbase/internal/cache/switchable.go:16:				NewSwitchableStore		100.0%
+github.com/techasit5415/microbase/internal/cache/switchable.go:21:				Switch				73.3%
+github.com/techasit5415/microbase/internal/cache/switchable.go:45:				current				100.0%
+github.com/techasit5415/microbase/internal/cache/switchable.go:51:				Get				100.0%
+github.com/techasit5415/microbase/internal/cache/switchable.go:54:				Set				100.0%
+github.com/techasit5415/microbase/internal/cache/switchable.go:57:				Delete				0.0%
+github.com/techasit5415/microbase/internal/cache/switchable.go:60:				Incr				0.0%
+github.com/techasit5415/microbase/internal/cache/switchable.go:63:				Backend				0.0%
+github.com/techasit5415/microbase/internal/cache/switchable.go:64:				Close				0.0%
+github.com/techasit5415/microbase/internal/config/config.go:16:					Load				0.0%
+github.com/techasit5415/microbase/internal/config/config.go:28:					getEnv				0.0%
+github.com/techasit5415/microbase/internal/controllers/admin_tools_controller.go:23:		NewAdminToolsController		0.0%
+github.com/techasit5415/microbase/internal/controllers/admin_tools_controller.go:28:		ExecuteSQL			0.0%
+github.com/techasit5415/microbase/internal/controllers/admin_tools_controller.go:90:		Batch				0.0%
+github.com/techasit5415/microbase/internal/controllers/auth_controller.go:23:			NewAuthController		0.0%
+github.com/techasit5415/microbase/internal/controllers/auth_controller.go:27:			usersCollection			0.0%
+github.com/techasit5415/microbase/internal/controllers/auth_controller.go:38:			maskHiddenUserFields		0.0%
+github.com/techasit5415/microbase/internal/controllers/auth_controller.go:51:			Register			0.0%
+github.com/techasit5415/microbase/internal/controllers/auth_controller.go:80:			Login				0.0%
+github.com/techasit5415/microbase/internal/controllers/auth_controller.go:97:			Me				0.0%
+github.com/techasit5415/microbase/internal/controllers/auth_controller.go:111:			ListUsers			0.0%
+github.com/techasit5415/microbase/internal/controllers/auth_controller.go:144:			GetUser				0.0%
+github.com/techasit5415/microbase/internal/controllers/auth_controller.go:170:			DeleteUser			0.0%
+github.com/techasit5415/microbase/internal/controllers/auth_controller.go:192:			UpdateUser			0.0%
+github.com/techasit5415/microbase/internal/controllers/auth_extra_controller.go:34:		NewAuthExtraController		0.0%
+github.com/techasit5415/microbase/internal/controllers/auth_extra_controller.go:38:		sendEmailOrLog			0.0%
+github.com/techasit5415/microbase/internal/controllers/auth_extra_controller.go:66:		genAuthToken			0.0%
+github.com/techasit5415/microbase/internal/controllers/auth_extra_controller.go:72:		gen6DigitOTP			0.0%
+github.com/techasit5415/microbase/internal/controllers/auth_extra_controller.go:78:		Refresh				0.0%
+github.com/techasit5415/microbase/internal/controllers/auth_extra_controller.go:92:		RequestVerification		0.0%
+github.com/techasit5415/microbase/internal/controllers/auth_extra_controller.go:105:		ConfirmVerification		0.0%
+github.com/techasit5415/microbase/internal/controllers/auth_extra_controller.go:123:		RequestPasswordReset		0.0%
+github.com/techasit5415/microbase/internal/controllers/auth_extra_controller.go:136:		ConfirmPasswordReset		0.0%
+github.com/techasit5415/microbase/internal/controllers/auth_extra_controller.go:161:		RequestEmailChange		0.0%
+github.com/techasit5415/microbase/internal/controllers/auth_extra_controller.go:179:		ConfirmEmailChange		0.0%
+github.com/techasit5415/microbase/internal/controllers/auth_extra_controller.go:202:		RequestOTP			0.0%
+github.com/techasit5415/microbase/internal/controllers/auth_extra_controller.go:221:		AuthWithOTP			0.0%
+github.com/techasit5415/microbase/internal/controllers/auth_extra_controller.go:258:		Impersonate			0.0%
+github.com/techasit5415/microbase/internal/controllers/auth_extra_controller.go:281:		GetAuthOptions			0.0%
+github.com/techasit5415/microbase/internal/controllers/auth_extra_controller.go:292:		UpdateAuthOptions		0.0%
+github.com/techasit5415/microbase/internal/controllers/collection_auth_controller.go:26:	NewCollectionAuthController	0.0%
+github.com/techasit5415/microbase/internal/controllers/collection_auth_controller.go:30:	authTableName			0.0%
+github.com/techasit5415/microbase/internal/controllers/collection_auth_controller.go:38:	Register			0.0%
+github.com/techasit5415/microbase/internal/controllers/collection_auth_controller.go:141:	AuthWithPassword		0.0%
+github.com/techasit5415/microbase/internal/controllers/collection_auth_controller.go:208:	AuthRefresh			0.0%
+github.com/techasit5415/microbase/internal/controllers/collection_controller.go:19:		NewCollectionController		0.0%
+github.com/techasit5415/microbase/internal/controllers/collection_controller.go:24:		List				0.0%
+github.com/techasit5415/microbase/internal/controllers/collection_controller.go:33:		Get				0.0%
+github.com/techasit5415/microbase/internal/controllers/collection_controller.go:46:		Create				0.0%
+github.com/techasit5415/microbase/internal/controllers/collection_controller.go:67:		Delete				0.0%
+github.com/techasit5415/microbase/internal/controllers/collection_controller.go:80:		Update				0.0%
+github.com/techasit5415/microbase/internal/controllers/collection_controller.go:105:		Truncate			0.0%
+github.com/techasit5415/microbase/internal/controllers/collection_controller.go:113:		Duplicate			0.0%
+github.com/techasit5415/microbase/internal/controllers/file_controller.go:30:			NewFileController		100.0%
+github.com/techasit5415/microbase/internal/controllers/file_controller.go:34:			Upload				69.6%
+github.com/techasit5415/microbase/internal/controllers/file_controller.go:80:			Serve				52.6%
+github.com/techasit5415/microbase/internal/controllers/file_controller.go:113:			parseThumbSpec			87.5%
+github.com/techasit5415/microbase/internal/controllers/file_controller.go:126:			resizeImage			70.4%
+github.com/techasit5415/microbase/internal/controllers/file_controller.go:166:			randomHex			100.0%
+github.com/techasit5415/microbase/internal/controllers/health_controller.go:16:			NewHealthController		0.0%
+github.com/techasit5415/microbase/internal/controllers/health_controller.go:21:			Check				0.0%
+github.com/techasit5415/microbase/internal/controllers/oauth_controller.go:19:			NewOAuthController		0.0%
+github.com/techasit5415/microbase/internal/controllers/oauth_controller.go:24:			AuthMethods			0.0%
+github.com/techasit5415/microbase/internal/controllers/oauth_controller.go:33:			ListProviders			0.0%
+github.com/techasit5415/microbase/internal/controllers/oauth_controller.go:42:			UpdateProvider			0.0%
+github.com/techasit5415/microbase/internal/controllers/oauth_controller.go:59:			Start				0.0%
+github.com/techasit5415/microbase/internal/controllers/oauth_controller.go:78:			Callback			0.0%
+github.com/techasit5415/microbase/internal/controllers/oauth_controller.go:102:			Exchange			0.0%
+github.com/techasit5415/microbase/internal/controllers/oauth_controller.go:120:			buildCallbackURL		0.0%
+github.com/techasit5415/microbase/internal/controllers/openapi_controller.go:17:		NewOpenAPIController		0.0%
+github.com/techasit5415/microbase/internal/controllers/openapi_controller.go:22:		Spec				0.0%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:42:			NewOpsController		0.0%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:51:			loadMailConfig			0.0%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:65:			GetMail				0.0%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:79:			UpdateMail			0.0%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:105:			TestMail			0.0%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:134:			ListBackups			0.0%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:161:			CreateBackup			0.0%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:181:			DownloadBackup			0.0%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:191:			DeleteBackup			0.0%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:201:			ListCrons			0.0%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:237:			CreateCron			0.0%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:275:			UpdateCron			0.0%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:301:			DeleteCron			0.0%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:317:			RunCron				0.0%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:346:			UploadBackup			0.0%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:371:			RestoreBackup			0.0%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:388:			GetRateLimits			0.0%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:401:			UpdateRateLimits		0.0%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:423:			GetLogSettings			0.0%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:437:			UpdateLogSettings		0.0%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:465:			parseDBURL			0.0%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:487:			buildDBURL			0.0%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:511:			GetDatabase			0.0%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:531:			TestDatabase			0.0%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:559:			UpdateDatabase			0.0%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:613:			GetAppSettings			0.0%
+github.com/techasit5415/microbase/internal/controllers/ops_controller.go:618:			UpdateAppSettings		0.0%
+github.com/techasit5415/microbase/internal/controllers/realtime_controller.go:24:		NewRealtimeController		0.0%
+github.com/techasit5415/microbase/internal/controllers/realtime_controller.go:29:		Stream				0.0%
+github.com/techasit5415/microbase/internal/controllers/record_controller.go:24:			NewRecordController		0.0%
+github.com/techasit5415/microbase/internal/controllers/record_controller.go:29:			List				0.0%
+github.com/techasit5415/microbase/internal/controllers/record_controller.go:66:			Get				0.0%
+github.com/techasit5415/microbase/internal/controllers/record_controller.go:82:			Create				0.0%
+github.com/techasit5415/microbase/internal/controllers/record_controller.go:97:			Update				0.0%
+github.com/techasit5415/microbase/internal/controllers/record_controller.go:113:		Delete				0.0%
+github.com/techasit5415/microbase/internal/controllers/record_controller.go:123:		VectorSearch			0.0%
+github.com/techasit5415/microbase/internal/controllers/record_controller.go:142:		handleRecordError		0.0%
+github.com/techasit5415/microbase/internal/controllers/record_controller.go:157:		enforceRule			0.0%
+github.com/techasit5415/microbase/internal/controllers/record_controller.go:169:		maskHidden			0.0%
+github.com/techasit5415/microbase/internal/controllers/record_controller.go:178:		projectFields			0.0%
+github.com/techasit5415/microbase/internal/controllers/schema_controller.go:18:			NewSchemaController		0.0%
+github.com/techasit5415/microbase/internal/controllers/schema_controller.go:23:			Export				0.0%
+github.com/techasit5415/microbase/internal/controllers/schema_controller.go:32:			Import				0.0%
+github.com/techasit5415/microbase/internal/controllers/settings_controller.go:22:		NewSettingsController		0.0%
+github.com/techasit5415/microbase/internal/controllers/settings_controller.go:27:		GetRedis			0.0%
+github.com/techasit5415/microbase/internal/controllers/settings_controller.go:37:		UpdateRedis			0.0%
+github.com/techasit5415/microbase/internal/controllers/settings_controller.go:68:		GetS3				0.0%
+github.com/techasit5415/microbase/internal/controllers/settings_controller.go:88:		UpdateS3			0.0%
+github.com/techasit5415/microbase/internal/controllers/superuser_controller.go:19:		NewSuperuserController		0.0%
+github.com/techasit5415/microbase/internal/controllers/superuser_controller.go:23:		Status				0.0%
+github.com/techasit5415/microbase/internal/controllers/superuser_controller.go:31:		Setup				0.0%
+github.com/techasit5415/microbase/internal/controllers/superuser_controller.go:55:		Create				0.0%
+github.com/techasit5415/microbase/internal/controllers/superuser_controller.go:77:		Delete				0.0%
+github.com/techasit5415/microbase/internal/controllers/superuser_controller.go:99:		Login				0.0%
+github.com/techasit5415/microbase/internal/controllers/superuser_controller.go:114:		Update				0.0%
+github.com/techasit5415/microbase/internal/controllers/system_controller.go:17:			NewSystemController		0.0%
+github.com/techasit5415/microbase/internal/controllers/system_controller.go:30:			List				0.0%
+github.com/techasit5415/microbase/internal/controllers/webhook_controller.go:17:		NewWebhookController		0.0%
+github.com/techasit5415/microbase/internal/controllers/webhook_controller.go:21:		List				0.0%
+github.com/techasit5415/microbase/internal/controllers/webhook_controller.go:29:		Create				0.0%
+github.com/techasit5415/microbase/internal/controllers/webhook_controller.go:44:		Toggle				0.0%
+github.com/techasit5415/microbase/internal/controllers/webhook_controller.go:61:		Test				0.0%
+github.com/techasit5415/microbase/internal/controllers/webhook_controller.go:76:		Delete				0.0%
+github.com/techasit5415/microbase/internal/database/postgres.go:13:				Connect				0.0%
+github.com/techasit5415/microbase/internal/database/postgres.go:45:				runMigrations			77.8%
+github.com/techasit5415/microbase/internal/middlewares/auth.go:14:				extractBearerToken		100.0%
+github.com/techasit5415/microbase/internal/middlewares/auth.go:26:				RequireAuth			0.0%
+github.com/techasit5415/microbase/internal/middlewares/auth.go:46:				RequireSuperuser		85.7%
+github.com/techasit5415/microbase/internal/middlewares/auth.go:72:				GetAuthClaims			0.0%
+github.com/techasit5415/microbase/internal/middlewares/auth.go:78:				OptionalAuth			0.0%
+github.com/techasit5415/microbase/internal/middlewares/logger.go:40:				SetLogPool			0.0%
+github.com/techasit5415/microbase/internal/middlewares/logger.go:47:				RecentLogs			0.0%
+github.com/techasit5415/microbase/internal/middlewares/logger.go:80:				appendLog			0.0%
+github.com/techasit5415/microbase/internal/middlewares/logger.go:102:				extractCodeAndMessage		0.0%
+github.com/techasit5415/microbase/internal/middlewares/logger.go:117:				RequestLogger			0.0%
+github.com/techasit5415/microbase/internal/middlewares/ratelimit.go:32:				GetRateLimitRules		0.0%
+github.com/techasit5415/microbase/internal/middlewares/ratelimit.go:41:				SetRateLimitRules		0.0%
+github.com/techasit5415/microbase/internal/middlewares/ratelimit.go:48:				RateLimit			0.0%
+github.com/techasit5415/microbase/internal/models/collection.go:95:				IsValidIdentifier		100.0%
+github.com/techasit5415/microbase/internal/models/collection.go:100:				ToPostgresType			26.3%
+github.com/techasit5415/microbase/internal/models/record.go:18:					Normalize			83.3%
+github.com/techasit5415/microbase/internal/models/record.go:31:					Offset				100.0%
+github.com/techasit5415/microbase/internal/oauth/discord.go:23:					NewDiscordProvider		0.0%
+github.com/techasit5415/microbase/internal/oauth/discord.go:35:					AuthURL				0.0%
+github.com/techasit5415/microbase/internal/oauth/discord.go:39:					ExchangeUser			0.0%
+github.com/techasit5415/microbase/internal/oauth/google.go:19:					NewGoogleProvider		0.0%
+github.com/techasit5415/microbase/internal/oauth/google.go:31:					AuthURL				0.0%
+github.com/techasit5415/microbase/internal/oauth/google.go:35:					ExchangeUser			0.0%
+github.com/techasit5415/microbase/internal/oauth/oidc.go:26:					NewOIDCProvider			0.0%
+github.com/techasit5415/microbase/internal/oauth/oidc.go:74:					AuthURL				0.0%
+github.com/techasit5415/microbase/internal/oauth/oidc.go:78:					ExchangeUser			0.0%
+github.com/techasit5415/microbase/internal/oauth/oidc.go:161:					extractJSONPath			56.2%
+github.com/techasit5415/microbase/internal/oauth/oidc.go:188:					valueToString			66.7%
+github.com/techasit5415/microbase/internal/oauth/oidc.go:201:					CheckAllowedClaims		93.3%
+github.com/techasit5415/microbase/internal/oauth/provider.go:41:				BuildProvider			0.0%
+github.com/techasit5415/microbase/internal/realtime/hub.go:24:					NewHub				100.0%
+github.com/techasit5415/microbase/internal/realtime/hub.go:31:					Subscribe			100.0%
+github.com/techasit5415/microbase/internal/realtime/hub.go:50:					Publish				100.0%
+github.com/techasit5415/microbase/internal/response/response.go:10:				OK				0.0%
+github.com/techasit5415/microbase/internal/response/response.go:14:				Created				0.0%
+github.com/techasit5415/microbase/internal/response/response.go:18:				Error				0.0%
+github.com/techasit5415/microbase/internal/routes/routes.go:22:					Register			5.2%
+github.com/techasit5415/microbase/internal/services/app_settings.go:41:				DefaultAppSettings		100.0%
+github.com/techasit5415/microbase/internal/services/app_settings.go:69:				GetCachedAppSettings		0.0%
+github.com/techasit5415/microbase/internal/services/app_settings.go:76:				SetCachedAppSettings		0.0%
+github.com/techasit5415/microbase/internal/services/app_settings.go:95:				LoadAppSettingsFromDB		0.0%
+github.com/techasit5415/microbase/internal/services/app_settings.go:114:			RealClientIP			0.0%
+github.com/techasit5415/microbase/internal/services/app_settings.go:134:			IsSuperuserIPAllowed		0.0%
+github.com/techasit5415/microbase/internal/services/auth_service.go:43:				NewAuthService			0.0%
+github.com/techasit5415/microbase/internal/services/auth_service.go:51:				Register			0.0%
+github.com/techasit5415/microbase/internal/services/auth_service.go:56:				RegisterWithExtras		0.0%
+github.com/techasit5415/microbase/internal/services/auth_service.go:117:			Login				0.0%
+github.com/techasit5415/microbase/internal/services/auth_service.go:146:			GetUserByID			0.0%
+github.com/techasit5415/microbase/internal/services/auth_service.go:163:			GenerateToken			0.0%
+github.com/techasit5415/microbase/internal/services/auth_service.go:184:			ParseToken			0.0%
+github.com/techasit5415/microbase/internal/services/auth_service.go:207:			ListUsers			0.0%
+github.com/techasit5415/microbase/internal/services/auth_service.go:263:			userExists			0.0%
+github.com/techasit5415/microbase/internal/services/auth_service.go:269:			GetUserRecord			0.0%
+github.com/techasit5415/microbase/internal/services/auth_service.go:308:			DeleteUser			0.0%
+github.com/techasit5415/microbase/internal/services/auth_service.go:329:			UpdateUser			0.0%
+github.com/techasit5415/microbase/internal/services/auth_service.go:431:			GenerateCollectionToken		0.0%
+github.com/techasit5415/microbase/internal/services/autogen.go:16:				GenerateFromPattern		70.2%
+github.com/techasit5415/microbase/internal/services/autogen.go:86:				expandCharClass			81.8%
+github.com/techasit5415/microbase/internal/services/autogen.go:105:				cryptoRandInt			66.7%
+github.com/techasit5415/microbase/internal/services/autogen.go:116:				generateUUIDv4			100.0%
+github.com/techasit5415/microbase/internal/services/collection_service.go:30:			NewCollectionService		100.0%
+github.com/techasit5415/microbase/internal/services/collection_service.go:34:			normalizeCollectionType		0.0%
+github.com/techasit5415/microbase/internal/services/collection_service.go:43:			Create				0.0%
+github.com/techasit5415/microbase/internal/services/collection_service.go:138:			List				0.0%
+github.com/techasit5415/microbase/internal/services/collection_service.go:163:			GetByName			26.3%
+github.com/techasit5415/microbase/internal/services/collection_service.go:198:			Delete				0.0%
+github.com/techasit5415/microbase/internal/services/collection_service.go:241:			physicalTableName		66.7%
+github.com/techasit5415/microbase/internal/services/collection_service.go:248:			schemaCacheKey			100.0%
+github.com/techasit5415/microbase/internal/services/collection_service.go:252:			Update				0.0%
+github.com/techasit5415/microbase/internal/services/collection_service.go:342:			Truncate			0.0%
+github.com/techasit5415/microbase/internal/services/collection_service.go:356:			Duplicate			0.0%
+github.com/techasit5415/microbase/internal/services/cron_scheduler.go:33:			ValidateCronExpr		100.0%
+github.com/techasit5415/microbase/internal/services/cron_scheduler.go:48:			CronMatches			71.4%
+github.com/techasit5415/microbase/internal/services/cron_scheduler.go:71:			matchCronField			89.2%
+github.com/techasit5415/microbase/internal/services/cron_scheduler.go:125:			ExecuteCustomCron		0.0%
+github.com/techasit5415/microbase/internal/services/cron_scheduler.go:190:			StartCronScheduler		0.0%
+github.com/techasit5415/microbase/internal/services/cron_scheduler.go:211:			runDueCrons			0.0%
+github.com/techasit5415/microbase/internal/services/filter_parser.go:31:			tokenizeFilter			95.2%
+github.com/techasit5415/microbase/internal/services/filter_parser.go:126:			ParseFilterToSQL		100.0%
+github.com/techasit5415/microbase/internal/services/filter_parser.go:132:			ParseFilterToSQLWithBody	80.0%
+github.com/techasit5415/microbase/internal/services/filter_parser.go:154:			peek				100.0%
+github.com/techasit5415/microbase/internal/services/filter_parser.go:155:			next				100.0%
+github.com/techasit5415/microbase/internal/services/filter_parser.go:163:			isColumnIdent			100.0%
+github.com/techasit5415/microbase/internal/services/filter_parser.go:178:			parseOr				100.0%
+github.com/techasit5415/microbase/internal/services/filter_parser.go:194:			parseAnd			100.0%
+github.com/techasit5415/microbase/internal/services/filter_parser.go:210:			flipOperator			33.3%
+github.com/techasit5415/microbase/internal/services/filter_parser.go:225:			parseAtom			68.0%
+github.com/techasit5415/microbase/internal/services/filter_parser.go:344:			isLiteralOrRequestToken		100.0%
+github.com/techasit5415/microbase/internal/services/filter_parser.go:349:			resolveValue			68.8%
+github.com/techasit5415/microbase/internal/services/filter_parser.go:406:			EvalFilterOnData		80.0%
+github.com/techasit5415/microbase/internal/services/filter_parser.go:433:			peek				100.0%
+github.com/techasit5415/microbase/internal/services/filter_parser.go:434:			next				100.0%
+github.com/techasit5415/microbase/internal/services/filter_parser.go:442:			evalOr				90.0%
+github.com/techasit5415/microbase/internal/services/filter_parser.go:458:			evalAnd				90.0%
+github.com/techasit5415/microbase/internal/services/filter_parser.go:474:			evalAtom			82.6%
+github.com/techasit5415/microbase/internal/services/filter_parser.go:508:			resolve				37.8%
+github.com/techasit5415/microbase/internal/services/filter_parser.go:572:			toFloat64			42.9%
+github.com/techasit5415/microbase/internal/services/filter_parser.go:588:			evalComparison			32.3%
+github.com/techasit5415/microbase/internal/services/oauth_service.go:82:			NewOAuthService			0.0%
+github.com/techasit5415/microbase/internal/services/oauth_service.go:87:			ListProviders			0.0%
+github.com/techasit5415/microbase/internal/services/oauth_service.go:115:			UpdateProvider			0.0%
+github.com/techasit5415/microbase/internal/services/oauth_service.go:160:			AuthMethods			0.0%
+github.com/techasit5415/microbase/internal/services/oauth_service.go:182:			StartAuth			0.0%
+github.com/techasit5415/microbase/internal/services/oauth_service.go:212:			HandleCallback			0.0%
+github.com/techasit5415/microbase/internal/services/oauth_service.go:286:			ExchangeCode			0.0%
+github.com/techasit5415/microbase/internal/services/oauth_service.go:304:			getProviderConfig		0.0%
+github.com/techasit5415/microbase/internal/services/oauth_service.go:325:			findOrCreateUser		0.0%
+github.com/techasit5415/microbase/internal/services/oauth_service.go:377:			oauthStateKey			0.0%
+github.com/techasit5415/microbase/internal/services/oauth_service.go:378:			oauthCodeKey			0.0%
+github.com/techasit5415/microbase/internal/services/oauth_service.go:380:			generateRandomHex		0.0%
+github.com/techasit5415/microbase/internal/services/oauth_service.go:386:			syncExtraFields			0.0%
+github.com/techasit5415/microbase/internal/services/password.go:23:				HashPassword			85.7%
+github.com/techasit5415/microbase/internal/services/password.go:37:				VerifyPassword			92.3%
+github.com/techasit5415/microbase/internal/services/record_expand.go:12:			ExpandRecords			82.0%
+github.com/techasit5415/microbase/internal/services/record_helpers.go:14:			scanRows			84.6%
+github.com/techasit5415/microbase/internal/services/record_helpers.go:38:			allowedFieldMap			100.0%
+github.com/techasit5415/microbase/internal/services/record_helpers.go:47:			formatVectorLiteral		100.0%
+github.com/techasit5415/microbase/internal/services/record_helpers.go:56:			coerceInputValue		0.0%
+github.com/techasit5415/microbase/internal/services/record_query.go:11:				buildWhereClause		0.0%
+github.com/techasit5415/microbase/internal/services/record_query.go:78:				buildOrderBy			0.0%
+github.com/techasit5415/microbase/internal/services/record_service.go:28:			NewRecordService		100.0%
+github.com/techasit5415/microbase/internal/services/record_service.go:33:			List				0.0%
+github.com/techasit5415/microbase/internal/services/record_service.go:81:			GetByID				0.0%
+github.com/techasit5415/microbase/internal/services/record_service.go:123:			recordExists			0.0%
+github.com/techasit5415/microbase/internal/services/record_service.go:129:			Create				0.0%
+github.com/techasit5415/microbase/internal/services/record_service.go:210:			Update				0.0%
+github.com/techasit5415/microbase/internal/services/record_service.go:278:			Delete				0.0%
+github.com/techasit5415/microbase/internal/services/record_service.go:325:			publish				0.0%
+github.com/techasit5415/microbase/internal/services/record_service.go:338:			parseRecordID			0.0%
+github.com/techasit5415/microbase/internal/services/record_vector.go:12:			VectorSearch			78.6%
+github.com/techasit5415/microbase/internal/services/record_visibility.go:10:			VisibleRecord			100.0%
+github.com/techasit5415/microbase/internal/services/record_visibility.go:28:			CanViewSnapshot			71.4%
+github.com/techasit5415/microbase/internal/services/rules.go:14:				ruleAllowedFields		100.0%
+github.com/techasit5415/microbase/internal/services/rules.go:33:				CompileAPIRule			63.0%
+github.com/techasit5415/microbase/internal/services/rules.go:82:				EvalCreateRule			52.2%
+github.com/techasit5415/microbase/internal/services/rules.go:121:				CheckAPIRule			0.0%
+github.com/techasit5415/microbase/internal/services/schema_ddl.go:18:				buildCreateTableSQL		67.6%
+github.com/techasit5415/microbase/internal/services/schema_ddl.go:83:				buildAlterTableStatements	0.0%
+github.com/techasit5415/microbase/internal/services/schema_ddl.go:161:				buildCreateIndexSQL		0.0%
+github.com/techasit5415/microbase/internal/services/schema_ddl.go:187:				buildDropIndexSQL		0.0%
+github.com/techasit5415/microbase/internal/services/schema_ddl.go:194:				indexSignature			0.0%
+github.com/techasit5415/microbase/internal/services/schema_ddl.go:199:				buildIndexDiffStatements	0.0%
+github.com/techasit5415/microbase/internal/services/schema_ddl.go:239:				relationConstraintSQL		13.3%
+github.com/techasit5415/microbase/internal/services/schema_ddl.go:263:				buildCreateViewSQL		0.0%
+github.com/techasit5415/microbase/internal/services/schema_portability.go:13:			ExportSchema			0.0%
+github.com/techasit5415/microbase/internal/services/schema_portability.go:35:			ImportSchema			0.0%
+github.com/techasit5415/microbase/internal/services/superuser_service.go:45:			NewSuperuserService		0.0%
+github.com/techasit5415/microbase/internal/services/superuser_service.go:50:			HasSuperuser			0.0%
+github.com/techasit5415/microbase/internal/services/superuser_service.go:59:			GenerateSetupOTP		0.0%
+github.com/techasit5415/microbase/internal/services/superuser_service.go:73:			Setup				0.0%
+github.com/techasit5415/microbase/internal/services/superuser_service.go:106:			Create				0.0%
+github.com/techasit5415/microbase/internal/services/superuser_service.go:136:			Delete				0.0%
+github.com/techasit5415/microbase/internal/services/superuser_service.go:155:			Login				0.0%
+github.com/techasit5415/microbase/internal/services/superuser_service.go:184:			Update				0.0%
+github.com/techasit5415/microbase/internal/services/webhook_service.go:55:			NewWebhookService		0.0%
+github.com/techasit5415/microbase/internal/services/webhook_service.go:62:			List				0.0%
+github.com/techasit5415/microbase/internal/services/webhook_service.go:87:			Create				0.0%
+github.com/techasit5415/microbase/internal/services/webhook_service.go:134:			Toggle				0.0%
+github.com/techasit5415/microbase/internal/services/webhook_service.go:145:			Delete				0.0%
+github.com/techasit5415/microbase/internal/services/webhook_service.go:157:			Test				0.0%
+github.com/techasit5415/microbase/internal/services/webhook_service.go:180:			ComputeHMACSignature		0.0%
+github.com/techasit5415/microbase/internal/services/webhook_service.go:187:			DispatchAsync			0.0%
+github.com/techasit5415/microbase/internal/services/webhook_service.go:224:			deliverWithRetry		0.0%
+github.com/techasit5415/microbase/internal/services/webhook_service.go:310:			buildWebhookPayload		0.0%
+github.com/techasit5415/microbase/internal/storage/local.go:19:					NewLocalStorage			100.0%
+github.com/techasit5415/microbase/internal/storage/local.go:24:					Save				100.0%
+github.com/techasit5415/microbase/internal/storage/local.go:29:					Open				81.8%
+github.com/techasit5415/microbase/internal/storage/local.go:46:					Delete				100.0%
+github.com/techasit5415/microbase/internal/storage/local.go:55:					Backend				0.0%
+github.com/techasit5415/microbase/internal/storage/s3.go:24:					NewS3Storage			80.0%
+github.com/techasit5415/microbase/internal/storage/s3.go:43:					objectURL			91.7%
+github.com/techasit5415/microbase/internal/storage/s3.go:64:					TestConnection			71.4%
+github.com/techasit5415/microbase/internal/storage/s3.go:85:					Save				68.4%
+github.com/techasit5415/microbase/internal/storage/s3.go:113:					Open				57.1%
+github.com/techasit5415/microbase/internal/storage/s3.go:144:					Delete				71.4%
+github.com/techasit5415/microbase/internal/storage/s3.go:165:					Backend				0.0%
+github.com/techasit5415/microbase/internal/storage/s3.go:170:					signV4				95.5%
+github.com/techasit5415/microbase/internal/storage/s3.go:215:					sha256Hex			100.0%
+github.com/techasit5415/microbase/internal/storage/s3.go:220:					hmacSHA256			100.0%
+github.com/techasit5415/microbase/internal/storage/storage.go:36:				NewSwitchableStorage		0.0%
+github.com/techasit5415/microbase/internal/storage/storage.go:51:				Switch				0.0%
+github.com/techasit5415/microbase/internal/storage/storage.go:73:				active				0.0%
+github.com/techasit5415/microbase/internal/storage/storage.go:79:				Save				0.0%
+github.com/techasit5415/microbase/internal/storage/storage.go:83:				Open				0.0%
+github.com/techasit5415/microbase/internal/storage/storage.go:87:				Delete				0.0%
+github.com/techasit5415/microbase/internal/storage/storage.go:91:				Backend				0.0%
+github.com/techasit5415/microbase/ui/embed.go:16:						Register			0.0%
+github.com/techasit5415/microbase/ui/node_modules/flatted/golang/pkg/flatted/flatted.go:16:	Stringify			0.0%
+github.com/techasit5415/microbase/ui/node_modules/flatted/golang/pkg/flatted/flatted.go:146:	Parse				0.0%
+github.com/techasit5415/microbase/ui/node_modules/flatted/golang/pkg/flatted/flatted.go:208:	revive				0.0%
+github.com/techasit5415/microbase/ui/node_modules/flatted/golang/pkg/flatted/flatted.go:227:	loop				0.0%
+github.com/techasit5415/microbase/ui/node_modules/flatted/golang/pkg/flatted/flatted.go:249:	ref				0.0%
+github.com/techasit5415/microbase/ui/node_modules/flatted/golang/pkg/flatted/flatted.go:262:	ToJSON				0.0%
+github.com/techasit5415/microbase/ui/node_modules/flatted/golang/pkg/flatted/flatted.go:273:	FromJSON			0.0%
+total:												(statements)			19.8%
+
+================================================================================
+CONTINUATION AUDIT UPDATE (2026-11-25 23:55 +07:00)
+================================================================================
+Added tests:
+- internal/controllers/auth_extra_test.go (Request/Confirm Verification, Password Reset, Email Change, 6-digit OTP, Refresh, Impersonate, Auth Options)
+- internal/controllers/realtime_controller_test.go (Live SSE /api/realtime streaming with real CollectionService + RecordService + API rules)
+- internal/oauth/providers_test.go (Google & Discord AuthURL + BuildProvider dispatch & validation)
+- internal/cache/redis_test.go (Mock RESP TCP server testing RedisStore Set/Get/Delete/Incr/Backend/Close)
+
+Final verification:
+- go vet ./... : PASS (0 issues)
+- MICROBASE_TEST_LOCAL_ENV=1 go test -count=1 -coverpkg=./internal/... ./internal/... : ALL PASS (0 skipped)
+- Cross-package Go statement coverage: total:												(statements)			76.4%
+- UI svelte-check : 0 errors, 0 warnings
+- UI Vitest (server + chromium) : 5/5 test files, 11/11 tests PASS

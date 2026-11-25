@@ -7,6 +7,7 @@ import (
 
 // Event represents a realtime record mutation broadcasted to SSE subscribers.
 type Event struct {
+	Snapshot   any       `json:"-"`          // Internal pre-delete row for permission checks.
 	Action     string    `json:"action"`     // "create", "update", or "delete"
 	Collection string    `json:"collection"` // Collection name
 	Record     any       `json:"record"`     // Record payload or deleted ID
