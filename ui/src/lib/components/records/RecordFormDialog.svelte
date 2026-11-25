@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { X } from '@lucide/svelte';
 	import { createRecord, updateRecord } from '#lib/api/records.ts';
-	import { createSuperuser, createUser } from '#lib/api/users.ts';
+	import { createSuperuser, createUser, updateSuperuser, updateUser } from '#lib/api/users.ts';
 	import type { Collection, RecordRow } from '#lib/api/types.ts';
 	import Drawer from '#lib/components/ui/Drawer.svelte';
 	import Switch from '#lib/components/ui/Switch.svelte';
@@ -20,6 +20,7 @@
 	let values = $state<Record<string, string>>({});
 	let boolValues = $state<Record<string, boolean>>({});
 	let email = $state('');
+	let role = $state('user');
 	let password = $state('');
 	let confirmPassword = $state('');
 	let errorMsg = $state('');
@@ -41,7 +42,8 @@
 			}
 			values = nextVals;
 			boolValues = nextBools;
-			email = '';
+			email = editingRecord && editingRecord.email ? String(editingRecord.email) : '';
+			role = editingRecord && editingRecord.role ? String(editingRecord.role) : 'user';
 			password = '';
 			confirmPassword = '';
 			errorMsg = '';
@@ -51,7 +53,7 @@
 	async function handleSubmit(e: SubmitEvent) {
 		e.preventDefault();
 		errorMsg = '';
-		if (isAuth && password !== confirmPassword) {
+		if (isAuth && (password !== '' || !editingRecord) && password !== confirmPassword) {
 			errorMsg = 'Passwords do not match';
 			return;
 		}
@@ -59,9 +61,24 @@
 
 		try {
 			if (isSuperuser) {
-				await createSuperuser(email.trim(), password);
+				if (editingRecord && typeof editingRecord.id === 'number') {
+					await updateSuperuser(editingRecord.id, {
+						email: email.trim(),
+						password: password || undefined
+					});
+				} else {
+					await createSuperuser(email.trim(), password);
+				}
 			} else if (isAuth) {
-				await createUser(email.trim(), password);
+				if (editingRecord && typeof editingRecord.id === 'number') {
+					await updateUser(editingRecord.id, {
+						email: email.trim(),
+						role: role.trim() || 'user',
+						password: password || undefined
+					});
+				} else {
+					await createUser(email.trim(), password);
+				}
 			} else {
 				const payload: Record<string, unknown> = {};
 				for (const field of collection.fields ?? []) {
@@ -129,34 +146,49 @@
 						class="w-full rounded-md border border-input bg-background px-3.5 py-2.5 text-sm outline-none focus:border-ring"
 					/>
 				</div>
+				{#if !isSuperuser && editingRecord}
+					<div>
+						<label for="u-role" class="mb-1.5 block text-xs font-medium">role</label>
+						<input
+							id="u-role"
+							type="text"
+							value={role}
+							oninput={(e) => (role = e.currentTarget.value)}
+							placeholder="user or admin"
+							class="w-full rounded-md border border-input bg-background px-3.5 py-2.5 font-mono text-sm outline-none focus:border-ring"
+						/>
+					</div>
+				{/if}
 				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					<div>
 						<label for="u-pass" class="mb-1.5 block text-xs font-medium">
-							password <span class="text-destructive">*</span>
+							{editingRecord ? 'new password' : 'password'}
+							{#if !editingRecord}<span class="text-destructive">*</span>{/if}
 						</label>
 						<input
 							id="u-pass"
 							type="password"
-							required
-							minlength="8"
+							required={!editingRecord}
+							minlength={password ? 8 : undefined}
 							value={password}
 							oninput={(e) => (password = e.currentTarget.value)}
-							placeholder="Minimum 8 characters"
+							placeholder={editingRecord ? 'Leave blank to keep' : 'Minimum 8 characters'}
 							class="w-full rounded-md border border-input bg-background px-3.5 py-2.5 text-sm outline-none focus:border-ring"
 						/>
 					</div>
 					<div>
 						<label for="u-pass-confirm" class="mb-1.5 block text-xs font-medium">
-							retype password <span class="text-destructive">*</span>
+							retype password
+							{#if !editingRecord || password}<span class="text-destructive">*</span>{/if}
 						</label>
 						<input
 							id="u-pass-confirm"
 							type="password"
-							required
-							minlength="8"
+							required={!editingRecord || Boolean(password)}
+							minlength={password ? 8 : undefined}
 							value={confirmPassword}
 							oninput={(e) => (confirmPassword = e.currentTarget.value)}
-							placeholder="Retype password"
+							placeholder={editingRecord ? 'Leave blank to keep' : 'Retype password'}
 							class="w-full rounded-md border border-input bg-background px-3.5 py-2.5 text-sm outline-none focus:border-ring"
 						/>
 					</div>

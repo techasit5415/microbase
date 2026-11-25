@@ -36,3 +36,23 @@ export function createSuperuser(email: string, password: string): Promise<Record
 export function deleteSuperuser(id: number): Promise<{ deleted: number }> {
 	return apiRequest<{ deleted: number }>(`/api/superusers/${id}`, { method: 'DELETE' });
 }
+
+export function updateUser(
+	id: number,
+	payload: { email: string; role: string; password?: string }
+): Promise<RecordRow> {
+	return apiRequest<RecordRow>(`/api/users/${id}`, {
+		method: 'PATCH',
+		body: JSON.stringify(payload)
+	});
+}
+
+export function updateSuperuser(
+	id: number,
+	payload: { email: string; password?: string }
+): Promise<RecordRow> {
+	return apiRequest<RecordRow>(`/api/superusers/${id}`, {
+		method: 'PATCH',
+		body: JSON.stringify(payload)
+	});
+}

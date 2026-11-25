@@ -188,7 +188,7 @@
 		{loading}
 		readOnly={activeCol.type === 'system' && activeCol.name !== '_superusers'}
 		onSelect={(row) => {
-			if (activeCol.type === 'base') {
+			if (activeCol.type === 'base' || activeCol.type === 'auth' || activeCol.name === '_superusers') {
 				editingRec = row;
 				showCreateRec = true;
 			}

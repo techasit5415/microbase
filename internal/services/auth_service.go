@@ -231,3 +231,53 @@ func (s *AuthService) DeleteUser(ctx context.Context, id int64) error {
 	}
 	return nil
 }
+
+// UpdateUser updates a user's email, role, and optionally resets their password.
+func (s *AuthService) UpdateUser(ctx context.Context, id int64, email, role, newPassword string) (*models.User, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if !strings.Contains(email, "@") {
+		return nil, fmt.Errorf("%w: valid email is required", ErrInvalidInput)
+	}
+	role = strings.TrimSpace(role)
+	if role == "" {
+		role = "user"
+	}
+
+	var u models.User
+	var err error
+	if newPassword != "" {
+		if len(newPassword) < 8 {
+			return nil, fmt.Errorf("%w: password must be at least 8 characters", ErrInvalidInput)
+		}
+		hash, hashErr := HashPassword(newPassword)
+		if hashErr != nil {
+			return nil, hashErr
+		}
+		err = s.pool.QueryRow(ctx, `
+			UPDATE _users
+			SET email = $2, role = $3, password_hash = $4, updated_at = NOW()
+			WHERE id = $1
+			RETURNING id, email, role, created_at, updated_at`,
+			id, email, role, hash,
+		).Scan(&u.ID, &u.Email, &u.Role, &u.CreatedAt, &u.UpdatedAt)
+	} else {
+		err = s.pool.QueryRow(ctx, `
+			UPDATE _users
+			SET email = $2, role = $3, updated_at = NOW()
+			WHERE id = $1
+			RETURNING id, email, role, created_at, updated_at`,
+			id, email, role,
+		).Scan(&u.ID, &u.Email, &u.Role, &u.CreatedAt, &u.UpdatedAt)
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrRecordNotFound
+	}
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return nil, ErrEmailExists
+		}
+		return nil, err
+	}
+	return &u, nil
+}

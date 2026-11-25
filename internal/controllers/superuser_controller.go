@@ -110,3 +110,35 @@ func (h *SuperuserController) Login(c echo.Context) error {
 	}
 	return response.OK(c, res)
 }
+
+func (h *SuperuserController) Update(c echo.Context) error {
+	claims := middlewares.GetAuthClaims(c)
+	if claims == nil || claims.Role != "superuser" {
+		return response.Error(c, http.StatusForbidden, "FORBIDDEN", "only superusers can update superuser accounts")
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		return response.Error(c, http.StatusBadRequest, "INVALID_ID", "invalid superuser id")
+	}
+	var req struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return response.Error(c, http.StatusBadRequest, "INVALID_JSON", "invalid request body")
+	}
+	u, err := h.service.Update(c.Request().Context(), id, req.Email, req.Password)
+	if errors.Is(err, services.ErrInvalidInput) {
+		return response.Error(c, http.StatusBadRequest, "INVALID_INPUT", err.Error())
+	}
+	if errors.Is(err, services.ErrEmailExists) {
+		return response.Error(c, http.StatusConflict, "EMAIL_EXISTS", "superuser email already exists")
+	}
+	if errors.Is(err, services.ErrRecordNotFound) {
+		return response.Error(c, http.StatusNotFound, "NOT_FOUND", "superuser not found")
+	}
+	if err != nil {
+		return response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+	}
+	return response.OK(c, u)
+}

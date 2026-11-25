@@ -179,3 +179,50 @@ func (s *SuperuserService) Login(ctx context.Context, req models.LoginRequest) (
 	}
 	return &models.AuthResponse{Token: token, User: u}, nil
 }
+
+// Update updates a superuser's email and optionally resets their password.
+func (s *SuperuserService) Update(ctx context.Context, id int64, email, newPassword string) (*models.User, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if !strings.Contains(email, "@") {
+		return nil, fmt.Errorf("%w: valid email is required", ErrInvalidInput)
+	}
+
+	var u models.User
+	u.Role = "superuser"
+	var err error
+	if newPassword != "" {
+		if len(newPassword) < 8 {
+			return nil, fmt.Errorf("%w: password must be at least 8 characters", ErrInvalidInput)
+		}
+		hash, hashErr := HashPassword(newPassword)
+		if hashErr != nil {
+			return nil, hashErr
+		}
+		err = s.pool.QueryRow(ctx, `
+			UPDATE _superusers
+			SET email = $2, password_hash = $3, updated_at = NOW()
+			WHERE id = $1
+			RETURNING id, email, created_at, updated_at`,
+			id, email, hash,
+		).Scan(&u.ID, &u.Email, &u.CreatedAt, &u.UpdatedAt)
+	} else {
+		err = s.pool.QueryRow(ctx, `
+			UPDATE _superusers
+			SET email = $2, updated_at = NOW()
+			WHERE id = $1
+			RETURNING id, email, created_at, updated_at`,
+			id, email,
+		).Scan(&u.ID, &u.Email, &u.CreatedAt, &u.UpdatedAt)
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrRecordNotFound
+	}
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return nil, ErrEmailExists
+		}
+		return nil, err
+	}
+	return &u, nil
+}
