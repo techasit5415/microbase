@@ -45,7 +45,7 @@ func main() {
 
 	e := echo.New()
 	e.HideBanner = true
-	routes.Register(e, pool, cacheStore)
+	routes.Register(e, pool, cacheStore, cfg)
 
 	addr := ":" + cfg.Port
 	go func() {
