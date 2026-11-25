@@ -43,6 +43,7 @@
 	let indexes = $state<IndexDef[]>([]);
 	let apiRules = $state<Record<string, string>>({});
 	let showRulesInfo = $state(false);
+	let expandedSysField = $state<string | null>(null);
 	let errorMsg = $state('');
 	let saving = $state(false);
 
@@ -425,35 +426,49 @@
 				<!-- PocketBase Stacked Fields Table -->
 				<div class="divide-y divide-border overflow-hidden rounded-md border border-border bg-muted/45">
 					{#each systemFieldsList as sf (sf.name)}
-						<div class="flex items-center justify-between px-3 py-2.5 text-muted-foreground">
-							<div class="flex items-center gap-2.5">
-								<div class="flex h-6 w-6 items-center justify-center text-muted-foreground/80">
-									{#if sf.icon === 'lock'}
-										<Lock class="h-4 w-4" />
-									{:else if sf.icon === 'mail'}
-										<Mail class="h-4 w-4" />
-									{:else if sf.icon === 'bool'}
-										<ToggleLeft class="h-4 w-4" />
-									{:else}
-										<Type class="h-4 w-4" />
-									{/if}
+						<div>
+							<div class="flex items-center justify-between px-3 py-2.5 text-muted-foreground">
+								<div class="flex items-center gap-2.5">
+									<div class="flex h-6 w-6 items-center justify-center text-muted-foreground/80">
+										{#if sf.icon === 'lock'}
+											<Lock class="h-4 w-4" />
+										{:else if sf.icon === 'mail'}
+											<Mail class="h-4 w-4" />
+										{:else if sf.icon === 'bool'}
+											<ToggleLeft class="h-4 w-4" />
+										{:else}
+											<Type class="h-4 w-4" />
+										{/if}
+									</div>
+									<span class="font-mono text-xs">{sf.name}</span>
 								</div>
-								<span class="font-mono text-xs">{sf.name}</span>
-							</div>
-							<div class="flex items-center gap-1.5">
-								{#each sf.badges as badge (badge)}
-									<span
-										class="rounded px-2 py-0.5 text-xs font-medium {badge === 'Hidden'
-											? 'bg-destructive/12 text-destructive'
-											: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'}"
+								<div class="flex items-center gap-1.5">
+									{#each sf.badges as badge (badge)}
+										<span
+											class="rounded px-2 py-0.5 text-xs font-medium {badge === 'Hidden'
+												? 'bg-destructive/12 text-destructive'
+												: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'}"
+										>
+											{badge}
+										</span>
+									{/each}
+									<button
+										type="button"
+										onclick={() => (expandedSysField = expandedSysField === sf.name ? null : sf.name)}
+										title="System field info"
+										class="ml-1 inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded transition {expandedSysField === sf.name
+											? 'bg-accent text-foreground'
+											: 'text-muted-foreground hover:bg-accent hover:text-foreground'}"
 									>
-										{badge}
-									</span>
-								{/each}
-								<span class="ml-1 inline-flex h-7 w-7 items-center justify-center rounded text-muted-foreground/50" title="System field">
-									<Settings2 class="h-3.5 w-3.5" />
-								</span>
+										<Settings2 class="h-3.5 w-3.5" />
+									</button>
+								</div>
 							</div>
+							{#if expandedSysField === sf.name}
+								<div class="border-t border-border/60 bg-card/70 px-4 py-2.5 text-xs text-muted-foreground">
+									Built-in system field <code class="rounded bg-muted px-1">{sf.name}</code> — managed automatically by Microbase (cannot be dropped).
+								</div>
+							{/if}
 						</div>
 					{/each}
 

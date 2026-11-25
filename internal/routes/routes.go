@@ -62,6 +62,8 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStor
 		webhookCtrl := controllers.NewWebhookController(webhookService)
 		openapiCtrl := controllers.NewOpenAPIController(colService)
 		settingsCtrl := controllers.NewSettingsController(pool, cacheStore, fileStorage)
+		toolsCtrl := controllers.NewAdminToolsController(pool)
+		opsCtrl := controllers.NewOpsController(pool, "./backups")
 
 		api := e.Group("/api", middlewares.RateLimit(cacheStore, 100, time.Minute))
 
@@ -71,6 +73,17 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStor
 		api.PUT("/settings/redis", settingsCtrl.UpdateRedis)
 		api.GET("/settings/s3", settingsCtrl.GetS3)
 		api.PUT("/settings/s3", settingsCtrl.UpdateS3)
+		api.POST("/sql", toolsCtrl.ExecuteSQL, middlewares.RequireAuth(authService))
+		api.POST("/batch", toolsCtrl.Batch)
+		api.GET("/settings/mail", opsCtrl.GetMail)
+		api.PUT("/settings/mail", opsCtrl.UpdateMail)
+		api.POST("/settings/mail/test", opsCtrl.TestMail)
+		api.GET("/backups", opsCtrl.ListBackups)
+		api.POST("/backups", opsCtrl.CreateBackup)
+		api.GET("/backups/:name", opsCtrl.DownloadBackup)
+		api.DELETE("/backups/:name", opsCtrl.DeleteBackup)
+		api.GET("/crons", opsCtrl.ListCrons)
+		api.POST("/crons/:id/run", opsCtrl.RunCron)
 
 		// Auth, Superusers & OAuth2/OIDC endpoints.
 		api.GET("/auth/methods", oauthCtrl.AuthMethods)

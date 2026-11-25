@@ -52,6 +52,11 @@ func (h *RecordController) List(c echo.Context) error {
 	if err != nil {
 		return handleRecordError(c, err)
 	}
+	if exp := c.QueryParam("expand"); exp != "" {
+		if col, colErr := h.collections.GetByName(c.Request().Context(), c.Param("name")); colErr == nil {
+			h.service.ExpandRecords(c.Request().Context(), col, result.Items, exp)
+		}
+	}
 	for i := range result.Items {
 		result.Items[i] = h.maskHidden(c, result.Items[i])
 	}
@@ -71,6 +76,11 @@ func (h *RecordController) Get(c echo.Context) error {
 	rec, err := h.service.GetByID(c.Request().Context(), c.Param("name"), id)
 	if err != nil {
 		return handleRecordError(c, err)
+	}
+	if exp := c.QueryParam("expand"); exp != "" {
+		if col, colErr := h.collections.GetByName(c.Request().Context(), c.Param("name")); colErr == nil {
+			h.service.ExpandRecords(c.Request().Context(), col, []models.Record{rec}, exp)
+		}
 	}
 	return response.OK(c, h.maskHidden(c, rec))
 }

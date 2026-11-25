@@ -1,12 +1,13 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { Database, LogOut, ScrollText, Settings } from '@lucide/svelte';
+	import { Database, LogOut, ScrollText, Settings, Terminal } from '@lucide/svelte';
 	import { ADMIN_TOKEN_KEY } from '#lib/api/client.ts';
 	import ThemeToggle from './ThemeToggle.svelte';
 
 	const navItems = [
 		{ href: '/_/collections', label: 'Collections', icon: Database, match: '/_/collections' },
 		{ href: '/_/logs', label: 'Logs', icon: ScrollText, match: '/_/logs' },
+		{ href: '/_/sql', label: 'SQL Console & ERD', icon: Terminal, match: '/_/sql' },
 		{ href: '/_/settings', label: 'Settings', icon: Settings, match: '/_/settings' }
 	];
 

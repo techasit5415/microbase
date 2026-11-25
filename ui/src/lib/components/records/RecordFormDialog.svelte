@@ -1,9 +1,11 @@
 <script lang="ts">
-	import { X } from '@lucide/svelte';
-	import { createRecord, updateRecord } from '#lib/api/records.ts';
-	import { createSuperuser, createUser, updateSuperuser, updateUser } from '#lib/api/users.ts';
-	import type { Collection, RecordRow } from '#lib/api/types.ts';
+	import { Upload, X } from '@lucide/svelte';
+	import { ADMIN_TOKEN_KEY } from '#lib/api/client.ts';
+	import { createRecord, listRecords, updateRecord } from '#lib/api/records.ts';
+	import type { Collection, FieldDef, RecordRow } from '#lib/api/types.ts';
+	import { createSuperuser, createUser, listUsers, updateSuperuser, updateUser } from '#lib/api/users.ts';
 	import Drawer from '#lib/components/ui/Drawer.svelte';
+	import Select from '#lib/components/ui/Select.svelte';
 	import Switch from '#lib/components/ui/Switch.svelte';
 	import { toast } from '#lib/stores/toast.svelte.ts';
 	import { buildAndValidateRecordPayload } from '#lib/validation/validators.ts';
@@ -20,6 +22,8 @@
 
 	let values = $state<Record<string, string>>({});
 	let boolValues = $state<Record<string, boolean>>({});
+	let relationOptions = $state<Record<string, { value: string; label: string }[]>>({});
+	let uploadingField = $state<string | null>(null);
 	let email = $state('');
 	let role = $state('user');
 	let password = $state('');
@@ -29,6 +33,34 @@
 
 	let isSuperuser = $derived(collection.name === '_superusers');
 	let isAuth = $derived(collection.type === 'auth' || isSuperuser);
+	let customFields = $derived(
+		(collection.fields ?? []).filter((f) => !(isAuth && ['email', 'role'].includes(f.name)))
+	);
+
+	async function loadRelationChoices(fields: FieldDef[]) {
+		const next: Record<string, { value: string; label: string }[]> = {};
+		for (const f of fields) {
+			if (f.type !== 'relation' || !f.collection_name) continue;
+			try {
+				const res =
+					f.collection_name === 'users'
+						? await listUsers({ page: 1, perPage: 100 })
+						: await listRecords(f.collection_name, { page: 1, perPage: 100 });
+				next[f.name] = [
+					{ value: '', label: `Select ${f.collection_name}...` },
+					...(res.items ?? []).map((row) => {
+						const id = String(row.id ?? '');
+						const label =
+							String(row.title ?? row.name ?? row.email ?? row.username ?? `#${id}`);
+						return { value: id, label: `#${id} — ${label}` };
+					})
+				];
+			} catch {
+				next[f.name] = [{ value: '', label: `Enter ${f.collection_name} ID` }];
+			}
+		}
+		relationOptions = next;
+	}
 
 	$effect(() => {
 		if (open) {
@@ -48,8 +80,36 @@
 			password = '';
 			confirmPassword = '';
 			errorMsg = '';
+			loadRelationChoices(collection.fields ?? []);
 		}
 	});
+
+	async function handleFileUpload(fieldName: string, file: File | undefined) {
+		if (!file) return;
+		uploadingField = fieldName;
+		try {
+			const form = new FormData();
+			form.append('file', file);
+			const token = localStorage.getItem(ADMIN_TOKEN_KEY);
+			const res = await fetch('/api/files', {
+				method: 'POST',
+				headers: token ? { Authorization: `Bearer ${token}` } : {},
+				body: form
+			});
+			const json = await res.json();
+			if (!res.ok) throw new Error(json?.error?.message || 'File upload failed');
+			values = { ...values, [fieldName]: json.data?.url || json.url || '' };
+			toast.success(`Uploaded "${file.name}" (${json.data?.backend || 'storage'})`);
+		} catch (err) {
+			toast.error(err, 'Upload failed');
+		} finally {
+			uploadingField = null;
+		}
+	}
+
+	function isImageUrl(u: string): boolean {
+		return /\.(png|jpe?g|gif|webp|svg)$/i.test(u);
+	}
 
 	async function handleSubmit(e: SubmitEvent) {
 		e.preventDefault();
@@ -85,7 +145,6 @@
 				}
 			} else if (isAuth) {
 				if (editingRecord && typeof editingRecord.id === 'number') {
-					const customFields = (collection.fields ?? []).filter((f) => !['email', 'role'].includes(f.name));
 					const { payload: customPayload, error: customErr } = buildAndValidateRecordPayload(
 						customFields,
 						values,
@@ -124,7 +183,11 @@
 					await createRecord(collection.name, payload);
 				}
 			}
-			toast.success(editingRecord ? `Updated record #${editingRecord.id}` : `Created record in "${collection.name}"`);
+			toast.success(
+				editingRecord
+					? `Updated record #${editingRecord.id}`
+					: `Created record in "${collection.name}"`
+			);
 			onSaved();
 			onClose();
 		} catch (err) {
@@ -138,11 +201,13 @@
 
 <Drawer {open} {onClose} maxWidth="max-w-xl">
 	<div class="flex items-center justify-between border-b border-border px-6 py-4">
-		<h2 class="text-base font-semibold">{editingRecord ? `Edit ${collection.name} #${editingRecord.id}` : `New ${collection.name} record`}</h2>
+		<h2 class="text-base font-semibold">
+			{editingRecord ? `Edit ${collection.name} #${editingRecord.id}` : `New ${collection.name} record`}
+		</h2>
 		<button
 			type="button"
 			onclick={onClose}
-			class="cursor-pointer rounded-md p-1.5 text-muted-foreground transition hover:bg-accent hover:text-foreground"
+			class="cursor-pointer rounded-md p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"
 		>
 			<X class="h-4 w-4" />
 		</button>
@@ -162,7 +227,7 @@
 						value={email}
 						oninput={(e) => (email = e.currentTarget.value)}
 						placeholder="user@example.com"
-						class="w-full rounded-md border border-input bg-background px-3.5 py-2.5 text-sm outline-none focus:border-ring"
+						class="w-full rounded-md border border-input bg-card px-3.5 py-2.5 text-sm outline-none focus:border-ring"
 					/>
 				</div>
 				{#if !isSuperuser && editingRecord}
@@ -174,7 +239,7 @@
 							value={role}
 							oninput={(e) => (role = e.currentTarget.value)}
 							placeholder="user or admin"
-							class="w-full rounded-md border border-input bg-background px-3.5 py-2.5 font-mono text-sm outline-none focus:border-ring"
+							class="w-full rounded-md border border-input bg-card px-3.5 py-2.5 font-mono text-sm outline-none focus:border-ring"
 						/>
 					</div>
 				{/if}
@@ -192,7 +257,7 @@
 							value={password}
 							oninput={(e) => (password = e.currentTarget.value)}
 							placeholder={editingRecord ? 'Leave blank to keep' : 'Minimum 8 characters'}
-							class="w-full rounded-md border border-input bg-background px-3.5 py-2.5 text-sm outline-none focus:border-ring"
+							class="w-full rounded-md border border-input bg-card px-3.5 py-2.5 text-sm outline-none focus:border-ring"
 						/>
 					</div>
 					<div>
@@ -208,24 +273,113 @@
 							value={confirmPassword}
 							oninput={(e) => (confirmPassword = e.currentTarget.value)}
 							placeholder={editingRecord ? 'Leave blank to keep' : 'Retype password'}
-							class="w-full rounded-md border border-input bg-background px-3.5 py-2.5 text-sm outline-none focus:border-ring"
+							class="w-full rounded-md border border-input bg-card px-3.5 py-2.5 text-sm outline-none focus:border-ring"
 						/>
 					</div>
 				</div>
-			{:else}
-				{#each collection.fields ?? [] as field (field.name)}
+			{/if}
+
+			{#if !isSuperuser && (!isAuth || editingRecord)}
+				{#each customFields as field (field.name)}
 					{#if field.type === 'boolean'}
-						<div class="flex items-center justify-between rounded-md border border-border bg-muted/20 px-3.5 py-2.5">
+						<div class="flex items-center justify-between rounded-md border border-border bg-muted/35 px-3.5 py-2.5">
 							<div>
 								<div class="text-xs font-medium">
 									{field.name}{field.required ? ' *' : ''}
 								</div>
-								<div class="text-xs text-muted-foreground">boolean</div>
+								<div class="text-xs text-muted-foreground">{field.help_text || 'boolean'}</div>
 							</div>
 							<Switch
 								checked={Boolean(boolValues[field.name])}
 								onChange={(v) => (boolValues[field.name] = v)}
 							/>
+						</div>
+					{:else if field.type === 'file'}
+						<div>
+							<div class="mb-1.5 flex items-center justify-between text-xs">
+								<span class="font-medium">
+									{field.name}{#if field.required}<span class="text-destructive"> *</span>{/if}
+								</span>
+								<span class="font-mono text-muted-foreground">file</span>
+							</div>
+							<div class="space-y-2 rounded-md border border-border bg-muted/30 p-3">
+								{#if values[field.name]}
+									<div class="flex items-center justify-between gap-2 rounded bg-card p-2">
+										<div class="flex min-w-0 items-center gap-2.5">
+											{#if isImageUrl(values[field.name])}
+												<img
+													src={values[field.name]}
+													alt={field.name}
+													class="h-10 w-10 rounded border border-border object-cover"
+												/>
+											{/if}
+											<a
+												href={values[field.name]}
+												target="_blank"
+												rel="noreferrer"
+												class="truncate font-mono text-xs underline"
+											>
+												{values[field.name]}
+											</a>
+										</div>
+										<button
+											type="button"
+											onclick={() => (values = { ...values, [field.name]: '' })}
+											class="cursor-pointer rounded p-1 text-muted-foreground hover:bg-muted hover:text-destructive"
+										>
+											<X class="h-3.5 w-3.5" />
+										</button>
+									</div>
+								{/if}
+								<label class="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs font-medium transition hover:bg-muted">
+									<Upload class="h-3.5 w-3.5" />
+									{uploadingField === field.name ? 'Uploading...' : 'Upload file (Local / S3)'}
+									<input
+										type="file"
+										class="hidden"
+										accept={field.mime_types?.join(',') || undefined}
+										onchange={(e) => handleFileUpload(field.name, e.currentTarget.files?.[0])}
+									/>
+								</label>
+							</div>
+							{#if field.help_text}
+								<p class="mt-1 text-xs text-muted-foreground">{field.help_text}</p>
+							{/if}
+						</div>
+					{:else if field.type === 'select' && field.values?.length}
+						<div>
+							<div class="mb-1.5 flex items-center justify-between text-xs">
+								<span class="font-medium">
+									{field.name}{#if field.required}<span class="text-destructive"> *</span>{/if}
+								</span>
+								<span class="font-mono text-muted-foreground">select</span>
+							</div>
+							<Select
+								bind:value={() => values[field.name] ?? '', (v) => (values = { ...values, [field.name]: v })}
+								options={[
+									{ value: '', label: 'Select option...' },
+									...field.values.map((v) => ({ value: v, label: v }))
+								]}
+							/>
+							{#if field.help_text}
+								<p class="mt-1 text-xs text-muted-foreground">{field.help_text}</p>
+							{/if}
+						</div>
+					{:else if field.type === 'relation' && relationOptions[field.name]?.length}
+						<div>
+							<div class="mb-1.5 flex items-center justify-between text-xs">
+								<span class="font-medium">
+									{field.name}{#if field.required}<span class="text-destructive"> *</span>{/if}
+								</span>
+								<span class="font-mono text-muted-foreground">relation &rarr; {field.collection_name}</span>
+							</div>
+							<Select
+								bind:value={() => values[field.name] ?? '', (v) => (values = { ...values, [field.name]: v })}
+								options={relationOptions[field.name]}
+							/>
+							{#if field.help_text}
+								<p class="mt-1 text-xs text-muted-foreground">{field.help_text}</p>
+							{/if}
 						</div>
 					{:else}
 						<div>
@@ -233,29 +387,48 @@
 								<span class="font-medium">
 									{field.name}{#if field.required}<span class="text-destructive"> *</span>{/if}
 								</span>
-								<span class="font-mono text-xs text-muted-foreground">{field.type}</span>
+								<span class="font-mono text-muted-foreground">
+									{field.type}{field.type === 'vector' ? `(${field.dimension})` : ''}
+								</span>
 							</label>
-
-							{#if field.type === 'json' || field.type === 'geopoint' || field.type === 'editor'}
+							{#if field.type === 'editor' || field.type === 'json' || field.type === 'vector'}
 								<textarea
 									id="f-{field.name}"
-									rows="3"
+									rows={field.type === 'editor' ? 4 : 3}
 									required={field.required}
 									value={values[field.name] ?? ''}
 									oninput={(e) => (values[field.name] = e.currentTarget.value)}
-									placeholder={field.type === 'geopoint' ? '{"lon": 100.5, "lat": 13.75}' : field.type === 'json' ? '{"key": "value"}' : `Enter ${field.name}...`}
-									class="w-full rounded-md border border-input bg-background px-3.5 py-2.5 font-mono text-sm outline-none focus:border-ring"
+									placeholder={field.type === 'vector' ? '[0.12, -0.34, ...]' : field.type === 'json' ? '{"key": "value"}' : ''}
+									class="w-full rounded-md border border-input bg-card px-3.5 py-2 font-mono text-xs outline-none focus:border-ring"
 								></textarea>
-							{:else if field.type === 'integer' || field.type === 'relation' || field.type === 'float' || field.type === 'number'}
+							{:else if field.type === 'number' || field.type === 'integer' || field.type === 'float' || field.type === 'relation'}
 								<input
 									id="f-{field.name}"
 									type="number"
-									step={field.type === 'float' || field.type === 'number' ? 'any' : '1'}
+									step={field.type === 'integer' || field.type === 'relation' ? '1' : 'any'}
 									required={field.required}
 									value={values[field.name] ?? ''}
 									oninput={(e) => (values[field.name] = e.currentTarget.value)}
-									placeholder={`Enter ${field.name}...`}
-									class="w-full rounded-md border border-input bg-background px-3.5 py-2.5 text-sm outline-none focus:border-ring"
+									class="w-full rounded-md border border-input bg-card px-3.5 py-2.5 font-mono text-sm outline-none focus:border-ring"
+								/>
+							{:else if field.type === 'email'}
+								<input
+									id="f-{field.name}"
+									type="email"
+									required={field.required}
+									value={values[field.name] ?? ''}
+									oninput={(e) => (values[field.name] = e.currentTarget.value)}
+									class="w-full rounded-md border border-input bg-card px-3.5 py-2.5 text-sm outline-none focus:border-ring"
+								/>
+							{:else if field.type === 'url'}
+								<input
+									id="f-{field.name}"
+									type="url"
+									required={field.required}
+									value={values[field.name] ?? ''}
+									oninput={(e) => (values[field.name] = e.currentTarget.value)}
+									placeholder="https://..."
+									class="w-full rounded-md border border-input bg-card px-3.5 py-2.5 text-sm outline-none focus:border-ring"
 								/>
 							{:else}
 								<input
@@ -264,9 +437,11 @@
 									required={field.required}
 									value={values[field.name] ?? ''}
 									oninput={(e) => (values[field.name] = e.currentTarget.value)}
-									placeholder={field.type === 'vector' ? '[0.1, 0.2, 0.3]' : `Enter ${field.name}...`}
-									class="w-full rounded-md border border-input bg-background px-3.5 py-2.5 text-sm outline-none focus:border-ring"
+									class="w-full rounded-md border border-input bg-card px-3.5 py-2.5 text-sm outline-none focus:border-ring"
 								/>
+							{/if}
+							{#if field.help_text}
+								<p class="mt-1 text-xs text-muted-foreground">{field.help_text}</p>
 							{/if}
 						</div>
 					{/if}
@@ -274,22 +449,22 @@
 			{/if}
 
 			{#if errorMsg}
-				<p class="rounded-md bg-destructive/15 px-3 py-2 text-xs text-destructive">{errorMsg}</p>
+				<p class="rounded-md bg-destructive/15 px-3.5 py-2.5 text-xs text-destructive">{errorMsg}</p>
 			{/if}
 		</div>
 
-		<div class="flex items-center justify-end gap-2 border-t border-border bg-muted/20 px-6 py-3.5">
+		<div class="flex items-center justify-end gap-2 border-t border-border bg-card px-6 py-3.5">
 			<button
 				type="button"
 				onclick={onClose}
-				class="cursor-pointer rounded-md border border-border px-3.5 py-1.5 text-xs font-medium hover:bg-accent"
+				class="cursor-pointer rounded-md px-4 py-2 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
 			>
 				Cancel
 			</button>
 			<button
 				type="submit"
 				disabled={saving}
-				class="cursor-pointer rounded-md bg-foreground px-4 py-1.5 text-xs font-medium text-background hover:opacity-90 disabled:opacity-50"
+				class="cursor-pointer rounded-md bg-foreground px-5 py-2 text-xs font-semibold text-background transition hover:opacity-90 disabled:opacity-50"
 			>
 				{saving ? 'Saving...' : editingRecord ? 'Save changes' : 'Create'}
 			</button>
