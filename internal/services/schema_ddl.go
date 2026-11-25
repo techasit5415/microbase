@@ -20,7 +20,11 @@ func buildCreateTableSQL(req models.CreateCollectionRequest) (string, error) {
 		return "", fmt.Errorf("invalid collection name %q", req.Name)
 	}
 
-	columns := []string{`"id" BIGSERIAL PRIMARY KEY`}
+	idCol := `"id" BIGSERIAL PRIMARY KEY`
+	if req.IDType == "text" {
+		idCol = `"id" TEXT PRIMARY KEY`
+	}
+	columns := []string{idCol}
 	if req.Type == "auth" {
 		columns = append(columns,
 			`"email" TEXT UNIQUE NOT NULL`,

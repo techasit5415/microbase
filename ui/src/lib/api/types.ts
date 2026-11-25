@@ -45,6 +45,7 @@ export interface FieldDef {
 	min?: number;
 	max?: number;
 	pattern?: string;
+	autogenerate_pattern?: string;
 	only_int?: boolean;
 	only_domains?: string[];
 	except_domains?: string[];
@@ -66,6 +67,8 @@ export interface Collection {
 	name: string;
 	type?: 'auth' | 'base' | 'view' | 'system';
 	view_query?: string;
+	id_type?: 'serial' | 'text';
+	id_autogenerate_pattern?: string;
 	fields: FieldDef[];
 	api_rules?: Record<string, string>;
 	indexes?: IndexDef[];

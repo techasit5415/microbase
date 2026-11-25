@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Upload, X } from '@lucide/svelte';
-	import { ADMIN_TOKEN_KEY } from '#lib/api/client.ts';
+	import { ADMIN_TOKEN_KEY, apiRequest } from '#lib/api/client.ts';
 	import { createRecord, listRecords, updateRecord } from '#lib/api/records.ts';
 	import type { Collection, FieldDef, RecordRow } from '#lib/api/types.ts';
 	import { createSuperuser, createUser, listUsers, updateSuperuser, updateUser } from '#lib/api/users.ts';
@@ -30,6 +30,7 @@
 	let confirmPassword = $state('');
 	let errorMsg = $state('');
 	let saving = $state(false);
+	let impersonateToken = $state('');
 
 	let isSuperuser = $derived(collection.name === '_superusers');
 	let isAuth = $derived(collection.type === 'auth' || isSuperuser);
@@ -80,6 +81,7 @@
 			password = '';
 			confirmPassword = '';
 			errorMsg = '';
+			impersonateToken = '';
 			loadRelationChoices(collection.fields ?? []);
 		}
 	});
@@ -107,6 +109,18 @@
 		}
 	}
 
+	async function handleImpersonate() {
+		if (!editingRecord?.id) return;
+		try {
+			const res = await apiRequest<{ token: string }>(`/api/users/${editingRecord.id}/impersonate`, { method: 'POST' });
+			impersonateToken = res.token;
+			await navigator.clipboard?.writeText(res.token).catch(() => {});
+			toast.success('Impersonation JWT generated & copied to clipboard!');
+		} catch (err) {
+			toast.error(err);
+		}
+	}
+
 	function isImageUrl(u: string): boolean {
 		return /\.(png|jpe?g|gif|webp|svg)$/i.test(u);
 	}
@@ -114,6 +128,7 @@
 	async function handleSubmit(e: SubmitEvent) {
 		e.preventDefault();
 		errorMsg = '';
+			impersonateToken = '';
 		if (isAuth) {
 			if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
 				errorMsg = 'Please enter a valid email address.';
@@ -177,7 +192,7 @@
 					saving = false;
 					return;
 				}
-				if (editingRecord && typeof editingRecord.id === 'number') {
+				if (editingRecord && (typeof editingRecord.id === 'number' || typeof editingRecord.id === 'string')) {
 					await updateRecord(collection.name, editingRecord.id, payload);
 				} else {
 					await createRecord(collection.name, payload);
@@ -391,14 +406,75 @@
 									{field.type}{field.type === 'vector' ? `(${field.dimension})` : ''}
 								</span>
 							</label>
-							{#if field.type === 'editor' || field.type === 'json' || field.type === 'vector'}
+							{#if field.type === 'editor'}
+								<div class="overflow-hidden rounded-md border border-input bg-card focus-within:border-ring">
+									<div class="flex flex-wrap items-center gap-1 border-b border-border bg-muted/45 px-2 py-1.5 text-xs">
+										{#each [
+											{ lbl: 'B', wrap: ['<strong>', '</strong>'] },
+											{ lbl: 'I', wrap: ['<em>', '</em>'] },
+											{ lbl: 'H2', wrap: ['<h2>', '</h2>'] },
+											{ lbl: 'Code', wrap: ['<code>', '</code>'] },
+											{ lbl: 'Link', wrap: ['<a href="https://">', '</a>'] },
+											{ lbl: 'List', wrap: ['<ul><li>', '</li></ul>'] }
+										] as fmt (fmt.lbl)}
+											<button
+												type="button"
+												onclick={() => (values[field.name] = (values[field.name] ?? '') + fmt.wrap[0] + 'text' + fmt.wrap[1])}
+												class="cursor-pointer rounded border border-border bg-card px-2 py-0.5 font-mono text-xs font-semibold hover:bg-accent"
+											>
+												{fmt.lbl}
+											</button>
+										{/each}
+									</div>
+									<textarea
+										id="f-{field.name}"
+										rows="5"
+										required={field.required}
+										value={values[field.name] ?? ''}
+										oninput={(e) => (values[field.name] = e.currentTarget.value)}
+										placeholder="<p>Rich HTML or Markdown content...</p>"
+										class="w-full bg-transparent px-3.5 py-2.5 text-sm outline-none"
+									></textarea>
+								</div>
+							{:else if field.type === 'geopoint'}
+								{@const gp = (() => { try { const o = JSON.parse(values[field.name] || '{}'); return { lat: o.lat ?? 13.7563, lon: o.lon ?? 100.5018 }; } catch { return { lat: 13.7563, lon: 100.5018 }; } })()}
+								<div class="space-y-2 rounded-md border border-border bg-muted/30 p-3">
+									<div class="grid grid-cols-2 gap-2">
+										<div>
+											<div class="mb-1 text-xs text-muted-foreground">Latitude</div>
+											<input
+												type="number"
+												step="any"
+												value={gp.lat}
+												oninput={(e) => (values[field.name] = JSON.stringify({ lat: parseFloat(e.currentTarget.value) || 0, lon: gp.lon }))}
+												class="w-full rounded-md border border-input bg-card px-3 py-1.5 font-mono text-xs outline-none focus:border-ring"
+											/>
+										</div>
+										<div>
+											<div class="mb-1 text-xs text-muted-foreground">Longitude</div>
+											<input
+												type="number"
+												step="any"
+												value={gp.lon}
+												oninput={(e) => (values[field.name] = JSON.stringify({ lat: gp.lat, lon: parseFloat(e.currentTarget.value) || 0 }))}
+												class="w-full rounded-md border border-input bg-card px-3 py-1.5 font-mono text-xs outline-none focus:border-ring"
+											/>
+										</div>
+									</div>
+									<iframe
+										title="Map preview"
+										class="h-40 w-full rounded border border-border"
+										src="https://www.openstreetmap.org/export/embed.html?bbox={gp.lon - 0.02},{gp.lat - 0.015},{gp.lon + 0.02},{gp.lat + 0.015}&layer=mapnik&marker={gp.lat},{gp.lon}"
+									></iframe>
+								</div>
+							{:else if field.type === 'json' || field.type === 'vector'}
 								<textarea
 									id="f-{field.name}"
-									rows={field.type === 'editor' ? 4 : 3}
+									rows="3"
 									required={field.required}
 									value={values[field.name] ?? ''}
 									oninput={(e) => (values[field.name] = e.currentTarget.value)}
-									placeholder={field.type === 'vector' ? '[0.12, -0.34, ...]' : field.type === 'json' ? '{"key": "value"}' : ''}
+									placeholder={field.type === 'vector' ? '[0.12, -0.34, ...]' : '{"key": "value"}'}
 									class="w-full rounded-md border border-input bg-card px-3.5 py-2 font-mono text-xs outline-none focus:border-ring"
 								></textarea>
 							{:else if field.type === 'number' || field.type === 'integer' || field.type === 'float' || field.type === 'relation'}
@@ -453,7 +529,25 @@
 			{/if}
 		</div>
 
-		<div class="flex items-center justify-end gap-2 border-t border-border bg-card px-6 py-3.5">
+		{#if impersonateToken}
+			<div class="border-t border-border bg-emerald-500/10 px-6 py-3 text-xs">
+				<div class="mb-1 font-semibold text-emerald-700 dark:text-emerald-400">Impersonation Bearer Token (copied):</div>
+				<code class="block max-h-16 overflow-auto break-all rounded bg-card p-2 font-mono text-xs">{impersonateToken}</code>
+			</div>
+		{/if}
+		<div class="flex items-center justify-between gap-2 border-t border-border bg-card px-6 py-3.5">
+			<div>
+				{#if isAuth && !isSuperuser && editingRecord}
+					<button
+						type="button"
+						onclick={handleImpersonate}
+						class="cursor-pointer rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-muted"
+					>
+						Impersonate (JWT)
+					</button>
+				{/if}
+			</div>
+			<div class="flex items-center gap-2">
 			<button
 				type="button"
 				onclick={onClose}
@@ -468,6 +562,7 @@
 			>
 				{saving ? 'Saving...' : editingRecord ? 'Save changes' : 'Create'}
 			</button>
+			</div>
 		</div>
 	</form>
 </Drawer>

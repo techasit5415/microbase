@@ -2,6 +2,8 @@
 	import {
 		CalendarCheck,
 		ChevronDown,
+		Copy,
+		Eraser,
 		Folder,
 		Lock,
 		LockOpen,
@@ -14,10 +16,11 @@
 		Users,
 		X
 	} from '@lucide/svelte';
-	import { createCollection, updateCollection } from '#lib/api/collections.ts';
+	import { createCollection, duplicateCollection, truncateCollection, updateCollection } from '#lib/api/collections.ts';
 	import type { Collection, FieldDef, FieldType, IndexDef } from '#lib/api/types.ts';
 	import AuthOptionsTab from '#lib/components/oauth/AuthOptionsTab.svelte';
 	import Drawer from '#lib/components/ui/Drawer.svelte';
+	import { confirmAction } from '#lib/stores/confirm.svelte.ts';
 	import { toast } from '#lib/stores/toast.svelte.ts';
 	import { validateCollectionForm } from '#lib/validation/validators.ts';
 	import FieldRowInput from './FieldRowInput.svelte';
@@ -35,6 +38,8 @@
 	let { open, editing = null, availableCollections = [], onClose, onSaved }: Props = $props();
 
 	let colType = $state<'base' | 'view' | 'auth'>('base');
+	let idType = $state<'text' | 'serial'>('text');
+	let idAutogen = $state('[a-z0-9]{15}');
 	let typeMenuOpen = $state(false);
 	let activeTab = $state<'fields' | 'query' | 'rules' | 'options'>('fields');
 	let name = $state('');
@@ -105,6 +110,8 @@
 							: 'base';
 				activeTab = colType === 'view' ? 'query' : 'fields';
 				viewQuery = editing.view_query ?? '';
+				idType = editing.id_type === 'text' ? 'text' : 'serial';
+				idAutogen = editing.id_autogenerate_pattern || '[a-z0-9]{15}';
 				fields = (editing.fields ?? [])
 					.filter((f) => !(editing.name === 'users' && ['email', 'role'].includes(f.name)))
 					.map((f) => ({
@@ -124,6 +131,8 @@
 				colType = 'base';
 				activeTab = 'fields';
 				viewQuery = '';
+				idType = 'text';
+				idAutogen = '[a-z0-9]{15}';
 				fields = [{ name: 'title', type: 'text', required: true, unique: false }];
 				indexes = [];
 				apiRules = {};
@@ -189,6 +198,36 @@
 		}
 	}
 
+	async function handleTruncate() {
+		if (!editing) return;
+		const ok = await confirmAction({
+			title: `Truncate "${editing.name}"?`,
+			description: 'This will permanently delete ALL records inside this collection while keeping the schema intact.',
+			confirmLabel: 'Truncate all rows',
+			destructive: true
+		});
+		if (!ok) return;
+		try {
+			await truncateCollection(editing.name);
+			toast.success(`Truncated "${editing.name}"`);
+			onSaved(editing, true);
+			onClose();
+		} catch (err) {
+			toast.error(err);
+		}
+	}
+
+	async function handleDuplicate() {
+		if (!editing) return;
+		try {
+			const cloned = await duplicateCollection(editing.name, `${editing.name}_copy`);
+			onSaved(cloned, false);
+			onClose();
+		} catch (err) {
+			toast.error(err);
+		}
+	}
+
 	function removeIndex(pos: number) {
 		indexes = indexes.filter((_, i) => i !== pos);
 	}
@@ -215,6 +254,25 @@
 				errorMsg = validationErr;
 				toast.error(validationErr);
 				return;
+			}
+		}
+
+		if (editing && !isView) {
+			const oldNames = new Set((editing.fields ?? []).map((f) => f.name));
+			const keptOrigins = new Set(fields.map((f) => f.original_name).filter(Boolean));
+			const dropped = [...oldNames].filter((n) => !keptOrigins.has(n));
+			const renamed = fields.filter((f) => f.original_name && f.original_name !== f.name.trim()).map((f) => `${f.original_name} → ${f.name.trim()}`);
+			if (dropped.length > 0 || renamed.length > 0) {
+				const parts: string[] = [];
+				if (dropped.length) parts.push(`Drop columns (data will be lost): ${dropped.join(', ')}`);
+				if (renamed.length) parts.push(`Rename columns: ${renamed.join(', ')}`);
+				const ok = await confirmAction({
+					title: `Confirm schema changes on "${editing.name}"?`,
+					description: parts.join(' • '),
+					confirmLabel: 'Apply changes',
+					destructive: dropped.length > 0
+				});
+				if (!ok) return;
 			}
 		}
 
@@ -248,6 +306,7 @@
 						min: f.min !== undefined ? Number(f.min) : undefined,
 						max: f.max !== undefined ? Number(f.max) : undefined,
 						pattern: f.type === 'text' && f.pattern?.trim() ? f.pattern.trim() : undefined,
+						autogenerate_pattern: f.type === 'text' && f.autogenerate_pattern?.trim() ? f.autogenerate_pattern.trim() : undefined,
 						only_int: f.type === 'number' || f.type === 'float' ? Boolean(f.only_int) : undefined,
 						only_domains:
 							(f.type === 'email' || f.type === 'url') && f.only_domains?.length
@@ -264,7 +323,7 @@
 
 			const result = editing
 				? await updateCollection(editing.name, cleanFields, apiRules, indexes, viewQuery)
-				: await createCollection(name.trim(), cleanFields, indexes, apiRules, colType, viewQuery);
+				: await createCollection(name.trim(), cleanFields, indexes, apiRules, colType, viewQuery, idType, idAutogen.trim() || '[a-z0-9]{15}');
 
 			onSaved(result, Boolean(editing));
 			onClose();
@@ -282,13 +341,35 @@
 		<h2 class="text-base font-normal text-foreground">
 			{editing ? 'Edit ' : 'Create '}<strong class="font-semibold">{editing ? editing.name : 'collection'}</strong>{editing ? ' collection' : ''}
 		</h2>
-		<button
-			type="button"
-			onclick={onClose}
-			class="cursor-pointer rounded-md p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"
-		>
-			<X class="h-4 w-4" />
-		</button>
+		<div class="flex items-center gap-1">
+			{#if editing && !isView}
+				<button
+					type="button"
+					onclick={handleDuplicate}
+					title="Duplicate collection schema"
+					class="inline-flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
+				>
+					<Copy class="h-3.5 w-3.5" />
+					Duplicate
+				</button>
+				<button
+					type="button"
+					onclick={handleTruncate}
+					title="Truncate all records"
+					class="inline-flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-destructive transition hover:bg-destructive/10"
+				>
+					<Eraser class="h-3.5 w-3.5" />
+					Truncate
+				</button>
+			{/if}
+			<button
+				type="button"
+				onclick={onClose}
+				class="cursor-pointer rounded-md p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"
+			>
+				<X class="h-4 w-4" />
+			</button>
+		</div>
 	</div>
 
 	<!-- Name + PocketBase Type Dropdown -->
@@ -465,9 +546,47 @@
 								</div>
 							</div>
 							{#if expandedSysField === sf.name}
-								<div class="border-t border-border/60 bg-card/70 px-4 py-2.5 text-xs text-muted-foreground">
-									Built-in system field <code class="rounded bg-muted px-1">{sf.name}</code> — managed automatically by Microbase (cannot be dropped).
-								</div>
+								{#if sf.name === 'id'}
+									<div class="grid grid-cols-1 gap-3 border-t border-border/60 bg-card/85 px-4 py-3 sm:grid-cols-2">
+										<div>
+											<div class="mb-1 text-xs font-medium text-muted-foreground">Primary Key Type</div>
+											<div class="flex gap-1.5">
+												<button
+													type="button"
+													disabled={Boolean(editing)}
+													onclick={() => (idType = 'text')}
+													class="cursor-pointer rounded border px-2.5 py-1 text-xs font-medium transition disabled:opacity-60 {idType === 'text' ? 'border-foreground bg-foreground text-background' : 'border-border bg-background text-foreground'}"
+												>
+													Text (PocketBase)
+												</button>
+												<button
+													type="button"
+													disabled={Boolean(editing)}
+													onclick={() => (idType = 'serial')}
+													class="cursor-pointer rounded border px-2.5 py-1 text-xs font-medium transition disabled:opacity-60 {idType === 'serial' ? 'border-foreground bg-foreground text-background' : 'border-border bg-background text-foreground'}"
+												>
+													Auto-Increment
+												</button>
+											</div>
+										</div>
+										{#if idType === 'text'}
+											<div>
+												<div class="mb-1 text-xs font-medium text-muted-foreground">Autogenerate pattern</div>
+												<input
+													type="text"
+													disabled={Boolean(editing)}
+													bind:value={idAutogen}
+													placeholder="[a-z0-9]{15} or uuid"
+													class="w-full rounded-md border border-input bg-background px-3 py-1 font-mono text-xs outline-none focus:border-ring disabled:opacity-60"
+												/>
+											</div>
+										{/if}
+									</div>
+								{:else}
+									<div class="border-t border-border/60 bg-card/70 px-4 py-2.5 text-xs text-muted-foreground">
+										Built-in system field <code class="rounded bg-muted px-1">{sf.name}</code> — managed automatically by Microbase.
+									</div>
+								{/if}
 							{/if}
 						</div>
 					{/each}

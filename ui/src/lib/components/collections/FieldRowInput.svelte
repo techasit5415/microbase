@@ -398,7 +398,7 @@
 			{/if}
 
 			{#if field.type === 'text'}
-				<div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					<div>
 						<div class="mb-1 text-xs font-medium text-muted-foreground">Min length</div>
 						<input
@@ -434,6 +434,16 @@
 							value={field.pattern ?? ''}
 							oninput={(e) => (field.pattern = e.currentTarget.value)}
 							placeholder="e.g. ^[a-z0-9-]+$"
+							class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring"
+						/>
+					</div>
+					<div>
+						<div class="mb-1 text-xs font-medium text-muted-foreground">Autogenerate pattern</div>
+						<input
+							type="text"
+							value={field.autogenerate_pattern ?? ''}
+							oninput={(e) => (field.autogenerate_pattern = e.currentTarget.value)}
+							placeholder="e.g. [a-z0-9]{15} or uuid"
 							class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring"
 						/>
 					</div>

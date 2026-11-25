@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -77,13 +78,17 @@ func (s *RecordService) List(ctx context.Context, colName string, opts models.Li
 }
 
 // GetByID fetches a single record by its numeric ID.
-func (s *RecordService) GetByID(ctx context.Context, colName string, id int64) (models.Record, error) {
+func (s *RecordService) GetByID(ctx context.Context, colName string, rawID string) (models.Record, error) {
 	col, err := s.collections.GetByName(ctx, colName)
 	if err != nil {
 		return nil, err
 	}
 
-	rows, err := s.pool.Query(ctx, fmt.Sprintf(`SELECT * FROM "%s" WHERE "id" = $1`, col.Name), id)
+	idVal, idErr := parseRecordID(col, rawID)
+	if idErr != nil {
+		return nil, idErr
+	}
+	rows, err := s.pool.Query(ctx, fmt.Sprintf(`SELECT * FROM "%s" WHERE "id" = $1`, col.Name), idVal)
 	if err != nil {
 		return nil, fmt.Errorf("get record: %w", err)
 	}
@@ -106,6 +111,19 @@ func (s *RecordService) Create(ctx context.Context, colName string, data models.
 		return nil, err
 	}
 	allowed := allowedFieldMap(col)
+
+	if data == nil {
+		data = models.Record{}
+	}
+	// Apply PocketBase-style AutogeneratePattern on missing text fields before required checks.
+	for _, f := range col.Fields {
+		if f.Type == "text" && f.AutogeneratePattern != "" {
+			val, exists := data[f.Name]
+			if !exists || val == nil || strings.TrimSpace(fmt.Sprint(val)) == "" {
+				data[f.Name] = GenerateFromPattern(f.AutogeneratePattern)
+			}
+		}
+	}
 
 	for _, f := range col.Fields {
 		if f.Required {
@@ -152,7 +170,7 @@ func (s *RecordService) Create(ctx context.Context, colName string, data models.
 }
 
 // Update modifies specified fields on an existing record and updates updated_at.
-func (s *RecordService) Update(ctx context.Context, colName string, id int64, data models.Record) (models.Record, error) {
+func (s *RecordService) Update(ctx context.Context, colName string, rawID string, data models.Record) (models.Record, error) {
 	col, err := s.collections.GetByName(ctx, colName)
 	if err != nil {
 		return nil, err
@@ -179,7 +197,11 @@ func (s *RecordService) Update(ctx context.Context, colName string, id int64, da
 	}
 
 	setClauses = append(setClauses, `"updated_at" = NOW()`)
-	args = append(args, id)
+	idVal, idErr := parseRecordID(col, rawID)
+	if idErr != nil {
+		return nil, idErr
+	}
+	args = append(args, idVal)
 
 	updateSQL := fmt.Sprintf(`UPDATE "%s" SET %s WHERE "id" = $%d RETURNING *`,
 		col.Name, strings.Join(setClauses, ", "), idx)
@@ -201,13 +223,17 @@ func (s *RecordService) Update(ctx context.Context, colName string, id int64, da
 }
 
 // Delete removes a record by ID.
-func (s *RecordService) Delete(ctx context.Context, colName string, id int64) error {
+func (s *RecordService) Delete(ctx context.Context, colName string, rawID string) error {
 	col, err := s.collections.GetByName(ctx, colName)
 	if err != nil {
 		return err
 	}
 
-	tag, err := s.pool.Exec(ctx, fmt.Sprintf(`DELETE FROM "%s" WHERE "id" = $1`, col.Name), id)
+	idVal, idErr := parseRecordID(col, rawID)
+	if idErr != nil {
+		return idErr
+	}
+	tag, err := s.pool.Exec(ctx, fmt.Sprintf(`DELETE FROM "%s" WHERE "id" = $1`, col.Name), idVal)
 	if err != nil {
 		return fmt.Errorf("delete record: %w", err)
 	}
@@ -227,4 +253,18 @@ func (s *RecordService) publish(action, colName string, record any) {
 	if s.webhooks != nil {
 		s.webhooks.DispatchAsync(colName, action, record)
 	}
+}
+
+func parseRecordID(col *models.Collection, rawID string) (any, error) {
+	if col.IDType == "text" {
+		if strings.TrimSpace(rawID) == "" {
+			return nil, fmt.Errorf("%w: record id cannot be empty", ErrInvalidInput)
+		}
+		return rawID, nil
+	}
+	n, err := strconv.ParseInt(rawID, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("%w: record id must be an integer", ErrInvalidInput)
+	}
+	return n, nil
 }

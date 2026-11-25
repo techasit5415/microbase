@@ -100,3 +100,24 @@ func (h *CollectionController) Update(c echo.Context) error {
 	}
 	return response.OK(c, col)
 }
+
+// Truncate handles POST /api/collections/:name/truncate.
+func (h *CollectionController) Truncate(c echo.Context) error {
+	if err := h.service.Truncate(c.Request().Context(), c.Param("name")); err != nil {
+		return response.Error(c, http.StatusBadRequest, "TRUNCATE_FAILED", err.Error())
+	}
+	return response.OK(c, map[string]any{"truncated": c.Param("name")})
+}
+
+// Duplicate handles POST /api/collections/:name/duplicate.
+func (h *CollectionController) Duplicate(c echo.Context) error {
+	var req struct {
+		NewName string `json:"new_name"`
+	}
+	_ = c.Bind(&req)
+	col, err := h.service.Duplicate(c.Request().Context(), c.Param("name"), req.NewName)
+	if err != nil {
+		return response.Error(c, http.StatusBadRequest, "DUPLICATE_FAILED", err.Error())
+	}
+	return response.Created(c, col)
+}

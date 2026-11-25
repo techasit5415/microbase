@@ -22,6 +22,7 @@
 	let spinning = $state(false);
 	let refreshGen = $state(0);
 	let selectedLog = $state<LogEntry | null>(null);
+	let maxDays = $state(7);
 
 	let filtered = $derived(
 		logs.filter((l) =>
@@ -70,8 +71,22 @@
 		}
 	}
 
-	onMount(() => {
+	async function saveRetention(days: number) {
+		maxDays = days;
+		try {
+			await apiRequest('/api/settings/logs', { method: 'PUT', body: JSON.stringify({ max_days: days }) });
+			toast.success(`Log retention set to ${days} days`);
+		} catch (err) {
+			toast.error(err);
+		}
+	}
+
+	onMount(async () => {
 		loadLogs();
+		try {
+			const r = await apiRequest<{ max_days: number }>('/api/settings/logs');
+			if (r.max_days) maxDays = r.max_days;
+		} catch {}
 	});
 </script>
 
@@ -90,7 +105,20 @@
 					<RefreshCw class="h-4 w-4 transition-transform {spinning ? 'animate-spin text-foreground' : ''}" />
 				</button>
 			</div>
-			<span class="text-xs text-muted-foreground">Showing {filtered.length} persisted requests</span>
+			<div class="flex items-center gap-3 text-xs text-muted-foreground">
+				<label class="flex items-center gap-1.5">
+					<span>Retention (days):</span>
+					<input
+						type="number"
+						min="1"
+						max="365"
+						value={maxDays}
+						onchange={(e) => saveRetention(parseInt(e.currentTarget.value, 10) || 7)}
+						class="w-16 rounded border border-input bg-background px-2 py-0.5 font-mono text-xs text-foreground outline-none focus:border-ring"
+					/>
+				</label>
+				<span>Showing {filtered.length} persisted requests</span>
+			</div>
 		</div>
 
 		<div class="relative">

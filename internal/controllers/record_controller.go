@@ -43,6 +43,8 @@ func (h *RecordController) List(c echo.Context) error {
 		Sort:    c.QueryParam("sort"),
 		Search:  c.QueryParam("search"),
 		Filters: filters,
+		FilterExpr: c.QueryParam("filter"),
+		AuthClaims: middlewares.GetAuthClaims(c),
 	}
 
 	if err := h.enforceRule(c, "list"); err != nil {
@@ -58,17 +60,14 @@ func (h *RecordController) List(c echo.Context) error {
 		}
 	}
 	for i := range result.Items {
-		result.Items[i] = h.maskHidden(c, result.Items[i])
+		result.Items[i] = projectFields(h.maskHidden(c, result.Items[i]), c.QueryParam("fields"))
 	}
 	return response.OK(c, result)
 }
 
 // Get handles GET /api/collections/:name/records/:id.
 func (h *RecordController) Get(c echo.Context) error {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "INVALID_ID", "record id must be an integer")
-	}
+	id := c.Param("id")
 
 	if err := h.enforceRule(c, "view"); err != nil {
 		return handleRecordError(c, err)
@@ -82,7 +81,7 @@ func (h *RecordController) Get(c echo.Context) error {
 			h.service.ExpandRecords(c.Request().Context(), col, []models.Record{rec}, exp)
 		}
 	}
-	return response.OK(c, h.maskHidden(c, rec))
+	return response.OK(c, projectFields(h.maskHidden(c, rec), c.QueryParam("fields")))
 }
 
 // Create handles POST /api/collections/:name/records.
@@ -105,10 +104,7 @@ func (h *RecordController) Create(c echo.Context) error {
 // Update handles PATCH /api/collections/:name/records/:id.
 // Update handles PATCH /api/collections/:name/records/:id.
 func (h *RecordController) Update(c echo.Context) error {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "INVALID_ID", "record id must be an integer")
-	}
+	id := c.Param("id")
 
 	var data models.Record
 	if err := json.NewDecoder(c.Request().Body).Decode(&data); err != nil {
@@ -122,15 +118,12 @@ func (h *RecordController) Update(c echo.Context) error {
 	if err != nil {
 		return handleRecordError(c, err)
 	}
-	return response.OK(c, h.maskHidden(c, rec))
+	return response.OK(c, projectFields(h.maskHidden(c, rec), c.QueryParam("fields")))
 }
 
 // Delete handles DELETE /api/collections/:name/records/:id.
 func (h *RecordController) Delete(c echo.Context) error {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "INVALID_ID", "record id must be an integer")
-	}
+	id := c.Param("id")
 
 	if err := h.enforceRule(c, "delete"); err != nil {
 		return handleRecordError(c, err)
@@ -197,4 +190,28 @@ func (h *RecordController) maskHidden(c echo.Context, rec models.Record) models.
 		}
 	}
 	return rec
+}
+
+// projectFields filters a record map down to only the comma-separated ?fields= keys when specified.
+func projectFields(rec models.Record, fieldsParam string) models.Record {
+	if strings.TrimSpace(fieldsParam) == "" {
+		return rec
+	}
+	want := make(map[string]bool)
+	for _, f := range strings.Split(fieldsParam, ",") {
+		f = strings.TrimSpace(f)
+		if f != "" {
+			want[f] = true
+		}
+	}
+	if len(want) == 0 {
+		return rec
+	}
+	out := make(models.Record, len(want))
+	for k, v := range rec {
+		if want[k] || k == "expand" {
+			out[k] = v
+		}
+	}
+	return out
 }

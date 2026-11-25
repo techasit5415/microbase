@@ -9,7 +9,9 @@ type ListOptions struct {
 	PerPage int
 	Sort    string            // Example: "-created_at" (DESC) or "title" (ASC)
 	Search  string            // Full-text search term across text columns
-	Filters map[string]string // Exact-match filters, e.g. ?filter_published=true
+	Filters    map[string]string
+	FilterExpr string
+	AuthClaims any // Exact-match filters, e.g. ?filter_published=true
 }
 
 // Normalize enforces safe defaults and upper bounds on pagination options.

@@ -1,13 +1,19 @@
 package controllers
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"image"
+	"image/jpeg"
+	"image/png"
 	"io"
 	"net/http"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 	"github.com/techasit5415/microbase/internal/response"
@@ -16,17 +22,15 @@ import (
 
 const maxUploadBytes = 20 << 20 // 20 MiB hard ceiling
 
-// FileController handles file uploads and downloads via Local or S3 storage.
+// FileController handles file uploads, downloads, and on-the-fly ?thumb=WxH image resizing.
 type FileController struct {
 	storage *storage.SwitchableStorage
 }
 
-// NewFileController constructs a FileController backed by SwitchableStorage.
 func NewFileController(store *storage.SwitchableStorage) *FileController {
 	return &FileController{storage: store}
 }
 
-// Upload handles POST /api/files (multipart/form-data with field "file").
 func (h *FileController) Upload(c echo.Context) error {
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
@@ -72,7 +76,7 @@ func (h *FileController) Upload(c echo.Context) error {
 	})
 }
 
-// Serve handles GET /api/files/:filename.
+// Serve handles GET /api/files/:filename with optional ?thumb=WxH on-the-fly resizing.
 func (h *FileController) Serve(c echo.Context) error {
 	safeName := filepath.Base(c.Param("filename"))
 	if safeName == "." || safeName == "/" || safeName == "" {
@@ -88,7 +92,72 @@ func (h *FileController) Serve(c echo.Context) error {
 	}
 	defer rc.Close()
 
+	thumbSpec := strings.TrimSpace(c.QueryParam("thumb"))
+	if thumbSpec != "" && (strings.HasPrefix(contentType, "image/jpeg") || strings.HasPrefix(contentType, "image/png")) {
+		if w, hDim, ok := parseThumbSpec(thumbSpec); ok {
+			if resized, outCT, ok := resizeImage(rc, w, hDim); ok {
+				return c.Blob(http.StatusOK, outCT, resized)
+			}
+			// Re-open original if decode failed
+			rc2, ct2, err2 := h.storage.Open(c.Request().Context(), safeName)
+			if err2 == nil {
+				defer rc2.Close()
+				return c.Stream(http.StatusOK, ct2, rc2)
+			}
+		}
+	}
+
 	return c.Stream(http.StatusOK, contentType, rc)
+}
+
+func parseThumbSpec(spec string) (int, int, bool) {
+	parts := strings.Split(strings.ToLower(spec), "x")
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	w, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
+	h, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if err1 != nil || err2 != nil || (w <= 0 && h <= 0) || w > 2048 || h > 2048 {
+		return 0, 0, false
+	}
+	return w, h, true
+}
+
+func resizeImage(r io.Reader, targetW, targetH int) ([]byte, string, bool) {
+	src, format, err := image.Decode(r)
+	if err != nil {
+		return nil, "", false
+	}
+	sb := src.Bounds()
+	srcW, srcH := sb.Dx(), sb.Dy()
+	if srcW <= 0 || srcH <= 0 {
+		return nil, "", false
+	}
+	if targetW == 0 {
+		targetW = srcW * targetH / srcH
+	}
+	if targetH == 0 {
+		targetH = srcH * targetW / srcW
+	}
+	dst := image.NewRGBA(image.Rect(0, 0, targetW, targetH))
+	for y := 0; y < targetH; y++ {
+		sy := sb.Min.Y + y*srcH/targetH
+		for x := 0; x < targetW; x++ {
+			sx := sb.Min.X + x*srcW/targetW
+			dst.Set(x, y, src.At(sx, sy))
+		}
+	}
+	var buf bytes.Buffer
+	if format == "png" {
+		if err := png.Encode(&buf, dst); err != nil {
+			return nil, "", false
+		}
+		return buf.Bytes(), "image/png", true
+	}
+	if err := jpeg.Encode(&buf, dst, &jpeg.Options{Quality: 85}); err != nil {
+		return nil, "", false
+	}
+	return buf.Bytes(), "image/jpeg", true
 }
 
 func randomHex(n int) string {

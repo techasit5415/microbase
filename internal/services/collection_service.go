@@ -42,6 +42,12 @@ func normalizeCollectionType(t string) string {
 
 func (s *CollectionService) Create(ctx context.Context, req models.CreateCollectionRequest) (*models.Collection, error) {
 	req.Type = normalizeCollectionType(req.Type)
+	if req.IDType != "text" {
+		req.IDType = "serial"
+	}
+	if req.IDType == "text" && req.IDAutogeneratePattern == "" {
+		req.IDAutogeneratePattern = "[a-z0-9]{15}"
+	}
 
 	var ddl string
 	var err error
@@ -105,11 +111,11 @@ func (s *CollectionService) Create(ctx context.Context, req models.CreateCollect
 	var col models.Collection
 	var rawFields, rawRules, rawIndexes []byte
 	err = tx.QueryRow(ctx, `
-		INSERT INTO _collections (name, type, view_query, fields, api_rules, indexes)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id, name, type, view_query, fields, api_rules, indexes, created_at, updated_at`,
-		req.Name, req.Type, req.ViewQuery, fieldsJSON, rulesJSON, indexesJSON,
-	).Scan(&col.ID, &col.Name, &col.Type, &col.ViewQuery, &rawFields, &rawRules, &rawIndexes, &col.CreatedAt, &col.UpdatedAt)
+		INSERT INTO _collections (name, type, view_query, id_type, id_autogenerate_pattern, fields, api_rules, indexes)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING id, name, type, view_query, id_type, id_autogenerate_pattern, fields, api_rules, indexes, created_at, updated_at`,
+		req.Name, req.Type, req.ViewQuery, req.IDType, req.IDAutogeneratePattern, fieldsJSON, rulesJSON, indexesJSON,
+	).Scan(&col.ID, &col.Name, &col.Type, &col.ViewQuery, &col.IDType, &col.IDAutogeneratePattern, &rawFields, &rawRules, &rawIndexes, &col.CreatedAt, &col.UpdatedAt)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -131,7 +137,7 @@ func (s *CollectionService) Create(ctx context.Context, req models.CreateCollect
 
 func (s *CollectionService) List(ctx context.Context) ([]models.Collection, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, name, type, view_query, fields, api_rules, indexes, created_at, updated_at
+		SELECT id, name, type, view_query, id_type, id_autogenerate_pattern, fields, api_rules, indexes, created_at, updated_at
 		FROM _collections
 		ORDER BY id ASC`)
 	if err != nil {
@@ -143,7 +149,7 @@ func (s *CollectionService) List(ctx context.Context) ([]models.Collection, erro
 	for rows.Next() {
 		var col models.Collection
 		var rawFields, rawRules, rawIndexes []byte
-		if err := rows.Scan(&col.ID, &col.Name, &col.Type, &col.ViewQuery, &rawFields, &rawRules, &rawIndexes, &col.CreatedAt, &col.UpdatedAt); err != nil {
+		if err := rows.Scan(&col.ID, &col.Name, &col.Type, &col.ViewQuery, &col.IDType, &col.IDAutogeneratePattern, &rawFields, &rawRules, &rawIndexes, &col.CreatedAt, &col.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan collection: %w", err)
 		}
 		_ = json.Unmarshal(rawFields, &col.Fields)
@@ -169,10 +175,10 @@ func (s *CollectionService) GetByName(ctx context.Context, name string) (*models
 	var col models.Collection
 	var rawFields, rawRules, rawIndexes []byte
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, name, type, view_query, fields, api_rules, indexes, created_at, updated_at
+		SELECT id, name, type, view_query, id_type, id_autogenerate_pattern, fields, api_rules, indexes, created_at, updated_at
 		FROM _collections
 		WHERE name = $1`, name).
-		Scan(&col.ID, &col.Name, &col.Type, &col.ViewQuery, &rawFields, &rawRules, &rawIndexes, &col.CreatedAt, &col.UpdatedAt)
+		Scan(&col.ID, &col.Name, &col.Type, &col.ViewQuery, &col.IDType, &col.IDAutogeneratePattern, &rawFields, &rawRules, &rawIndexes, &col.CreatedAt, &col.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrCollectionNotFound
 	}
@@ -314,9 +320,9 @@ func (s *CollectionService) Update(ctx context.Context, name string, newFields [
 		UPDATE _collections
 		SET view_query = $2, fields = $3, api_rules = $4, indexes = $5, updated_at = NOW()
 		WHERE name = $1
-		RETURNING id, name, type, view_query, fields, api_rules, indexes, created_at, updated_at`,
+		RETURNING id, name, type, view_query, id_type, id_autogenerate_pattern, fields, api_rules, indexes, created_at, updated_at`,
 		existing.Name, viewQuery, fieldsJSON, rulesJSON, indexesJSON,
-	).Scan(&updated.ID, &updated.Name, &updated.Type, &updated.ViewQuery, &rawFields, &rawRules, &rawIndexes, &updated.CreatedAt, &updated.UpdatedAt)
+	).Scan(&updated.ID, &updated.Name, &updated.Type, &updated.ViewQuery, &updated.IDType, &updated.IDAutogeneratePattern, &rawFields, &rawRules, &rawIndexes, &updated.CreatedAt, &updated.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("update _collections: %w", err)
 	}
@@ -330,4 +336,38 @@ func (s *CollectionService) Update(ctx context.Context, name string, newFields [
 	_ = json.Unmarshal(rawIndexes, &updated.Indexes)
 	_ = s.cache.Delete(ctx, schemaCacheKey(updated.Name))
 	return &updated, nil
+}
+
+// Truncate removes all records from a collection table without dropping its schema.
+func (s *CollectionService) Truncate(ctx context.Context, name string) error {
+	col, err := s.GetByName(ctx, name)
+	if err != nil {
+		return err
+	}
+	if col.Type == "view" {
+		return fmt.Errorf("%w: view collections cannot be truncated", ErrInvalidSchema)
+	}
+	tableName := physicalTableName(col.Name)
+	_, err = s.pool.Exec(ctx, fmt.Sprintf(`TRUNCATE TABLE "%s" RESTART IDENTITY CASCADE`, tableName))
+	return err
+}
+
+// Duplicate clones an existing collection's schema (fields, api_rules, id_type) under a new name.
+func (s *CollectionService) Duplicate(ctx context.Context, sourceName, newName string) (*models.Collection, error) {
+	src, err := s.GetByName(ctx, sourceName)
+	if err != nil {
+		return nil, err
+	}
+	if newName == "" {
+		newName = sourceName + "_copy"
+	}
+	return s.Create(ctx, models.CreateCollectionRequest{
+		Name:                  newName,
+		Type:                  src.Type,
+		ViewQuery:             src.ViewQuery,
+		IDType:                src.IDType,
+		IDAutogeneratePattern: src.IDAutogeneratePattern,
+		Fields:                src.Fields,
+		APIRules:              src.APIRules,
+	})
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/smtp"
 	"os"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
+	"github.com/techasit5415/microbase/internal/middlewares"
 	"github.com/techasit5415/microbase/internal/response"
 )
 
@@ -218,4 +220,115 @@ func (h *OpsController) RunCron(c echo.Context) error {
 	default:
 		return response.Error(c, http.StatusNotFound, "CRON_NOT_FOUND", "cron job not found")
 	}
+}
+
+// UploadBackup handles POST /api/backups/upload (multipart field "file").
+func (h *OpsController) UploadBackup(c echo.Context) error {
+	fh, err := c.FormFile("file")
+	if err != nil {
+		return response.Error(c, http.StatusBadRequest, "MISSING_FILE", "form field 'file' is required")
+	}
+	safe := filepath.Base(fh.Filename)
+	if !strings.HasSuffix(strings.ToLower(safe), ".sql") {
+		return response.Error(c, http.StatusBadRequest, "INVALID_FILE", "only .sql backup files are supported")
+	}
+	src, err := fh.Open()
+	if err != nil {
+		return response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+	}
+	defer src.Close()
+	data, err := io.ReadAll(io.LimitReader(src, 100<<20))
+	if err != nil {
+		return response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+	}
+	if err := os.WriteFile(filepath.Join(h.backupDir, safe), data, 0o644); err != nil {
+		return response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+	}
+	return response.Created(c, map[string]any{"key": safe, "size": len(data)})
+}
+
+// RestoreBackup handles POST /api/backups/:name/restore using psql.
+func (h *OpsController) RestoreBackup(c echo.Context) error {
+	safe := filepath.Base(c.Param("name"))
+	full := filepath.Join(h.backupDir, safe)
+	if _, err := os.Stat(full); os.IsNotExist(err) {
+		return response.Error(c, http.StatusNotFound, "NOT_FOUND", "backup not found")
+	}
+	if h.databaseURL == "" {
+		return response.Error(c, http.StatusBadRequest, "NO_DATABASE", "DATABASE_URL is not configured")
+	}
+	cmd := exec.CommandContext(c.Request().Context(), "psql", h.databaseURL, "-f", full)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return response.Error(c, http.StatusInternalServerError, "RESTORE_FAILED", fmt.Sprintf("psql restore failed: %v (%s)", err, strings.TrimSpace(string(out))))
+	}
+	return response.OK(c, map[string]any{"restored": safe})
+}
+
+// GetRateLimits handles GET /api/settings/ratelimits.
+func (h *OpsController) GetRateLimits(c echo.Context) error {
+	var raw string
+	_ = h.pool.QueryRow(c.Request().Context(), `SELECT value FROM _settings WHERE key = 'rate_limit_rules'`).Scan(&raw)
+	if raw != "" {
+		var saved []middlewares.RateLimitRule
+		if json.Unmarshal([]byte(raw), &saved) == nil {
+			middlewares.SetRateLimitRules(saved)
+		}
+	}
+	return response.OK(c, map[string]any{"rules": middlewares.GetRateLimitRules()})
+}
+
+// UpdateRateLimits handles PUT /api/settings/ratelimits and hot-swaps rules live.
+func (h *OpsController) UpdateRateLimits(c echo.Context) error {
+	var req struct {
+		Rules []middlewares.RateLimitRule `json:"rules"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return response.Error(c, http.StatusBadRequest, "INVALID_JSON", "invalid request body")
+	}
+	middlewares.SetRateLimitRules(req.Rules)
+	encoded, _ := json.Marshal(req.Rules)
+	_, err := h.pool.Exec(c.Request().Context(), `
+		INSERT INTO _settings (key, value, updated_at)
+		VALUES ('rate_limit_rules', $1, NOW())
+		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+		string(encoded),
+	)
+	if err != nil {
+		return response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+	}
+	return response.OK(c, map[string]any{"rules": req.Rules})
+}
+
+// GetLogSettings handles GET /api/settings/logs.
+func (h *OpsController) GetLogSettings(c echo.Context) error {
+	var raw string
+	_ = h.pool.QueryRow(c.Request().Context(), `SELECT value FROM _settings WHERE key = 'logs_max_days'`).Scan(&raw)
+	maxDays := 7
+	if raw != "" {
+		var n int
+		if _, err := fmt.Sscanf(raw, "%d", &n); err == nil && n >= 1 {
+			maxDays = n
+		}
+	}
+	return response.OK(c, map[string]any{"max_days": maxDays})
+}
+
+// UpdateLogSettings handles PUT /api/settings/logs.
+func (h *OpsController) UpdateLogSettings(c echo.Context) error {
+	var req struct {
+		MaxDays int `json:"max_days"`
+	}
+	if err := c.Bind(&req); err != nil || req.MaxDays < 1 || req.MaxDays > 365 {
+		return response.Error(c, http.StatusBadRequest, "INVALID_INPUT", "max_days must be between 1 and 365")
+	}
+	_, err := h.pool.Exec(c.Request().Context(), `
+		INSERT INTO _settings (key, value, updated_at)
+		VALUES ('logs_max_days', $1, NOW())
+		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+		fmt.Sprintf("%d", req.MaxDays),
+	)
+	if err != nil {
+		return response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+	}
+	return response.OK(c, map[string]any{"max_days": req.MaxDays})
 }

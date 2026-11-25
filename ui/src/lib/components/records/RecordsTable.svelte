@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Calendar, Hash, KeyRound, Mail, ToggleLeft, Trash2, Type } from '@lucide/svelte';
+	import { Calendar, Check, Hash, KeyRound, Mail, ToggleLeft, Trash2, Type } from '@lucide/svelte';
 	import type { Collection, RecordRow } from '#lib/api/types.ts';
 
 	interface Props {
@@ -8,17 +8,63 @@
 		loading: boolean;
 		readOnly?: boolean;
 		onSelect?: (row: RecordRow) => void;
-		onDelete: (id: number) => void;
+		onDelete: (id: number | string) => void;
+		onBulkDelete?: (ids: (number | string)[]) => void;
 	}
 
-	let { collection, items, loading, readOnly = false, onSelect, onDelete }: Props = $props();
+	let {
+		collection,
+		items,
+		loading,
+		readOnly = false,
+		onSelect,
+		onDelete,
+		onBulkDelete
+	}: Props = $props();
+
+	let selectedIds = $state<(number | string)[]>([]);
+
+	// Clear selection when collection or items change
+	$effect(() => {
+		collection.name;
+		items;
+		selectedIds = [];
+	});
 
 	let columns = $derived.by(() => {
-		if (collection.type === 'system') {
+		if (collection.type === 'system' || collection.type === 'view') {
 			return items.length > 0 ? Object.keys(items[0]) : ['id'];
+		}
+		if (collection.type === 'auth' || collection.name === 'users') {
+			const custom = (collection.fields ?? [])
+				.map((f) => f.name)
+				.filter((n) => !['id', 'email', 'role', 'created_at', 'updated_at'].includes(n));
+			return ['id', 'email', 'role', ...custom, 'created_at'];
 		}
 		return ['id', ...(collection.fields ?? []).map((f) => f.name), 'created_at'];
 	});
+
+	let allSelectableIds = $derived(
+		items
+			.map((r) => r.id)
+			.filter((id): id is number | string => typeof id === 'number' || typeof id === 'string')
+	);
+
+	let allSelected = $derived(
+		allSelectableIds.length > 0 && selectedIds.length === allSelectableIds.length
+	);
+
+	function toggleOne(id: number | string) {
+		if (selectedIds.includes(id)) {
+			selectedIds = selectedIds.filter((x) => x !== id);
+		} else {
+			selectedIds = [...selectedIds, id];
+		}
+	}
+
+	function toggleAll() {
+		selectedIds = allSelected ? [] : [...allSelectableIds];
+	}
 
 	function getFieldType(col: string): string {
 		if (col === 'id') return 'id';
@@ -32,15 +78,35 @@
 		if (typeof val === 'object') return JSON.stringify(val);
 		return String(val);
 	}
+
+	function isImageFileUrl(val: unknown): val is string {
+		return typeof val === 'string' && val.startsWith('/api/files/') && /\.(png|jpe?g|gif|webp|svg)$/i.test(val);
+	}
 </script>
 
-<div class="flex-1 overflow-auto">
+<div class="relative flex-1 overflow-auto">
 	<table class="w-full border-collapse text-left text-[13px]">
-		<thead class="sticky top-0 border-b border-border bg-card/95 text-xs text-muted-foreground backdrop-blur-xs">
+		<thead class="sticky top-0 z-10 border-b border-border bg-card/95 text-xs text-muted-foreground backdrop-blur-xs">
 			<tr>
+				{#if !readOnly && onBulkDelete}
+					<th class="w-11 px-4 py-3">
+						<button
+							type="button"
+							aria-label="Select all records"
+							onclick={toggleAll}
+							class="flex h-4 w-4 cursor-pointer items-center justify-center rounded border transition {allSelected
+								? 'border-foreground bg-foreground text-background'
+								: 'border-border bg-background hover:border-foreground/60'}"
+						>
+							{#if allSelected}
+								<Check class="h-3 w-3" />
+							{/if}
+						</button>
+					</th>
+				{/if}
 				{#each columns as col}
 					{@const t = getFieldType(col)}
-					<th class="px-5 py-3 font-medium whitespace-nowrap">
+					<th class="px-5 py-3 font-semibold whitespace-nowrap">
 						<span class="inline-flex items-center gap-1.5">
 							{#if t === 'id'}
 								<KeyRound class="h-3.5 w-3.5" />
@@ -67,19 +133,45 @@
 		<tbody class="divide-y divide-border">
 			{#if loading}
 				<tr>
-					<td colspan={columns.length + 1} class="px-5 py-12 text-center text-xs text-muted-foreground">
+					<td colspan={columns.length + 2} class="px-5 py-12 text-center text-xs text-muted-foreground">
 						Loading records...
 					</td>
 				</tr>
 			{:else if items.length === 0}
 				<tr>
-					<td colspan={columns.length + 1} class="px-5 py-12 text-center text-xs text-muted-foreground">
+					<td colspan={columns.length + 2} class="px-5 py-12 text-center text-xs text-muted-foreground">
 						No records found.
 					</td>
 				</tr>
 			{:else}
 				{#each items as row, idx (row.id ?? idx)}
-					<tr onclick={() => !readOnly && onSelect?.(row)} class="transition bg-card hover:bg-muted/60 {!readOnly && onSelect ? 'cursor-pointer' : ''}">
+					{@const rid = typeof row.id === 'number' || typeof row.id === 'string' ? row.id : null}
+					{@const isChecked = rid !== null && selectedIds.includes(rid)}
+					<tr
+						onclick={() => !readOnly && onSelect?.(row)}
+						class="transition {isChecked ? 'bg-muted/75' : 'bg-card hover:bg-muted/60'} {!readOnly && onSelect ? 'cursor-pointer' : ''}"
+					>
+						{#if !readOnly && onBulkDelete}
+							<td class="px-4 py-3">
+								{#if rid !== null}
+									<button
+										type="button"
+										aria-label="Select record"
+										onclick={(e) => {
+											e.stopPropagation();
+											toggleOne(rid);
+										}}
+										class="flex h-4 w-4 cursor-pointer items-center justify-center rounded border transition {isChecked
+											? 'border-foreground bg-foreground text-background'
+											: 'border-border bg-background hover:border-foreground/60'}"
+									>
+										{#if isChecked}
+											<Check class="h-3 w-3" />
+										{/if}
+									</button>
+								{/if}
+							</td>
+						{/if}
 						{#each columns as col}
 							{@const val = row[col]}
 							<td class="max-w-xs truncate px-5 py-3">
@@ -87,6 +179,12 @@
 									<span class="rounded bg-muted px-2 py-0.5 font-mono text-xs text-foreground">
 										{val}
 									</span>
+								{:else if isImageFileUrl(val)}
+									<img
+										src="{val}?thumb=64x64"
+										alt={col}
+										class="h-8 w-8 rounded border border-border object-cover"
+									/>
 								{:else if typeof val === 'boolean'}
 									<span
 										class="rounded px-2 py-0.5 text-xs font-medium {val
@@ -100,12 +198,15 @@
 								{/if}
 							</td>
 						{/each}
-						{#if !readOnly && typeof row.id === 'number'}
+						{#if !readOnly && rid !== null}
 							<td class="px-5 py-3 text-right">
 								<button
 									type="button"
 									title="Delete record"
-									onclick={(e) => { e.stopPropagation(); onDelete(row.id as number); }}
+									onclick={(e) => {
+										e.stopPropagation();
+										onDelete(rid);
+									}}
 									class="cursor-pointer rounded p-1.5 text-muted-foreground transition hover:bg-destructive/15 hover:text-destructive"
 								>
 									<Trash2 class="h-3.5 w-3.5" />
@@ -117,4 +218,26 @@
 			{/if}
 		</tbody>
 	</table>
+
+	<!-- Floating PocketBase Bulkbar -->
+	{#if !readOnly && onBulkDelete && selectedIds.length > 0}
+		<div class="animate-modal-in sticky bottom-4 z-20 mx-auto mt-4 flex w-fit items-center gap-3 rounded-full border border-border bg-foreground px-5 py-2.5 text-xs text-background shadow-xl">
+			<span>Selected <strong>{selectedIds.length}</strong> record{selectedIds.length > 1 ? 's' : ''}</span>
+			<button
+				type="button"
+				onclick={() => (selectedIds = [])}
+				class="cursor-pointer rounded-full bg-background/15 px-3 py-1 text-xs font-medium transition hover:bg-background/25"
+			>
+				Reset
+			</button>
+			<button
+				type="button"
+				onclick={() => onBulkDelete([...selectedIds])}
+				class="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-destructive px-3.5 py-1 text-xs font-semibold text-white transition hover:opacity-90"
+			>
+				<Trash2 class="h-3.5 w-3.5" />
+				Delete selected
+			</button>
+		</div>
+	{/if}
 </div>

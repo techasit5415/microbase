@@ -38,7 +38,8 @@ type FieldDef struct {
 	// Text / Number / Email / URL / Autodate options
 	Min           *float64 `json:"min,omitempty"`            // Min length (text) or min value (number)
 	Max           *float64 `json:"max,omitempty"`            // Max length (text) or max value (number)
-	Pattern       string   `json:"pattern,omitempty"`        // Regex pattern for text fields
+	Pattern             string   `json:"pattern,omitempty"`              // Regex pattern for text fields
+	AutogeneratePattern string   `json:"autogenerate_pattern,omitempty"` // Autogenerate pattern e.g. "[a-z0-9]{15}"
 	OnlyInt       bool     `json:"only_int,omitempty"`       // Restrict number field to integers
 	OnlyDomains   []string `json:"only_domains,omitempty"`   // Allowed domains for email/url
 	ExceptDomains []string `json:"except_domains,omitempty"` // Blocked domains for email/url
@@ -61,7 +62,9 @@ type Collection struct {
 	ID        int64             `json:"id"`
 	Name      string            `json:"name"`
 	Type      string            `json:"type"` // base, view, auth
-	ViewQuery string            `json:"view_query,omitempty"`
+	ViewQuery             string            `json:"view_query,omitempty"`
+	IDType                string            `json:"id_type,omitempty"` // serial or text
+	IDAutogeneratePattern string            `json:"id_autogenerate_pattern,omitempty"`
 	Fields    []FieldDef        `json:"fields"`
 	APIRules  map[string]string `json:"api_rules,omitempty"`
 	Indexes   []IndexDef        `json:"indexes,omitempty"`
@@ -73,7 +76,9 @@ type Collection struct {
 type CreateCollectionRequest struct {
 	Name      string            `json:"name"`
 	Type      string            `json:"type,omitempty"` // base, view, auth
-	ViewQuery string            `json:"view_query,omitempty"`
+	ViewQuery             string            `json:"view_query,omitempty"`
+	IDType                string            `json:"id_type,omitempty"` // serial or text
+	IDAutogeneratePattern string            `json:"id_autogenerate_pattern,omitempty"`
 	Fields   []FieldDef        `json:"fields"`
 	APIRules map[string]string `json:"api_rules,omitempty"`
 	Indexes  []IndexDef        `json:"indexes,omitempty"`

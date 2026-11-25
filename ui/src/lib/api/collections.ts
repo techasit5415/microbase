@@ -12,7 +12,9 @@ export async function createCollection(
 	indexes: IndexDef[] = [],
 	apiRules: Record<string, string> = {},
 	type: 'base' | 'view' | 'auth' = 'base',
-	viewQuery = ''
+	viewQuery = '',
+	idType: 'serial' | 'text' = 'text',
+	idAutogeneratePattern = '[a-z0-9]{15}'
 ): Promise<Collection> {
 	return apiRequest<Collection>('/api/collections', {
 		method: 'POST',
@@ -20,6 +22,8 @@ export async function createCollection(
 			name,
 			type,
 			view_query: viewQuery,
+			id_type: idType,
+			id_autogenerate_pattern: idAutogeneratePattern,
 			fields,
 			indexes,
 			api_rules: apiRules
@@ -51,4 +55,15 @@ export async function deleteCollection(name: string): Promise<void> {
 
 export function getSchemaExportURL(): string {
 	return '/api/schema/export';
+}
+
+export async function truncateCollection(name: string): Promise<void> {
+	await apiRequest(`/api/collections/${encodeURIComponent(name)}/truncate`, { method: 'POST' });
+}
+
+export async function duplicateCollection(name: string, newName = ''): Promise<Collection> {
+	return apiRequest<Collection>(`/api/collections/${encodeURIComponent(name)}/duplicate`, {
+		method: 'POST',
+		body: JSON.stringify({ new_name: newName })
+	});
 }

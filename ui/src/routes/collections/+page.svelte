@@ -137,7 +137,7 @@
 		}
 	}
 
-	async function handleDeleteRecord(id: number) {
+	async function handleDeleteRecord(id: number | string) {
 		if (activeCol.type === 'system' && activeCol.name !== '_superusers') return;
 		const ok = await confirmAction({
 			title: `Delete record #${id}?`,
@@ -147,10 +147,32 @@
 		});
 		if (!ok) return;
 		try {
-			if (activeCol.name === '_superusers') await deleteSuperuser(id);
-			else if (activeCol.type === 'auth') await deleteUser(id);
+			if (activeCol.name === '_superusers') await deleteSuperuser(Number(id));
+			else if (activeCol.type === 'auth') await deleteUser(Number(id));
 			else await deleteRecord(activeCol.name, id);
 			toast.success('Record deleted');
+			await refreshRecords();
+		} catch (err) {
+			toast.error(err);
+		}
+	}
+
+	async function handleBulkDelete(ids: (number | string)[]) {
+		if (ids.length === 0) return;
+		const ok = await confirmAction({
+			title: `Delete ${ids.length} selected records?`,
+			description: `Permanently delete ${ids.length} records from "${activeCol.name}"? This cannot be undone.`,
+			confirmLabel: `Delete ${ids.length} records`,
+			destructive: true
+		});
+		if (!ok) return;
+		try {
+			for (const id of ids) {
+				if (activeCol.name === '_superusers') await deleteSuperuser(Number(id));
+				else if (activeCol.type === 'auth') await deleteUser(Number(id));
+				else await deleteRecord(activeCol.name, id);
+			}
+			toast.success(`Deleted ${ids.length} records`);
 			await refreshRecords();
 		} catch (err) {
 			toast.error(err);
@@ -203,6 +225,7 @@
 			}
 		}}
 		onDelete={handleDeleteRecord}
+		onBulkDelete={handleBulkDelete}
 	/>
 
 	<PaginationBar

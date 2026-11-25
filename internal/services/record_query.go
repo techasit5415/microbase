@@ -46,6 +46,17 @@ func buildWhereClause(
 		}
 	}
 
+	if strings.TrimSpace(opts.FilterExpr) != "" {
+		claims, _ := opts.AuthClaims.(*AuthClaims)
+		fSQL, fArgs, nextIdx, err := ParseFilterToSQL(opts.FilterExpr, allowed, claims, idx)
+		if err != nil {
+			return "", nil, 0, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		}
+		clauses = append(clauses, fSQL)
+		args = append(args, fArgs...)
+		idx = nextIdx
+	}
+
 	if len(clauses) == 0 {
 		return "", args, idx, nil
 	}

@@ -6,7 +6,9 @@
 		updateOAuthProvider,
 		type OAuthProvider
 	} from '#lib/api/oauth.ts';
+	import { apiRequest } from '#lib/api/client.ts';
 	import Switch from '#lib/components/ui/Switch.svelte';
+	import { toast } from '#lib/stores/toast.svelte.ts';
 	import ProviderIcon from './ProviderIcon.svelte';
 
 	let providers = $state<OAuthProvider[]>([]);
@@ -20,6 +22,22 @@
 	let saving = $state(false);
 	let copied = $state(false);
 	let errorMsg = $state('');
+	let otpEnabled = $state(true);
+	let mfaEnabled = $state(false);
+
+	async function saveAuthOptions(nextOtp: boolean, nextMfa: boolean) {
+		otpEnabled = nextOtp;
+		mfaEnabled = nextMfa;
+		try {
+			await apiRequest('/api/settings/auth-options', {
+				method: 'PUT',
+				body: JSON.stringify({ otp_enabled: nextOtp, mfa_enabled: nextMfa })
+			});
+			toast.success('Updated Auth options');
+		} catch (err) {
+			toast.error(err);
+		}
+	}
 
 	let anyOAuthEnabled = $derived(providers.some((p) => p.enabled && p.client_id && p.has_secret));
 
@@ -31,6 +49,9 @@
 
 	onMount(async () => {
 		providers = await listOAuthProviders();
+			const opts = await apiRequest<{ otp_enabled?: boolean; mfa_enabled?: boolean }>('/api/settings/auth-options').catch(() => ({ otp_enabled: true, mfa_enabled: false }));
+			otpEnabled = Boolean(opts.otp_enabled);
+			mfaEnabled = Boolean(opts.mfa_enabled);
 	});
 
 	function selectProvider(p: OAuthProvider) {
@@ -252,5 +273,23 @@
 				</div>
 			{/if}
 		</div>
+	</div>
+</div>
+
+
+<div class="mt-4 space-y-3 rounded-lg border border-border bg-muted/25 p-4">
+	<div class="flex items-center justify-between gap-3">
+		<div>
+			<div class="text-xs font-semibold">One-Time Password (Email OTP)</div>
+			<div class="text-xs text-muted-foreground">Allow users to sign in with a 6-digit email OTP via <code>/api/auth/request-otp</code>.</div>
+		</div>
+		<Switch checked={otpEnabled} onChange={(v) => saveAuthOptions(v, mfaEnabled)} />
+	</div>
+	<div class="flex items-center justify-between gap-3 border-t border-border pt-3">
+		<div>
+			<div class="text-xs font-semibold">Multi-Factor Authentication (MFA)</div>
+			<div class="text-xs text-muted-foreground">Require two distinct auth factors (Password + Email OTP / OAuth2).</div>
+		</div>
+		<Switch checked={mfaEnabled} onChange={(v) => saveAuthOptions(otpEnabled, v)} />
 	</div>
 </div>

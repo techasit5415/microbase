@@ -5,6 +5,7 @@ export interface ListRecordsParams {
 	page?: number;
 	perPage?: number;
 	search?: string;
+	filter?: string;
 	sort?: string;
 }
 
@@ -34,7 +35,7 @@ export async function createRecord(
 
 export async function updateRecord(
 	colName: string,
-	id: number,
+	id: number | string,
 	data: Record<string, unknown>
 ): Promise<RecordRow> {
 	return apiRequest<RecordRow>(`/api/collections/${encodeURIComponent(colName)}/records/${id}`, {
@@ -43,7 +44,7 @@ export async function updateRecord(
 	});
 }
 
-export async function deleteRecord(colName: string, id: number): Promise<void> {
+export async function deleteRecord(colName: string, id: number | string): Promise<void> {
 	await apiRequest(`/api/collections/${encodeURIComponent(colName)}/records/${id}`, {
 		method: 'DELETE'
 	});
