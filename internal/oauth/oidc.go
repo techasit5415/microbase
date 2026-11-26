@@ -293,32 +293,90 @@ func firstNonEmptyClaim(claims map[string]any, paths ...string) string {
 	return ""
 }
 
-// extractJSONPath resolves dot-separated paths like "department.name" or "data.student_profile.0.department".
-func extractJSONPath(root map[string]any, path string) any {
-	var cur any = root
-	for _, seg := range strings.Split(path, ".") {
-		seg = strings.TrimSpace(seg)
-		if seg == "" {
-			continue
-		}
-		switch node := cur.(type) {
-		case map[string]any:
-			var ok bool
-			cur, ok = node[seg]
-			if !ok {
-				return nil
-			}
-		case []any:
-			idx, err := strconv.Atoi(seg)
-			if err != nil || idx < 0 || idx >= len(node) {
-				return nil
-			}
-			cur = node[idx]
-		default:
-			return nil
+// extractJSONPath resolves dot-separated paths with optional "|" fallbacks and automatic array traversal,
+// e.g. "profile.departmentId | profile.profiles.department.id" or "data.student_profile.0.department".
+// Returns the first non-empty resolved value.
+func extractJSONPath(root map[string]any, expr string) any {
+	for _, v := range extractJSONPathValues(root, expr) {
+		if valueToString(v) != "" {
+			return v
 		}
 	}
-	return cur
+	return nil
+}
+
+// extractJSONPathValues collects all leaf values matched across "|" fallback paths and JSON arrays.
+func extractJSONPathValues(root map[string]any, expr string) []any {
+	var out []any
+	for _, alt := range strings.Split(expr, "|") {
+		alt = strings.TrimSpace(alt)
+		if alt == "" {
+			continue
+		}
+		rawSegs := strings.Split(alt, ".")
+		segs := make([]string, 0, len(rawSegs))
+		for _, s := range rawSegs {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				segs = append(segs, s)
+			}
+		}
+		if len(segs) == 0 {
+			continue
+		}
+		out = append(out, walkJSONPath(root, segs)...)
+	}
+	return out
+}
+
+func walkJSONPath(cur any, segs []string) []any {
+	if cur == nil {
+		return nil
+	}
+	if len(segs) == 0 {
+		if arr, ok := cur.([]any); ok {
+			var leaves []any
+			for _, item := range arr {
+				if item != nil {
+					leaves = append(leaves, item)
+				}
+			}
+			return leaves
+		}
+		return []any{cur}
+	}
+	seg := segs[0]
+	rest := segs[1:]
+	switch node := cur.(type) {
+	case map[string]any:
+		next, ok := node[seg]
+		if !ok || next == nil {
+			return nil
+		}
+		return walkJSONPath(next, rest)
+	case []any:
+		if seg == "*" || seg == "[]" {
+			var out []any
+			for _, item := range node {
+				out = append(out, walkJSONPath(item, rest)...)
+			}
+			return out
+		}
+		if idx, err := strconv.Atoi(seg); err == nil {
+			if idx < 0 || idx >= len(node) {
+				return nil
+			}
+			return walkJSONPath(node[idx], rest)
+		}
+		// Implicit array traversal for field names like "profiles.department.id".
+		var out []any
+		for _, item := range node {
+			out = append(out, walkJSONPath(item, segs)...)
+		}
+		return out
+	default:
+		return nil
+	}
 }
 
 func valueToString(v any) string {
@@ -332,7 +390,8 @@ func valueToString(v any) string {
 var ErrClaimNotAllowed = fmt.Errorf("access denied: user does not match allowed claim restrictions")
 
 // CheckAllowedClaims verifies that the user's raw IAM/OIDC claims match every configured allowed_claims rule.
-// Each key is a dot-separated JSON path (e.g. "department.name") and the value is a list of permitted values.
+// Each key is a dot-separated JSON path with optional "|" fallbacks and array traversal
+// (e.g. "profile.departmentId | profile.profiles.department.id") and the value is a list of permitted values.
 func CheckAllowedClaims(allowed map[string][]string, raw map[string]any) error {
 	if len(allowed) == 0 {
 		return nil
@@ -342,16 +401,27 @@ func CheckAllowedClaims(allowed map[string][]string, raw map[string]any) error {
 		if path == "" || len(allowedVals) == 0 {
 			continue
 		}
-		actual := strings.TrimSpace(valueToString(extractJSONPath(raw, path)))
+		candidates := extractJSONPathValues(raw, path)
+		actuals := make([]string, 0, len(candidates))
 		matched := false
-		for _, want := range allowedVals {
-			if strings.EqualFold(actual, strings.TrimSpace(want)) {
-				matched = true
+		for _, cand := range candidates {
+			actual := strings.TrimSpace(valueToString(cand))
+			if actual == "" {
+				continue
+			}
+			actuals = append(actuals, actual)
+			for _, want := range allowedVals {
+				if strings.EqualFold(actual, strings.TrimSpace(want)) {
+					matched = true
+					break
+				}
+			}
+			if matched {
 				break
 			}
 		}
 		if !matched {
-			return fmt.Errorf("%w (%s=%q)", ErrClaimNotAllowed, path, actual)
+			return fmt.Errorf("%w (%s=%q)", ErrClaimNotAllowed, path, strings.Join(actuals, ","))
 		}
 	}
 	return nil

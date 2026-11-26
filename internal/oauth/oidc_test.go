@@ -85,3 +85,72 @@ func TestResolveUserInfoURLAndIAMv2DataEnvelope(t *testing.T) {
 		t.Fatalf("expected student role allowed, got %v", err)
 	}
 }
+
+
+func TestCheckAllowedClaimsArrayAndFallbackPaths(t *testing.T) {
+	studentCS := map[string]any{
+		"role": "student",
+		"profile": map[string]any{
+			"departmentId": "lock-05-06",
+			"firstNameTh":  "เตชสิทธิ์",
+		},
+	}
+	staffCS := map[string]any{
+		"role": "staff",
+		"profile": map[string]any{
+			"firstname_th": "อาจารย์คอม",
+			"profiles": []any{
+				map[string]any{
+					"is_default_profile": false,
+					"department": map[string]any{
+						"id": "lock-05-01",
+					},
+				},
+				map[string]any{
+					"is_default_profile": true,
+					"department": map[string]any{
+						"id": "lock-05-06",
+					},
+				},
+			},
+		},
+	}
+	staffOther := map[string]any{
+		"role": "staff",
+		"profile": map[string]any{
+			"profiles": []any{
+				map[string]any{
+					"department": map[string]any{
+						"id": "lock-05-02",
+					},
+				},
+			},
+		},
+	}
+
+	rules := map[string][]string{
+		"role": {"student", "staff"},
+		"profile.departmentId | profile.profiles.department.id": {"lock-05-06"},
+	}
+
+	if err := CheckAllowedClaims(rules, studentCS); err != nil {
+		t.Fatalf("expected CS student allowed, got %v", err)
+	}
+	if err := CheckAllowedClaims(rules, staffCS); err != nil {
+		t.Fatalf("expected CS staff allowed via profiles array, got %v", err)
+	}
+	if err := CheckAllowedClaims(rules, staffOther); !errors.Is(err, ErrClaimNotAllowed) {
+		t.Fatalf("expected non-CS staff blocked, got %v", err)
+	}
+
+	// Wildcard syntax and fallback field mapping
+	if v := valueToString(extractJSONPath(studentCS, "profile.firstNameTh | profile.firstname_th")); v != "เตชสิทธิ์" {
+		t.Fatalf("expected student fallback firstname, got %q", v)
+	}
+	if v := valueToString(extractJSONPath(staffCS, "profile.firstNameTh | profile.firstname_th")); v != "อาจารย์คอม" {
+		t.Fatalf("expected staff fallback firstname, got %q", v)
+	}
+	if err := CheckAllowedClaims(map[string][]string{"profile.profiles.*.department.id": {"lock-05-06"}}, staffCS); err != nil {
+		t.Fatalf("expected wildcard array syntax allowed, got %v", err)
+	}
+}
