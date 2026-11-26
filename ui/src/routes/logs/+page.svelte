@@ -5,6 +5,7 @@
 	import { RefreshCw, Search, X } from '@lucide/svelte';
 	import { apiRequest } from '#lib/api/client.ts';
 	import { toast } from '#lib/stores/toast.svelte.ts';
+	import { formatTimestamp, uiPrefs } from '#lib/stores/uiPrefs.svelte.ts';
 
 	interface LogEntry {
 		id?: number;
@@ -16,6 +17,9 @@
 		message?: string;
 		latency_ms: number;
 		ip: string;
+		auth_role?: string;
+		auth_email?: string;
+		auth_id?: string;
 	}
 
 	let logs = $state<LogEntry[]>([]);
@@ -28,7 +32,7 @@
 
 	let filtered = $derived(
 		logs.filter((l) =>
-			`${l.method} ${l.path} ${l.status} ${l.code ?? ''} ${l.message ?? ''}`
+			`${l.method} ${l.path} ${l.status} ${l.code ?? ''} ${l.message ?? ''} ${l.auth_role || 'guest'} ${l.auth_email ?? ''} ${l.auth_id ?? ''}`
 				.toLowerCase()
 				.includes(filter.trim().toLowerCase())
 		)
@@ -128,7 +132,7 @@
 			<input
 				type="text"
 				bind:value={filter}
-				placeholder="Filter by method, path, code, message, or status..."
+				placeholder="Filter by method, path, auth (superuser/user/email/guest), status..."
 				class="w-full rounded-full border border-transparent bg-muted/80 py-2 pr-4 pl-10 text-xs outline-none transition focus:border-border focus:bg-accent/70"
 			/>
 		</div>
@@ -158,6 +162,7 @@
 					<th class="px-5 py-3 font-semibold">Status</th>
 					<th class="px-4 py-3 font-semibold">Method</th>
 					<th class="px-4 py-3 font-semibold">Path</th>
+					<th class="px-4 py-3 font-semibold">Auth</th>
 					<th class="px-4 py-3 font-semibold">Code</th>
 					<th class="px-4 py-3 font-semibold">Message</th>
 					<th class="px-4 py-3 font-semibold">Latency</th>
@@ -168,9 +173,9 @@
 			{#key refreshGen}
 				<tbody class="divide-y divide-border font-mono">
 					{#if loading && logs.length === 0}
-						<tr><td colspan="8" class="px-5 py-10 text-center text-muted-foreground">Loading logs...</td></tr>
+						<tr><td colspan="9" class="px-5 py-10 text-center text-muted-foreground">Loading logs...</td></tr>
 					{:else if filtered.length === 0}
-						<tr><td colspan="8" class="px-5 py-10 text-center text-muted-foreground">No logs yet.</td></tr>
+						<tr><td colspan="9" class="px-5 py-10 text-center text-muted-foreground">No logs yet.</td></tr>
 					{:else}
 						{#each filtered as row, i (row.id ?? `${row.timestamp}-${i}`)}
 							<tr
@@ -191,6 +196,26 @@
 								</td>
 								<td class="px-4 py-2.5 font-semibold">{row.method}</td>
 								<td class="max-w-xs truncate px-4 py-2.5 text-foreground" title={row.path}>{row.path}</td>
+								<td class="max-w-52 px-4 py-2.5 whitespace-nowrap">
+									{#if row.auth_role || row.auth_email}
+										<span class="inline-flex max-w-full items-center gap-1.5">
+											<span
+												class="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold {row.auth_role === 'superuser'
+													? 'bg-violet-500/15 text-violet-700 dark:text-violet-400'
+													: 'bg-sky-500/15 text-sky-700 dark:text-sky-400'}"
+											>
+												{row.auth_role || 'auth'}
+											</span>
+											{#if row.auth_email || row.auth_id}
+												<span class="truncate font-sans text-xs text-foreground/90" title={row.auth_email || row.auth_id}>
+													{row.auth_email || row.auth_id}
+												</span>
+											{/if}
+										</span>
+									{:else}
+										<span class="text-muted-foreground/60">guest</span>
+									{/if}
+								</td>
 								<td class="px-4 py-2.5">
 									<span
 										class="rounded px-1.5 py-0.5 text-xs {row.status >= 400
@@ -211,7 +236,7 @@
 								<td class="px-4 py-2.5 text-muted-foreground">{row.latency_ms}ms</td>
 								<td class="px-4 py-2.5 text-muted-foreground">{row.ip}</td>
 								<td class="px-5 py-2.5 text-muted-foreground">
-									{new Date(row.timestamp).toLocaleString()}
+									{formatTimestamp(row.timestamp, uiPrefs.prefs.dateFormat)}
 								</td>
 							</tr>
 						{/each}

@@ -177,6 +177,9 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);`,
 		`ALTER TABLE _webhooks ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT 'generic';`,
+		`ALTER TABLE _logs ADD COLUMN IF NOT EXISTS auth_role TEXT NOT NULL DEFAULT '';`,
+		`ALTER TABLE _logs ADD COLUMN IF NOT EXISTS auth_email TEXT NOT NULL DEFAULT '';`,
+		`ALTER TABLE _logs ADD COLUMN IF NOT EXISTS auth_id TEXT NOT NULL DEFAULT '';`,
 		`ALTER TABLE _webhooks ADD COLUMN IF NOT EXISTS auth_token TEXT NOT NULL DEFAULT '';`,
 	)
 

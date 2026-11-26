@@ -26,6 +26,9 @@ type RequestLogEntry struct {
 	Message   string    `json:"message"`
 	LatencyMs int64     `json:"latency_ms"`
 	IP        string    `json:"ip"`
+	AuthRole  string    `json:"auth_role,omitempty"`
+	AuthEmail string    `json:"auth_email,omitempty"`
+	AuthID    string    `json:"auth_id,omitempty"`
 }
 
 const maxLogEntries = 200
@@ -51,7 +54,7 @@ func RecentLogs(ctx context.Context) []RequestLogEntry {
 
 	if pool != nil {
 		rows, err := pool.Query(ctx, `
-			SELECT id, status, method, path, code, message, latency_ms, ip, created_at
+			SELECT id, status, method, path, code, message, latency_ms, ip, auth_role, auth_email, auth_id, created_at
 			FROM _logs
 			ORDER BY id DESC
 			LIMIT 200`)
@@ -60,7 +63,7 @@ func RecentLogs(ctx context.Context) []RequestLogEntry {
 			out := make([]RequestLogEntry, 0, 64)
 			for rows.Next() {
 				var e RequestLogEntry
-				if rows.Scan(&e.ID, &e.Status, &e.Method, &e.Path, &e.Code, &e.Message, &e.LatencyMs, &e.IP, &e.Timestamp) == nil {
+				if rows.Scan(&e.ID, &e.Status, &e.Method, &e.Path, &e.Code, &e.Message, &e.LatencyMs, &e.IP, &e.AuthRole, &e.AuthEmail, &e.AuthID, &e.Timestamp) == nil {
 					out = append(out, e)
 				}
 			}
@@ -91,9 +94,9 @@ func appendLog(entry RequestLogEntry) {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 			_, _ = pool.Exec(ctx, `
-				INSERT INTO _logs (status, method, path, code, message, latency_ms, ip, created_at)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-				e.Status, e.Method, e.Path, e.Code, e.Message, e.LatencyMs, e.IP, e.Timestamp,
+				INSERT INTO _logs (status, method, path, code, message, latency_ms, ip, auth_role, auth_email, auth_id, created_at)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+				e.Status, e.Method, e.Path, e.Code, e.Message, e.LatencyMs, e.IP, e.AuthRole, e.AuthEmail, e.AuthID, e.Timestamp,
 			)
 		}(entry)
 	}
@@ -131,6 +134,17 @@ func RequestLogger() echo.MiddlewareFunc {
 			dur := time.Since(start)
 			status := c.Response().Status
 			code, msg := extractCodeAndMessage(status, err)
+
+			var authRole, authEmail, authID string
+			if claims := GetAuthClaims(c); claims != nil {
+				authRole = claims.Role
+				authEmail = claims.Email
+				authID = claims.RecordID
+				if authID == "" {
+					authID = claims.UserID
+				}
+			}
+
 			entry := RequestLogEntry{
 				Timestamp: start.UTC(),
 				Method:    c.Request().Method,
@@ -140,6 +154,9 @@ func RequestLogger() echo.MiddlewareFunc {
 				Message:   msg,
 				LatencyMs: dur.Milliseconds(),
 				IP:        c.RealIP(),
+				AuthRole:  authRole,
+				AuthEmail: authEmail,
+				AuthID:    authID,
 			}
 			appendLog(entry)
 
@@ -150,6 +167,9 @@ func RequestLogger() echo.MiddlewareFunc {
 				"code", entry.Code,
 				"latency", dur.Round(time.Millisecond).String(),
 				"ip", entry.IP,
+			}
+			if authRole != "" {
+				attrs = append(attrs, "auth", authRole+":"+authEmail)
 			}
 			if status >= 400 && entry.Message != "" {
 				attrs = append(attrs, "message", entry.Message)
