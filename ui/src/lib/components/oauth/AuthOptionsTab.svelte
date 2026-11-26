@@ -285,7 +285,7 @@
 										</div>
 										<div>
 											<label for="oa-userinfo" class="mb-1 block text-xs font-medium">UserInfo / Profile API URL</label>
-											<input id="oa-userinfo" type="url" bind:value={userInfoUrl} placeholder="https://api.science.kmitl.ac.th/iam/o/v2/students" class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring" />
+											<input id="oa-userinfo" type="text" bind:value={userInfoUrl} placeholder={'https://api.science.kmitl.ac.th/iam/o/v2/users/{user_id}'} class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring" />
 										</div>
 									</div>
 
