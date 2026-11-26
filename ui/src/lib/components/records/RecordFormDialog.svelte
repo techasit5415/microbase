@@ -55,9 +55,15 @@
 	let boolValues = $state<Record<string, boolean>>({});
 	let relationOptions = $state<Record<string, RelationOption[]>>({});
 	let openRelationPicker = $state<string | null>(null);
-	let hoveredRelationTooltip = $state<{ json: string; x: number; y: number } | null>(null);
+	let hoveredRelationTooltip = $state<{
+		json: string;
+		x: number;
+		top?: number;
+		bottom?: number;
+		pinned?: boolean;
+	} | null>(null);
 
-	function showRelTooltip(e: MouseEvent, rec: RecordRow | undefined) {
+	function showRelTooltip(e: MouseEvent, rec: RecordRow | undefined, pin = false) {
 		if (!rec) return;
 		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
 		const clean: Record<string, unknown> = {};
@@ -65,10 +71,14 @@
 			if (k === 'password_hash' || k === 'token_key') continue;
 			clean[k] = v;
 		}
+		const spaceBelow = window.innerHeight - rect.bottom;
+		const openAbove = spaceBelow < 300 && rect.top > spaceBelow;
 		hoveredRelationTooltip = {
 			json: JSON.stringify(clean, null, 2),
-			x: Math.min(window.innerWidth - 340, Math.max(16, rect.left)),
-			y: rect.bottom + 8
+			x: Math.min(window.innerWidth - 400, Math.max(16, rect.left)),
+			top: openAbove ? undefined : Math.max(16, rect.bottom + 8),
+			bottom: openAbove ? Math.max(16, window.innerHeight - rect.top + 8) : undefined,
+			pinned: pin
 		};
 	}
 	let uploadingField = $state<string | null>(null);
@@ -207,6 +217,7 @@
 			openRelationPicker = null;
 			errorMsg = '';
 			impersonateToken = '';
+			hoveredRelationTooltip = null;
 			initialSnapshot = untrack(() => buildSnapshot());
 			loadRelationChoices(collection.fields ?? []);
 		}
@@ -747,14 +758,24 @@
 										<span
 											class="inline-flex items-center gap-1.5 rounded-md bg-secondary px-2.5 py-1 text-sm text-foreground"
 										>
-											<span
-												role="presentation"
-												onmouseenter={(e) => showRelTooltip(e, matched?.record)}
-												onmouseleave={() => (hoveredRelationTooltip = null)}
-												class="inline-flex cursor-help items-center text-muted-foreground transition hover:text-foreground"
+											<button
+												type="button"
+												title="Hover to preview, click to pin & scroll"
+												onmouseenter={(e) => {
+													if (!hoveredRelationTooltip?.pinned) showRelTooltip(e, matched?.record, false);
+												}}
+												onmouseleave={() => {
+													if (!hoveredRelationTooltip?.pinned) hoveredRelationTooltip = null;
+												}}
+												onclick={(e) => {
+													e.stopPropagation();
+													if (hoveredRelationTooltip?.pinned) hoveredRelationTooltip = null;
+													else showRelTooltip(e, matched?.record, true);
+												}}
+												class="inline-flex cursor-pointer items-center text-muted-foreground transition hover:text-foreground"
 											>
 												<Eye class="h-4 w-4" />
-											</span>
+											</button>
 											<span class="rounded bg-background/85 px-2 py-0.5 font-mono text-sm">{sid}</span>
 											<button
 												type="button"
@@ -995,9 +1016,21 @@
 
 {#if hoveredRelationTooltip}
 	<div
-		style="left: {hoveredRelationTooltip.x}px; top: {hoveredRelationTooltip.y}px;"
-		class="pointer-events-none fixed z-70 max-h-72 w-80 overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900 p-3 text-zinc-100 shadow-2xl"
+		style="left: {hoveredRelationTooltip.x}px; {hoveredRelationTooltip.top !== undefined ? `top: ${hoveredRelationTooltip.top}px;` : `bottom: ${hoveredRelationTooltip.bottom}px;`}"
+		class="{hoveredRelationTooltip.pinned ? 'pointer-events-auto' : 'pointer-events-none'} fixed z-70 flex max-h-72 w-96 flex-col overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900 text-zinc-100 shadow-2xl"
 	>
-		<pre class="overflow-auto font-mono text-xs leading-relaxed whitespace-pre-wrap break-all">{hoveredRelationTooltip.json}</pre>
+		{#if hoveredRelationTooltip.pinned}
+			<div class="flex shrink-0 items-center justify-between border-b border-zinc-800 px-3 py-1.5 text-[11px] text-zinc-400">
+				<span>Related record preview</span>
+				<button
+					type="button"
+					onclick={() => (hoveredRelationTooltip = null)}
+					class="cursor-pointer rounded p-0.5 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+				>
+					<X class="h-3.5 w-3.5" />
+				</button>
+			</div>
+		{/if}
+		<pre class="min-h-0 flex-1 overflow-y-auto p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words">{hoveredRelationTooltip.json}</pre>
 	</div>
 {/if}

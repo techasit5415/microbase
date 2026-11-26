@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { ChevronUp, Folder, Plus, Search, Users } from '@lucide/svelte';
+	import { ChevronUp, Folder, Pin, Plus, Search, Users } from '@lucide/svelte';
 	import type { Collection } from '#lib/api/types.ts';
 	import { appSettings } from '#lib/stores/appSettings.svelte.ts';
 	import CollectionItem from './CollectionItem.svelte';
@@ -15,6 +15,7 @@
 	}
 
 	const STORAGE_KEY = 'microbase_sidebar_width';
+	const PINNED_KEY = 'microbase_pinned_collections';
 	const DEFAULT_WIDTH = 240;
 	const MIN_WIDTH = 180;
 	const MAX_WIDTH = 480;
@@ -22,6 +23,7 @@
 	let { collections, systemTables, activeName, onSelect, onDelete, onOpenCreate }: Props = $props();
 	let filter = $state('');
 	let showSystem = $state(false);
+	let pinnedNames = $state<string[]>([]);
 	let sidebarWidth = $state(DEFAULT_WIDTH);
 	let resizing = $state(false);
 	let startX = 0;
@@ -30,12 +32,38 @@
 	let filtered = $derived(
 		collections.filter((c) => c.name.toLowerCase().includes(filter.trim().toLowerCase()))
 	);
+	let pinnedSet = $derived(new Set(pinnedNames));
+	let pinnedCollections = $derived(
+		pinnedNames
+			.map((n) => filtered.find((c) => c.name === n))
+			.filter((c): c is Collection => Boolean(c))
+	);
+	let unpinnedCollections = $derived(filtered.filter((c) => !pinnedSet.has(c.name)));
+
+	function togglePin(name: string) {
+		const next = pinnedSet.has(name)
+			? pinnedNames.filter((n) => n !== name)
+			: [...pinnedNames, name];
+		pinnedNames = next;
+		try {
+			localStorage.setItem(PINNED_KEY, JSON.stringify(next));
+		} catch {
+			// Ignore storage errors
+		}
+	}
 
 	onMount(() => {
 		try {
 			const saved = Number(localStorage.getItem(STORAGE_KEY));
 			if (!Number.isNaN(saved) && saved >= MIN_WIDTH && saved <= MAX_WIDTH) {
 				sidebarWidth = saved;
+			}
+			const savedPins = localStorage.getItem(PINNED_KEY);
+			if (savedPins) {
+				const parsed = JSON.parse(savedPins);
+				if (Array.isArray(parsed)) {
+					pinnedNames = parsed.filter((x): x is string => typeof x === 'string');
+				}
 			}
 		} catch {
 			// Ignore storage errors
@@ -93,11 +121,32 @@
 	</div>
 
 	<div class="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2.5">
-		{#each filtered as col (col.name)}
+		{#if pinnedCollections.length > 0}
+			<div class="mb-2 flex flex-col gap-0.5 border-b border-border/70 pb-2.5">
+				<div class="flex items-center gap-1.5 px-3 py-1 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+					<Pin class="h-3 w-3" />
+					<span>Pinned</span>
+				</div>
+				{#each pinnedCollections as col (col.name)}
+					<CollectionItem
+						collection={col}
+						active={activeName === col.name}
+						pinned={true}
+						{onSelect}
+						onTogglePin={togglePin}
+						onDelete={appSettings.data.hide_controls ? undefined : onDelete}
+					/>
+				{/each}
+			</div>
+		{/if}
+
+		{#each unpinnedCollections as col (col.name)}
 			<CollectionItem
 				collection={col}
 				active={activeName === col.name}
+				pinned={false}
 				{onSelect}
+				onTogglePin={togglePin}
 				onDelete={appSettings.data.hide_controls ? undefined : onDelete}
 			/>
 		{/each}
