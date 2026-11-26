@@ -384,9 +384,24 @@ func (s *AuthService) UpdateUser(ctx context.Context, id string, email, role, ne
 		argIdx++
 	}
 
+	fieldByName := make(map[string]models.FieldDef)
+	if usersCol != nil {
+		for _, f := range usersCol.Fields {
+			fieldByName[f.Name] = f
+		}
+	}
 	for k, v := range custom {
 		if !models.IsValidIdentifier(k) || k == "id" || k == "email" || k == "role" || k == "password" || k == "password_hash" || k == "token_key" || k == "created_at" || k == "updated_at" {
 			continue
+		}
+		if f, ok := fieldByName[k]; ok && (f.Type == "relation" || f.Type == "select" || f.Type == "file") && f.MaxSelect > 1 {
+			if strVal, isStr := v.(string); isStr {
+				if strings.TrimSpace(strVal) == "" {
+					v = []string{}
+				} else {
+					v = []string{strVal}
+				}
+			}
 		}
 		setClauses = append(setClauses, fmt.Sprintf(`"%s" = $%d`, k, argIdx))
 		args = append(args, v)
