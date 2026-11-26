@@ -244,7 +244,7 @@
 		onOpenEditCollection={openEditCollection}
 		onOpenApiPreview={() => (showApiPreview = true)}
 		onOpenCreateRecord={() => {
-			if ((activeCol.type !== 'system' && activeCol.type !== 'view') || activeCol.name === '_superusers') {
+			if ((activeCol.type !== 'system' && activeCol.type !== 'view') || activeCol.name === '_superusers' || activeCol.name === '_authOrigins' || activeCol.name === '_oauth_accounts') {
 				editingRec = null;
 				showCreateRec = true;
 			}
@@ -256,7 +256,7 @@
 		allCollections={mainCollections}
 		{items}
 		{loading}
-		readOnly={(activeCol.type === 'system' && activeCol.name !== '_superusers') || activeCol.type === 'view'}
+		readOnly={(activeCol.type === 'system' && activeCol.name !== '_superusers' && activeCol.name !== '_authOrigins' && activeCol.name !== '_oauth_accounts') || activeCol.type === 'view'}
 		{sort}
 		onSortChange={(next) => {
 			sort = next;
