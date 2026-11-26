@@ -9,10 +9,12 @@
 	import ConfirmDialog from '#lib/components/ui/ConfirmDialog.svelte';
 	import Toaster from '#lib/components/ui/Toaster.svelte';
 	import { appSettings } from '#lib/stores/appSettings.svelte.ts';
+	import { uiPrefs } from '#lib/stores/uiPrefs.svelte.ts';
 
 	let { children } = $props();
 
 	onMount(() => {
+		uiPrefs.init();
 		appSettings.load();
 	});
 </script>

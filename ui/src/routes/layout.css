@@ -40,6 +40,8 @@
 	--input: var(--pb-surface-alt4);
 	--ring: #687278;
 	--radius: 5px;
+	--row-py: 0.625rem;
+	font-size: 17px;
 
 	--sidebar: var(--pb-surface);
 	--sidebar-foreground: var(--pb-txt);
@@ -208,4 +210,15 @@
 
 .animate-row-in {
 	animation: mbRowIn 200ms ease-out both;
+}
+
+/* Table density presets controlled via uiPrefs */
+:root[data-density='compact'] {
+	--row-py: 0.375rem;
+}
+:root[data-density='normal'] {
+	--row-py: 0.625rem;
+}
+:root[data-density='comfortable'] {
+	--row-py: 0.9rem;
 }

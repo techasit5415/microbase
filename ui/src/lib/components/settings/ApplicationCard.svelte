@@ -2,18 +2,19 @@
 	import { onMount } from 'svelte';
 	import { cubicOut } from 'svelte/easing';
 	import { slide } from 'svelte/transition';
-	import { Activity, ArrowUpDown, ChevronDown, Layers, ShieldCheck } from '@lucide/svelte';
+	import { Activity, ArrowUpDown, ChevronDown, Layers, RotateCcw, ShieldCheck, SlidersHorizontal } from '@lucide/svelte';
 	import { apiRequest } from '#lib/api/client.ts';
 	import RateLimitsCard from '#lib/components/settings/RateLimitsCard.svelte';
 	import Switch from '#lib/components/ui/Switch.svelte';
 	import { appSettings, type AppSettingsData } from '#lib/stores/appSettings.svelte.ts';
 	import { toast } from '#lib/stores/toast.svelte.ts';
+	import { uiPrefs, type BorderRadiusPreset, type TableDensity } from '#lib/stores/uiPrefs.svelte.ts';
 
 	let form = $state<AppSettingsData>(JSON.parse(JSON.stringify(appSettings.data)));
 	let proxyHeadersText = $state((appSettings.data.trusted_proxy.headers ?? []).join(', '));
 	let superuserIPsText = $state((appSettings.data.superuser_ips.allowed_ips ?? []).join(', '));
 	let rateLimitEnabled = $state<boolean | null>(null);
-	let openAccordion = $state<'batch' | 'proxy' | 'ratelimit' | 'ips' | null>(null);
+	let openAccordion = $state<'appearance' | 'batch' | 'proxy' | 'ratelimit' | 'ips' | null>(null);
 	let saving = $state(false);
 
 	const accentPresets = ['#25272d', '#1856c9', '#059669', '#7c3aed', '#dc2626', '#d97706'];
@@ -35,7 +36,7 @@
 		}
 	});
 
-	function toggleAccordion(key: 'batch' | 'proxy' | 'ratelimit' | 'ips') {
+	function toggleAccordion(key: 'appearance' | 'batch' | 'proxy' | 'ratelimit' | 'ips') {
 		openAccordion = openAccordion === key ? null : key;
 	}
 
@@ -230,6 +231,122 @@
 			{#if openAccordion === 'ratelimit'}
 				<div transition:slide={{ duration: 180, easing: cubicOut }} class="border-t border-border bg-muted/20 p-4">
 					<RateLimitsCard onStatusChange={(v) => (rateLimitEnabled = v)} />
+				</div>
+			{/if}
+		</div>
+
+		<!-- 4. UI Appearance (local per-device) -->
+		<div>
+			<button
+				type="button"
+				onclick={() => toggleAccordion('appearance')}
+				class="flex w-full cursor-pointer items-center justify-between px-4 py-3.5 text-left transition hover:bg-muted/40"
+			>
+				<span class="flex items-center gap-2.5 text-sm font-medium text-foreground">
+					<SlidersHorizontal class="h-4 w-4 text-muted-foreground" />
+					UI Appearance (Font size &amp; layout)
+				</span>
+				<span class="flex items-center gap-2.5">
+					<span class="rounded bg-muted px-2 py-0.5 font-mono text-xs font-medium text-foreground">
+						{uiPrefs.prefs.fontSize}px &middot; {uiPrefs.prefs.density}
+					</span>
+					<ChevronDown class="h-4 w-4 text-muted-foreground transition-transform {openAccordion === 'appearance' ? 'rotate-180' : ''}" />
+				</span>
+			</button>
+			{#if openAccordion === 'appearance'}
+				<div transition:slide={{ duration: 180, easing: cubicOut }} class="space-y-4 border-t border-border bg-muted/20 p-4">
+					<!-- Font Size -->
+					<div class="space-y-2">
+						<div class="flex flex-wrap items-center justify-between gap-2">
+							<label for="ui-font-size" class="text-xs font-medium text-foreground">
+								Base font size <span class="font-mono text-muted-foreground">({uiPrefs.prefs.fontSize}px)</span>
+							</label>
+							<div class="flex items-center gap-1">
+								{#each [
+									{ label: 'Small', size: 15 },
+									{ label: 'Default', size: 17 },
+									{ label: 'Large', size: 18.5 },
+									{ label: 'XL', size: 20 }
+								] as preset (preset.size)}
+									<button
+										type="button"
+										onclick={() => uiPrefs.update({ fontSize: preset.size })}
+										class="cursor-pointer rounded px-2 py-1 text-xs font-medium transition {uiPrefs.prefs.fontSize === preset.size
+											? 'bg-primary text-primary-foreground'
+											: 'border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground'}"
+									>
+										{preset.label}
+									</button>
+								{/each}
+							</div>
+						</div>
+						<input
+							id="ui-font-size"
+							type="range"
+							min="14"
+							max="20"
+							step="0.5"
+							value={uiPrefs.prefs.fontSize}
+							oninput={(e) => uiPrefs.update({ fontSize: Number((e.currentTarget as HTMLInputElement).value) })}
+							class="w-full cursor-pointer accent-primary"
+						/>
+						<div class="flex justify-between font-mono text-[11px] text-muted-foreground">
+							<span>14px</span>
+							<span>17px</span>
+							<span>20px</span>
+						</div>
+					</div>
+
+					<!-- Table Density & Border Radius -->
+					<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+						<div class="space-y-1.5">
+							<span class="block text-xs font-medium text-foreground">Table row density</span>
+							<div class="grid grid-cols-3 gap-1 rounded-md border border-border bg-card p-1">
+								{#each (['compact', 'normal', 'comfortable'] as TableDensity[]) as d (d)}
+									<button
+										type="button"
+										onclick={() => uiPrefs.update({ density: d })}
+										class="cursor-pointer rounded px-2 py-1.5 text-xs font-medium capitalize transition {uiPrefs.prefs.density === d
+											? 'bg-primary text-primary-foreground'
+											: 'text-muted-foreground hover:bg-muted hover:text-foreground'}"
+									>
+										{d}
+									</button>
+								{/each}
+							</div>
+						</div>
+
+						<div class="space-y-1.5">
+							<span class="block text-xs font-medium text-foreground">Corner radius</span>
+							<div class="grid grid-cols-3 gap-1 rounded-md border border-border bg-card p-1">
+								{#each (['sharp', 'default', 'rounded'] as BorderRadiusPreset[]) as r (r)}
+									<button
+										type="button"
+										onclick={() => uiPrefs.update({ radius: r })}
+										class="cursor-pointer rounded px-2 py-1.5 text-xs font-medium capitalize transition {uiPrefs.prefs.radius === r
+											? 'bg-primary text-primary-foreground'
+											: 'text-muted-foreground hover:bg-muted hover:text-foreground'}"
+									>
+										{r}
+									</button>
+								{/each}
+							</div>
+						</div>
+					</div>
+
+					<div class="flex items-center justify-between pt-1 text-xs text-muted-foreground">
+						<span>Saved automatically in this browser (applied live).</span>
+						<button
+							type="button"
+							onclick={() => {
+								uiPrefs.reset();
+								toast.success('Reset UI appearance to defaults');
+							}}
+							class="inline-flex cursor-pointer items-center gap-1 rounded border border-border bg-card px-2.5 py-1 font-medium text-foreground transition hover:bg-muted"
+						>
+							<RotateCcw class="h-3 w-3" /> Reset
+						</button>
+					</div>
 				</div>
 			{/if}
 		</div>

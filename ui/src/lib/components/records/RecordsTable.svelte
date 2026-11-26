@@ -366,7 +366,7 @@
 						class="group transition {isChecked ? 'bg-muted/75' : 'bg-card hover:bg-muted/50'} {!readOnly && onSelect ? 'cursor-pointer' : ''}"
 					>
 						{#if !readOnly && onBulkDelete}
-							<td class="w-11 px-4 py-2.5" onclick={(e) => e.stopPropagation()}>
+							<td class="w-11 px-4 py-[var(--row-py)]" onclick={(e) => e.stopPropagation()}>
 								{#if rid !== null}
 									<button
 										type="button"
@@ -387,7 +387,7 @@
 						{#each columns as col}
 							{@const t = getFieldType(col)}
 							{@const val = row[col]}
-							<td class="max-w-xs min-w-28 px-5 py-2.5 whitespace-nowrap">
+							<td class="max-w-xs min-w-28 px-5 py-[var(--row-py)] whitespace-nowrap">
 								{#if t === 'id' && val !== null && val !== undefined}
 									<button
 										type="button"
@@ -478,7 +478,7 @@
 						{/each}
 
 						{#if !readOnly}
-							<td class="w-10 px-3 py-2.5 text-right">
+							<td class="w-10 px-3 py-[var(--row-py)] text-right">
 								<span class="inline-flex items-center justify-center text-muted-foreground/60 transition group-hover:translate-x-0.5 group-hover:text-foreground">
 									<ArrowRight class="h-4 w-4" />
 								</span>
