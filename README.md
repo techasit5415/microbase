@@ -39,7 +39,7 @@ cp .env.example .env
 # 3. Build Frontend & Single Go Binary
 cd ui && npm install && npm run build && cd ..
 CGO_ENABLED=0 go build -trimpath \
-  -ldflags="-s -w -X github.com/techasit5415/microbase/internal/config.Version=v0.10.62" \
+  -ldflags="-s -w -X github.com/techasit5415/microbase/internal/config.Version=v0.10.66" \
   -o microbase ./cmd/server
 
 # 4. Run Microbase
@@ -67,4 +67,6 @@ npm install @techasit5415/microbase-sdk
 | **[Collections, Fields, Querying & Realtime](docs/collections-and-records.md)** | 17 field types, `?filter`, `?sort`, `?expand`, `?fields`, `pgvector` search, SSE Realtime, Batch API |
 | **[Authentication & OAuth2/OIDC](docs/authentication.md)** | Register/Login, JWT, OTP, Password Reset, Impersonation, Google/Discord/OIDC Claim Mapping |
 | **[Storage, Redis, Backups & Operations](docs/storage-and-operations.md)** | S3/R2/MinIO storage, Redis cache, SMTP mail, Webhooks, Crons, Rate Limits, `pg_dump` Backups |
+| **[REST API Reference](docs/api-reference.md)** | Complete endpoint table for Auth, Collections, Records, Realtime, Files, Logs, Settings, Backups, Crons & SQL |
+| **[Admin Dashboard Guide (`/_/`)](docs/admin-ui.md)** | Bookmarkable routes (`/_/settings/:section`), UI Appearance customizer, ERD Canvas, Logs Drawer & Settings modal |
 | **[Load Testing (Grafana k6)](loadtest/k6/README.md)** | Smoke, Load (50 VUs), and Stress (150 VUs) benchmark scripts |
