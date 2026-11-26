@@ -2,6 +2,7 @@ package routes
 
 import (
 	"context"
+	"strconv"
 	"encoding/json"
 	"time"
 
@@ -156,7 +157,37 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStor
 		api.GET("/files/:filename", fileCtrl.Serve)
 		api.GET("/system/:table", systemCtrl.List, adminOnly)
 		api.GET("/logs", func(c echo.Context) error {
-			return c.JSON(200, map[string]any{"items": middlewares.RecentLogs(c.Request().Context())})
+			page, _ := strconv.Atoi(c.QueryParam("page"))
+			if page < 1 {
+				page = 1
+			}
+			perPageStr := c.QueryParam("per_page")
+			if perPageStr == "" {
+				perPageStr = c.QueryParam("perPage")
+			}
+			perPage, _ := strconv.Atoi(perPageStr)
+			if perPage < 1 {
+				perPage = 30
+			}
+			if perPage > 200 {
+				perPage = 200
+			}
+			search := c.QueryParam("search")
+			if search == "" {
+				search = c.QueryParam("q")
+			}
+			items, total := middlewares.QueryLogs(c.Request().Context(), page, perPage, search)
+			totalPages := int((total + int64(perPage) - 1) / int64(perPage))
+			if totalPages < 1 {
+				totalPages = 1
+			}
+			return c.JSON(200, map[string]any{
+				"page":        page,
+				"per_page":    perPage,
+				"total_items": total,
+				"total_pages": totalPages,
+				"items":       items,
+			})
 		}, adminOnly)
 		api.DELETE("/logs", opsCtrl.ClearLogs, adminOnly)
 

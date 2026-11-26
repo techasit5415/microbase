@@ -156,52 +156,134 @@ func truncateString(s string, maxBytes int) string {
 	return s[:maxBytes-3] + "..."
 }
 
-// RecentLogs returns recorded HTTP logs ordered newest-first from PostgreSQL (or memory fallback).
+// RecentLogs returns up to 200 newest recorded HTTP logs.
 func RecentLogs(ctx context.Context) []RequestLogEntry {
+	items, _ := QueryLogs(ctx, 1, 200, "")
+	return items
+}
+
+func levelKeywordMatches(level int, q string) bool {
+	switch q {
+	case "debug":
+		return level < 0
+	case "info":
+		return level >= 0 && level < 4
+	case "warn", "warning":
+		return level >= 4 && level < 8
+	case "error", "err":
+		return level >= 8
+	default:
+		return false
+	}
+}
+
+// QueryLogs returns paginated HTTP logs ordered newest-first along with total matching row count.
+func QueryLogs(ctx context.Context, page, perPage int, search string) ([]RequestLogEntry, int64) {
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 {
+		perPage = 30
+	}
+	if perPage > 200 {
+		perPage = 200
+	}
+	search = strings.TrimSpace(search)
+	offset := (page - 1) * perPage
+
 	logMu.RLock()
 	pool := logPool
 	logMu.RUnlock()
 
 	if pool != nil {
-		rows, err := pool.Query(ctx, `
-			SELECT id, level, status, method, path, full_url, code, message, latency_ms, exec_time_ms,
-			       ip, remote_ip, referer, user_agent, auth_collection, auth_role, auth_email, auth_id, created_at
-			FROM _logs
-			ORDER BY id DESC
-			LIMIT 200`)
-		if err == nil {
-			defer rows.Close()
-			out := make([]RequestLogEntry, 0, 64)
-			for rows.Next() {
-				var e RequestLogEntry
-				if rows.Scan(
-					&e.ID, &e.Level, &e.Status, &e.Method, &e.Path, &e.URL, &e.Code, &e.Message,
-					&e.LatencyMs, &e.ExecTimeMs, &e.IP, &e.RemoteIP, &e.Referer, &e.UserAgent,
-					&e.Auth, &e.AuthRole, &e.AuthEmail, &e.AuthID, &e.Timestamp,
-				) == nil {
-					if e.Level == 0 && e.Status >= 400 {
-						e.Level = statusToLevel(e.Status)
-					}
-					if e.URL == "" {
-						e.URL = e.Path
-					}
-					if e.RemoteIP == "" {
-						e.RemoteIP = e.IP
-					}
-					out = append(out, e)
-				}
+		whereClause := ""
+		args := []any{}
+		if search != "" {
+			pattern := "%" + search + "%"
+			lower := strings.ToLower(search)
+			levelCond := ""
+			switch lower {
+			case "debug":
+				levelCond = " OR level < 0"
+			case "info":
+				levelCond = " OR (level >= 0 AND level < 4 AND status < 400)"
+			case "warn", "warning":
+				levelCond = " OR (level >= 4 AND level < 8) OR (level = 0 AND status >= 400 AND status < 500)"
+			case "error", "err":
+				levelCond = " OR level >= 8 OR (level = 0 AND status >= 500)"
 			}
-			return out
+			whereClause = ` WHERE (
+				method ILIKE $1 OR path ILIKE $1 OR full_url ILIKE $1 OR
+				auth_collection ILIKE $1 OR auth_role ILIKE $1 OR auth_email ILIKE $1 OR auth_id ILIKE $1 OR
+				ip ILIKE $1 OR user_agent ILIKE $1 OR code ILIKE $1 OR message ILIKE $1 OR status::text ILIKE $1` + levelCond + `
+			)`
+			args = append(args, pattern)
+		}
+
+		var total int64
+		if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM _logs`+whereClause, args...).Scan(&total); err == nil {
+			limitIdx := len(args) + 1
+			offsetIdx := len(args) + 2
+			queryArgs := append(append([]any{}, args...), perPage, offset)
+			query := fmt.Sprintf(`
+				SELECT id, level, status, method, path, full_url, code, message, latency_ms, exec_time_ms,
+				       ip, remote_ip, referer, user_agent, auth_collection, auth_role, auth_email, auth_id, created_at
+				FROM _logs%s
+				ORDER BY id DESC
+				LIMIT $%d OFFSET $%d`, whereClause, limitIdx, offsetIdx)
+
+			rows, err := pool.Query(ctx, query, queryArgs...)
+			if err == nil {
+				defer rows.Close()
+				out := make([]RequestLogEntry, 0, perPage)
+				for rows.Next() {
+					var e RequestLogEntry
+					if rows.Scan(
+						&e.ID, &e.Level, &e.Status, &e.Method, &e.Path, &e.URL, &e.Code, &e.Message,
+						&e.LatencyMs, &e.ExecTimeMs, &e.IP, &e.RemoteIP, &e.Referer, &e.UserAgent,
+						&e.Auth, &e.AuthRole, &e.AuthEmail, &e.AuthID, &e.Timestamp,
+					) == nil {
+						if e.Level == 0 && e.Status >= 400 {
+							e.Level = statusToLevel(e.Status)
+						}
+						if e.URL == "" {
+							e.URL = e.Path
+						}
+						if e.RemoteIP == "" {
+							e.RemoteIP = e.IP
+						}
+						out = append(out, e)
+					}
+				}
+				return out, total
+			}
 		}
 	}
 
 	logMu.RLock()
 	defer logMu.RUnlock()
-	out := make([]RequestLogEntry, len(logEntries))
-	for i := range logEntries {
-		out[i] = logEntries[len(logEntries)-1-i]
+	lower := strings.ToLower(search)
+	matched := make([]RequestLogEntry, 0, len(logEntries))
+	for i := len(logEntries) - 1; i >= 0; i-- {
+		e := logEntries[i]
+		if lower != "" {
+			hay := strings.ToLower(fmt.Sprintf("%s %s %s %d %s %s %s %s %s %s %s",
+				e.Method, e.Path, e.URL, e.Status, e.Code, e.Message, e.Auth, e.AuthEmail, e.AuthID, e.IP, e.UserAgent))
+			if !strings.Contains(hay, lower) && !levelKeywordMatches(e.Level, lower) {
+				continue
+			}
+		}
+		matched = append(matched, e)
 	}
-	return out
+	total := int64(len(matched))
+	if offset >= len(matched) {
+		return []RequestLogEntry{}, total
+	}
+	end := offset + perPage
+	if end > len(matched) {
+		end = len(matched)
+	}
+	return matched[offset:end], total
 }
 
 func appendLog(entry RequestLogEntry) {

@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { Download, Info, RefreshCw, Search, Settings, Trash2, X } from '@lucide/svelte';
 	import { apiRequest } from '#lib/api/client.ts';
+	import PaginationBar from '#lib/components/records/PaginationBar.svelte';
 	import Drawer from '#lib/components/ui/Drawer.svelte';
 	import Switch from '#lib/components/ui/Switch.svelte';
 	import { confirmAction } from '#lib/stores/confirm.svelte.ts';
@@ -47,10 +48,14 @@
 
 	let logs = $state<LogEntry[]>([]);
 	let filter = $state('');
+	let page = $state(1);
+	let perPage = $state(uiPrefs.prefs.defaultPerPage || 30);
+	let totalItems = $state(0);
 	let loading = $state(true);
 	let spinning = $state(false);
 	let refreshGen = $state(0);
 	let selectedLog = $state<LogEntry | null>(null);
+	let searchTimer: ReturnType<typeof setTimeout> | null = null;
 
 	let settings = $state<LogSettings>({
 		max_days: 7,
@@ -124,14 +129,7 @@
 		};
 	}
 
-	let filtered = $derived(
-		logs.filter((l) => {
-			const lvl = logLevelMeta(resolveLevel(l));
-			return `${lvl.short} ${lvl.label} ${l.method} ${l.url || l.path} ${l.status} ${l.code ?? ''} ${l.message ?? ''} ${l.auth && l.auth !== '_guest' ? l.auth : ''} ${l.auth_role ?? ''} ${l.auth_email ?? ''} ${l.auth_id ?? ''} ${l.user_agent ?? ''} ${l.ip ?? ''}`
-				.toLowerCase()
-				.includes(filter.trim().toLowerCase());
-		})
-	);
+	let filtered = $derived(logs);
 
 	let chartBars = $derived.by(() => {
 		const buckets: { label: string; ok: number; err: number; total: number }[] = [];
@@ -227,6 +225,8 @@
 		try {
 			await apiRequest('/api/logs', { method: 'DELETE' });
 			logs = [];
+			totalItems = 0;
+			page = 1;
 			selectedLog = null;
 			toast.success('All logs cleared');
 		} catch (err) {
@@ -265,13 +265,30 @@
 		URL.revokeObjectURL(url);
 	}
 
-	async function loadLogs() {
+	interface LogsPageResponse {
+		page?: number;
+		per_page?: number;
+		total_items?: number;
+		total_pages?: number;
+		items: LogEntry[];
+	}
+
+	async function loadLogs(targetPage = page, targetPerPage = perPage, targetSearch = filter) {
 		loading = true;
 		spinning = true;
 		const startedAt = Date.now();
 		try {
-			const res = await apiRequest<{ items: LogEntry[] }>('/api/logs');
+			const params = new URLSearchParams({
+				page: String(targetPage),
+				per_page: String(targetPerPage)
+			});
+			const q = targetSearch.trim();
+			if (q) params.set('search', q);
+
+			const res = await apiRequest<LogsPageResponse>(`/api/logs?${params.toString()}`);
 			logs = res.items ?? [];
+			totalItems = typeof res.total_items === 'number' ? res.total_items : logs.length;
+			page = typeof res.page === 'number' ? res.page : targetPage;
 			refreshGen += 1;
 		} catch (err) {
 			toast.error(err, 'Failed to load logs');
@@ -282,6 +299,25 @@
 				spinning = false;
 			}, Math.max(0, 450 - elapsed));
 		}
+	}
+
+	function handleSearchInput() {
+		if (searchTimer) clearTimeout(searchTimer);
+		searchTimer = setTimeout(() => {
+			page = 1;
+			loadLogs(1, perPage, filter);
+		}, 250);
+	}
+
+	function handlePageChange(nextPage: number) {
+		page = nextPage;
+		loadLogs(nextPage, perPage, filter);
+	}
+
+	function handlePerPageChange(nextPerPage: number) {
+		perPage = nextPerPage;
+		page = 1;
+		loadLogs(1, nextPerPage, filter);
 	}
 
 	async function loadSettings() {
@@ -316,7 +352,7 @@
 				<h1 class="mr-1 font-semibold text-foreground">Logs</h1>
 				<button
 					type="button"
-					onclick={loadLogs}
+					onclick={() => loadLogs()}
 					disabled={spinning}
 					title="Refresh logs"
 					class="cursor-pointer rounded-md p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-70"
@@ -345,7 +381,7 @@
 					<span class="text-muted-foreground">·</span>
 					<span>{settings.max_days === 0 ? 'Disabled' : `${settings.max_days}d`}</span>
 				</button>
-				<span>Showing {filtered.length} persisted requests</span>
+				<span>Showing {logs.length} of {totalItems.toLocaleString()} logs</span>
 			</div>
 		</div>
 
@@ -354,6 +390,7 @@
 			<input
 				type="text"
 				bind:value={filter}
+				oninput={handleSearchInput}
 				placeholder="Filter by level (INFO / WARN / ERROR), method, url, auth, email, ip, status..."
 				class="w-full rounded-full border border-transparent bg-muted/80 py-2 pr-4 pl-10 text-xs outline-none transition focus:border-border focus:bg-accent/70"
 			/>
@@ -460,6 +497,14 @@
 			{/key}
 		</table>
 	</div>
+
+	<PaginationBar
+		{page}
+		{perPage}
+		{totalItems}
+		onPageChange={handlePageChange}
+		onPerPageChange={handlePerPageChange}
+	/>
 </main>
 
 <!-- PocketBase-style Logs settings Modal -->
