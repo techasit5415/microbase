@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 	"encoding/json"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/techasit5415/microbase/internal/cache"
 	"github.com/techasit5415/microbase/internal/config"
 	"github.com/techasit5415/microbase/internal/controllers"
+	"github.com/techasit5415/microbase/internal/hooks"
 	"github.com/techasit5415/microbase/internal/middlewares"
 	"github.com/techasit5415/microbase/internal/realtime"
 	"github.com/techasit5415/microbase/internal/services"
@@ -56,6 +58,17 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStor
 		webhookService := services.NewWebhookService(pool)
 		colService := services.NewCollectionService(pool, cacheStore)
 		recService := services.NewRecordService(pool, colService, hub, webhookService)
+		hooksDir := "./mb_hooks"
+		if cfg != nil && cfg.HooksDir != "" {
+			hooksDir = cfg.HooksDir
+		}
+		hookEngine := hooks.NewEngine(pool)
+		if err := hookEngine.LoadDir(hooksDir); err != nil {
+			slog.Error("failed to load js hooks", "dir", hooksDir, "error", err)
+		} else {
+			recService.SetHooks(hookEngine)
+			hookEngine.RegisterRoutes(e)
+		}
 		authService := services.NewAuthService(pool, cfg.JWTSecret)
 		superService := services.NewSuperuserService(pool, authService, cacheStore)
 		oauthService := services.NewOAuthService(pool, cacheStore, authService)

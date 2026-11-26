@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/techasit5415/microbase/internal/hooks"
 	"github.com/techasit5415/microbase/internal/models"
 	"github.com/techasit5415/microbase/internal/realtime"
 )
@@ -23,7 +24,11 @@ type RecordService struct {
 	collections *CollectionService
 	hub         *realtime.Hub
 	webhooks    *WebhookService
+	hooks       *hooks.Engine
 }
+
+// SetHooks attaches an optional embedded JS hooks engine to RecordService.
+func (s *RecordService) SetHooks(h *hooks.Engine) { s.hooks = h }
 
 func NewRecordService(pool *pgxpool.Pool, colSvc *CollectionService, hub *realtime.Hub, webhooks *WebhookService) *RecordService {
 	return &RecordService{pool: pool, collections: colSvc, hub: hub, webhooks: webhooks}
@@ -159,6 +164,11 @@ func (s *RecordService) Create(ctx context.Context, colName string, data models.
 		}
 	}
 
+	if s.hooks != nil {
+		if err := s.hooks.RunBefore("beforeCreate", col.Name, map[string]any{"collection": col.Name, "data": data}); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		}
+	}
 	if err := EvalCreateRuleWithDB(ctx, s.pool, col, claims, data); err != nil {
 		return nil, err
 	}
@@ -242,6 +252,11 @@ func (s *RecordService) Update(ctx context.Context, colName string, rawID string
 	}
 	args = append(args, idVal)
 
+	if s.hooks != nil {
+		if err := s.hooks.RunBefore("beforeUpdate", col.Name, map[string]any{"collection": col.Name, "id": rawID, "data": data}); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		}
+	}
 	ruleSQL, ruleArgs, _, ruleErr := CompileAPIRule(col, "update", claims, data, idx+1)
 	if ruleErr != nil {
 		return nil, ruleErr
@@ -288,6 +303,11 @@ func (s *RecordService) Delete(ctx context.Context, colName string, rawID string
 		return idErr
 	}
 
+	if s.hooks != nil {
+		if err := s.hooks.RunBefore("beforeDelete", col.Name, map[string]any{"collection": col.Name, "id": rawID}); err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		}
+	}
 	ruleSQL, ruleArgs, _, ruleErr := CompileAPIRule(col, "delete", claims, nil, 2)
 	if ruleErr != nil {
 		return ruleErr
