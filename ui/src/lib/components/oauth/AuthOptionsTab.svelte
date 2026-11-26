@@ -25,6 +25,8 @@
 	let authUrl = $state('');
 	let tokenUrl = $state('');
 	let userInfoUrl = $state('');
+	let profileApiUrl = $state('');
+	let profileApiKey = $state('');
 	let scopes = $state('openid email profile');
 	let mappingRows = $state<{ col: string; path: string }[]>([]);
 	let allowedRows = $state<{ path: string; values: string }[]>([]);
@@ -77,6 +79,8 @@
 		authUrl = p.auth_url ?? '';
 		tokenUrl = p.token_url ?? '';
 		userInfoUrl = p.userinfo_url ?? '';
+		profileApiUrl = p.profile_api_url ?? '';
+		profileApiKey = '';
 		scopes = p.scopes || 'openid email profile';
 		mappingRows = Object.entries(p.field_mapping ?? {}).map(([col, path]) => ({ col, path }));
 		allowedRows = Object.entries(p.allowed_claims ?? {}).map(([path, vals]) => ({ path, values: vals.join(', ') }));
@@ -113,6 +117,8 @@
 				auth_url: authUrl,
 				token_url: tokenUrl,
 				userinfo_url: userInfoUrl,
+				profile_api_url: profileApiUrl,
+				profile_api_key: profileApiKey,
 				scopes,
 				field_mapping,
 				allowed_claims
@@ -120,6 +126,8 @@
 			providers = providers.map((p) => (p.name === updated.name ? updated : p));
 			editingProvider = updated;
 			clientSecret = '';
+			profileApiKey = '';
+			toast.success('OAuth provider saved');
 		} catch (err) {
 			errorMsg = err instanceof Error ? err.message : 'Failed to save provider';
 		} finally {
@@ -284,8 +292,16 @@
 											<input id="oa-token" type="url" bind:value={tokenUrl} placeholder="https://api.science.kmitl.ac.th/iam/oauth/token" class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring" />
 										</div>
 										<div>
-											<label for="oa-userinfo" class="mb-1 block text-xs font-medium">UserInfo / Profile API URL</label>
-											<input id="oa-userinfo" type="text" bind:value={userInfoUrl} placeholder={'https://api.science.kmitl.ac.th/iam/o/v2/users/{user_id}'} class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring" />
+											<label for="oa-userinfo" class="mb-1 block text-xs font-medium">UserInfo URL</label>
+											<input id="oa-userinfo" type="text" bind:value={userInfoUrl} placeholder="https://api.science.kmitl.ac.th/iam/oidc2/userinfo" class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring" />
+										</div>
+										<div>
+											<label for="oa-profile-url" class="mb-1 block text-xs font-medium">Profile Enrichment API URL <span class="font-normal text-muted-foreground">(optional — supports {'{email}'}, {'{user_id}'}, {'{student_id}'})</span></label>
+											<input id="oa-profile-url" type="text" bind:value={profileApiUrl} placeholder={'https://api.science.kmitl.ac.th/iam/o/v2/users/email/{email}'} class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring" />
+										</div>
+										<div>
+											<label for="oa-profile-key" class="mb-1 block text-xs font-medium">Profile / UserInfo API Key <span class="font-normal text-muted-foreground">(Bearer Token, optional)</span></label>
+											<input id="oa-profile-key" type="password" bind:value={profileApiKey} placeholder={editingProvider.has_api_key ? '•••••••• (saved — leave blank to keep)' : 'Paste static Bearer API key...'} class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring" />
 										</div>
 									</div>
 

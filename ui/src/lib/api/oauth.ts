@@ -10,6 +10,8 @@ export interface OAuthProvider {
 	auth_url?: string;
 	token_url?: string;
 	userinfo_url?: string;
+	profile_api_url?: string;
+	has_api_key?: boolean;
 	scopes?: string;
 	field_mapping?: Record<string, string>;
 	allowed_claims?: Record<string, string[]>;
@@ -31,6 +33,8 @@ export async function updateOAuthProvider(
 		auth_url?: string;
 		token_url?: string;
 		userinfo_url?: string;
+		profile_api_url?: string;
+		profile_api_key?: string;
 		scopes?: string;
 		field_mapping?: Record<string, string>;
 		allowed_claims?: Record<string, string[]>;

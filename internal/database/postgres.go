@@ -100,6 +100,8 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		`ALTER TABLE _oauth_providers ADD COLUMN IF NOT EXISTS scopes TEXT NOT NULL DEFAULT 'openid email profile';`,
 		`ALTER TABLE _oauth_providers ADD COLUMN IF NOT EXISTS field_mapping JSONB NOT NULL DEFAULT '{}'::jsonb;`,
 		`ALTER TABLE _oauth_providers ADD COLUMN IF NOT EXISTS allowed_claims JSONB NOT NULL DEFAULT '{}'::jsonb;`,
+		`ALTER TABLE _oauth_providers ADD COLUMN IF NOT EXISTS profile_api_url TEXT NOT NULL DEFAULT '';`,
+		`ALTER TABLE _oauth_providers ADD COLUMN IF NOT EXISTS profile_api_key TEXT NOT NULL DEFAULT '';`,
 		`CREATE TABLE IF NOT EXISTS _webhooks (
 			id         BIGSERIAL PRIMARY KEY,
 			collection TEXT NOT NULL,

@@ -17,6 +17,9 @@ type ProviderConfig struct {
 	AuthURL      string            `json:"auth_url,omitempty"`
 	TokenURL     string            `json:"token_url,omitempty"`
 	UserInfoURL  string            `json:"userinfo_url,omitempty"`
+	ProfileAPIURL string            `json:"profile_api_url,omitempty"`
+	ProfileAPIKey string            `json:"profile_api_key,omitempty"`
+	HasAPIKey     bool              `json:"has_api_key"`
 	Scopes       string            `json:"scopes,omitempty"`
 	FieldMapping  map[string]string   `json:"field_mapping,omitempty"`
 	AllowedClaims map[string][]string `json:"allowed_claims,omitempty"`

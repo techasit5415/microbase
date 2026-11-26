@@ -38,7 +38,9 @@ type UpdateProviderRequest struct {
 	IssuerURL    string            `json:"issuer_url"`
 	AuthURL      string            `json:"auth_url"`
 	TokenURL     string            `json:"token_url"`
-	UserInfoURL  string            `json:"userinfo_url"`
+	UserInfoURL   string            `json:"userinfo_url"`
+	ProfileAPIURL string            `json:"profile_api_url"`
+	ProfileAPIKey string            `json:"profile_api_key"`
 	Scopes       string            `json:"scopes"`
 	FieldMapping  map[string]string   `json:"field_mapping"`
 	AllowedClaims map[string][]string `json:"allowed_claims"`
@@ -87,7 +89,7 @@ func NewOAuthService(pool *pgxpool.Pool, c cache.CacheStore, authSvc *AuthServic
 func (s *OAuthService) ListProviders(ctx context.Context) ([]oauth.ProviderConfig, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT name, display_name, enabled, client_id, client_secret, issuer_url,
-		       auth_url, token_url, userinfo_url, scopes, field_mapping, allowed_claims
+		       auth_url, token_url, userinfo_url, profile_api_url, profile_api_key, scopes, field_mapping, allowed_claims
 		FROM _oauth_providers
 		ORDER BY name ASC`)
 	if err != nil {
@@ -98,12 +100,13 @@ func (s *OAuthService) ListProviders(ctx context.Context) ([]oauth.ProviderConfi
 	list := make([]oauth.ProviderConfig, 0)
 	for rows.Next() {
 		var p oauth.ProviderConfig
-		var secret string
+		var secret, apiKey string
 		var rawMap, rawAllowed []byte
-		if err := rows.Scan(&p.Name, &p.DisplayName, &p.Enabled, &p.ClientID, &secret, &p.IssuerURL, &p.AuthURL, &p.TokenURL, &p.UserInfoURL, &p.Scopes, &rawMap, &rawAllowed); err != nil {
+		if err := rows.Scan(&p.Name, &p.DisplayName, &p.Enabled, &p.ClientID, &secret, &p.IssuerURL, &p.AuthURL, &p.TokenURL, &p.UserInfoURL, &p.ProfileAPIURL, &apiKey, &p.Scopes, &rawMap, &rawAllowed); err != nil {
 			return nil, err
 		}
 		p.HasSecret = secret != ""
+		p.HasAPIKey = apiKey != ""
 		_ = json.Unmarshal(rawMap, &p.FieldMapping)
 		_ = json.Unmarshal(rawAllowed, &p.AllowedClaims)
 		list = append(list, p)
@@ -114,7 +117,7 @@ func (s *OAuthService) ListProviders(ctx context.Context) ([]oauth.ProviderConfi
 // UpdateProvider persists provider configuration without exposing or wiping existing secrets.
 func (s *OAuthService) UpdateProvider(ctx context.Context, name string, req UpdateProviderRequest) (*oauth.ProviderConfig, error) {
 	var p oauth.ProviderConfig
-	var secret string
+	var secret, apiKey string
 	var rawMap, rawAllowed []byte
 	if req.FieldMapping == nil {
 		req.FieldMapping = map[string]string{}
@@ -127,23 +130,27 @@ func (s *OAuthService) UpdateProvider(ctx context.Context, name string, req Upda
 
 	err := s.pool.QueryRow(ctx, `
 		UPDATE _oauth_providers
-		SET enabled = $2,
+		SET display_name = CASE WHEN $12 <> '' THEN $12 ELSE display_name END,
+			enabled = $2,
 			client_id = $3,
 			client_secret = CASE WHEN $4 <> '' THEN $4 ELSE client_secret END,
 			issuer_url = $5,
 			auth_url = $6,
 			token_url = $7,
 			userinfo_url = $8,
+			profile_api_url = $13,
+			profile_api_key = CASE WHEN $14 <> '' THEN $14 ELSE profile_api_key END,
 			scopes = CASE WHEN $9 <> '' THEN $9 ELSE scopes END,
 			field_mapping = $10,
 			allowed_claims = $11,
 			updated_at = NOW()
 		WHERE name = $1
-		RETURNING name, display_name, enabled, client_id, client_secret, issuer_url, auth_url, token_url, userinfo_url, scopes, field_mapping, allowed_claims`,
+		RETURNING name, display_name, enabled, client_id, client_secret, issuer_url, auth_url, token_url, userinfo_url, profile_api_url, profile_api_key, scopes, field_mapping, allowed_claims`,
 		name, req.Enabled, strings.TrimSpace(req.ClientID), strings.TrimSpace(req.ClientSecret),
 		strings.TrimSpace(req.IssuerURL), strings.TrimSpace(req.AuthURL), strings.TrimSpace(req.TokenURL),
 		strings.TrimSpace(req.UserInfoURL), strings.TrimSpace(req.Scopes), mapJSON, allowedJSON,
-	).Scan(&p.Name, &p.DisplayName, &p.Enabled, &p.ClientID, &secret, &p.IssuerURL, &p.AuthURL, &p.TokenURL, &p.UserInfoURL, &p.Scopes, &rawMap, &rawAllowed)
+		strings.TrimSpace(req.DisplayName), strings.TrimSpace(req.ProfileAPIURL), strings.TrimSpace(req.ProfileAPIKey),
+	).Scan(&p.Name, &p.DisplayName, &p.Enabled, &p.ClientID, &secret, &p.IssuerURL, &p.AuthURL, &p.TokenURL, &p.UserInfoURL, &p.ProfileAPIURL, &apiKey, &p.Scopes, &rawMap, &rawAllowed)
 	_ = json.Unmarshal(rawMap, &p.FieldMapping)
 	_ = json.Unmarshal(rawAllowed, &p.AllowedClaims)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -153,6 +160,7 @@ func (s *OAuthService) UpdateProvider(ctx context.Context, name string, req Upda
 		return nil, fmt.Errorf("update oauth provider: %w", err)
 	}
 	p.HasSecret = secret != ""
+	p.HasAPIKey = apiKey != ""
 	return &p, nil
 }
 
@@ -306,10 +314,10 @@ func (s *OAuthService) getProviderConfig(ctx context.Context, name string) (*oau
 	var rawMap, rawAllowed []byte
 	err := s.pool.QueryRow(ctx, `
 		SELECT name, display_name, enabled, client_id, client_secret, issuer_url,
-		       auth_url, token_url, userinfo_url, scopes, field_mapping, allowed_claims
+		       auth_url, token_url, userinfo_url, profile_api_url, profile_api_key, scopes, field_mapping, allowed_claims
 		FROM _oauth_providers
 		WHERE name = $1`, name,
-	).Scan(&p.Name, &p.DisplayName, &p.Enabled, &p.ClientID, &p.ClientSecret, &p.IssuerURL, &p.AuthURL, &p.TokenURL, &p.UserInfoURL, &p.Scopes, &rawMap, &rawAllowed)
+	).Scan(&p.Name, &p.DisplayName, &p.Enabled, &p.ClientID, &p.ClientSecret, &p.IssuerURL, &p.AuthURL, &p.TokenURL, &p.UserInfoURL, &p.ProfileAPIURL, &p.ProfileAPIKey, &p.Scopes, &rawMap, &rawAllowed)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrProviderNotFound
 	}
@@ -317,6 +325,7 @@ func (s *OAuthService) getProviderConfig(ctx context.Context, name string) (*oau
 		return nil, err
 	}
 	p.HasSecret = p.ClientSecret != ""
+	p.HasAPIKey = p.ProfileAPIKey != ""
 	_ = json.Unmarshal(rawMap, &p.FieldMapping)
 	_ = json.Unmarshal(rawAllowed, &p.AllowedClaims)
 	return &p, nil

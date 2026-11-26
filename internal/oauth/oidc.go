@@ -23,8 +23,10 @@ var urlTemplateRe = regexp.MustCompile(`\{([a-zA-Z0-9_.-]+)\}`)
 type OIDCProvider struct {
 	cfg          *oauth2.Config
 	verifier     *gooidc.IDTokenVerifier
-	userInfoURL  string
-	fieldMapping map[string]string
+	userInfoURL   string
+	profileAPIURL string
+	profileAPIKey string
+	fieldMapping  map[string]string
 }
 
 // NewOIDCProvider builds an OIDC/Custom OAuth2 provider from manual endpoints or IssuerURL discovery.
@@ -70,9 +72,11 @@ func NewOIDCProvider(ctx context.Context, pc ProviderConfig, redirectURL string)
 			Scopes:       scopes,
 			Endpoint:     endpoint,
 		},
-		verifier:     verifier,
-		userInfoURL:  userInfoURL,
-		fieldMapping: pc.FieldMapping,
+		verifier:      verifier,
+		userInfoURL:   userInfoURL,
+		profileAPIURL: strings.TrimSpace(pc.ProfileAPIURL),
+		profileAPIKey: strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(pc.ProfileAPIKey), "Bearer ")),
+		fieldMapping:  pc.FieldMapping,
 	}, nil
 }
 
@@ -121,23 +125,45 @@ func (o *OIDCProvider) ExchangeUser(ctx context.Context, code string) (*External
 		}
 	}
 
-	// 2. Fetch UserInfo / Custom IAM JSON endpoint if configured (with {user_id}/{sub}/{student_id} interpolation).
-	if o.userInfoURL != "" {
-		resolvedURL := resolveUserInfoURL(o.userInfoURL, claimsMap)
-		client := &http.Client{Timeout: 15 * time.Second}
+	httpClient := &http.Client{Timeout: 15 * time.Second}
+	fetchProfile := func(rawURL, bearer string) {
+		resolvedURL := resolveUserInfoURL(rawURL, claimsMap)
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, resolvedURL, nil)
-		if err == nil {
-			req.Header.Set("Authorization", "Bearer "+token.AccessToken)
-			req.Header.Set("Accept", "application/json")
-			if resp, err := client.Do(req); err == nil {
-				defer resp.Body.Close()
-				body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-				var userInfo map[string]any
-				if json.Unmarshal(body, &userInfo) == nil {
-					mergeUserInfoClaims(claimsMap, userInfo)
-				}
-			}
+		if err != nil {
+			return
 		}
+		if bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		req.Header.Set("Accept", "application/json")
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		var userInfo map[string]any
+		if json.Unmarshal(body, &userInfo) == nil {
+			mergeUserInfoClaims(claimsMap, userInfo)
+		}
+	}
+
+	// 2a. Fetch primary UserInfo endpoint (uses OAuth access_token, or static API key if no separate profile_api_url is set).
+	if o.userInfoURL != "" {
+		bearer := token.AccessToken
+		if o.profileAPIURL == "" && o.profileAPIKey != "" {
+			bearer = o.profileAPIKey
+		}
+		fetchProfile(o.userInfoURL, bearer)
+	}
+
+	// 2b. Optional Profile Enrichment API (e.g. KMITL IAM /o/v2/users/email/{email} with static Bearer API key).
+	if o.profileAPIURL != "" {
+		bearer := o.profileAPIKey
+		if bearer == "" {
+			bearer = token.AccessToken
+		}
+		fetchProfile(o.profileAPIURL, bearer)
 	}
 
 	// 3. Resolve sub (provider user ID), email, and any custom mapped fields using dot-paths.
