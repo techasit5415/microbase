@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/techasit5415/microbase/internal/models"
@@ -48,6 +49,18 @@ func tokenizeFilter(input string) ([]fToken, error) {
 			i++
 			continue
 		}
+		if i+2 < n {
+			three := input[i : i+3]
+			switch three {
+			case "?!= ", "?!~", "?!= "[0:3], "?>=", "?<=":
+				// handled cleanly below
+			}
+			if three == "?!=" || three == "?!~" || three == "?>=" || three == "?<=" {
+				toks = append(toks, fToken{fTokOp, three})
+				i += 3
+				continue
+			}
+		}
 		if i+1 < n {
 			two := input[i : i+2]
 			switch two {
@@ -59,7 +72,7 @@ func tokenizeFilter(input string) ([]fToken, error) {
 				toks = append(toks, fToken{fTokOr, "||"})
 				i += 2
 				continue
-			case "!=", ">=", "<=", "!~":
+			case "!=", ">=", "<=", "!~", "?=", "?~", "?>", "?<":
 				toks = append(toks, fToken{fTokOp, two})
 				i += 2
 				continue
@@ -100,7 +113,7 @@ func tokenizeFilter(input string) ([]fToken, error) {
 		if unicode.IsLetter(rune(c)) || c == '_' || c == '@' {
 			start := i
 			i++
-			for i < n && (unicode.IsLetter(rune(input[i])) || unicode.IsDigit(rune(input[i])) || input[i] == '_' || input[i] == '.') {
+			for i < n && (unicode.IsLetter(rune(input[i])) || unicode.IsDigit(rune(input[i])) || input[i] == '_' || input[i] == '.' || input[i] == ':') {
 				i++
 			}
 			toks = append(toks, fToken{fTokIdent, input[start:i]})
@@ -113,9 +126,10 @@ func tokenizeFilter(input string) ([]fToken, error) {
 }
 
 type filterParser struct {
-	toks    []fToken
-	pos     int
-	allowed map[string]models.FieldDef
+	toks       []fToken
+	pos        int
+	allowed    map[string]models.FieldDef
+	createMode bool
 	claims  *AuthClaims
 	body    map[string]any
 	args    []any
@@ -128,7 +142,8 @@ func ParseFilterToSQL(expr string, allowed map[string]models.FieldDef, claims *A
 }
 
 // ParseFilterToSQLWithBody compiles a PocketBase filter or API rule expression into parameterized PostgreSQL SQL.
-// Supports column identifiers on either side, @request.auth.*, @request.body.*, &&, ||, (), and =, !=, >, >=, <, <=, ~, !~.
+// Supports column identifiers, relation traversal (rel.field, rel1.rel2.id), @request.auth.*, @request.body.* (:isset/:changed),
+// @now, &&, ||, (), and =, !=, >, >=, <, <=, ~, !~, ?=, ?!=, ?~, ?!~, ?>, ?>=, ?<, ?<=.
 func ParseFilterToSQLWithBody(expr string, allowed map[string]models.FieldDef, claims *AuthClaims, body map[string]any, startArgIdx int) (string, []any, int, error) {
 	toks, err := tokenizeFilter(expr)
 	if err != nil {
@@ -151,6 +166,31 @@ func ParseFilterToSQLWithBody(expr string, allowed map[string]models.FieldDef, c
 	return sql, p.args, p.nextArg, nil
 }
 
+// ParseCreateFilterToSQL compiles a PocketBase create-rule expression into a standalone boolean SQL expression
+// where bare field names resolve from the incoming payload map rather than table columns.
+func ParseCreateFilterToSQL(expr string, claims *AuthClaims, body map[string]any, startArgIdx int) (string, []any, int, error) {
+	toks, err := tokenizeFilter(expr)
+	if err != nil {
+		return "", nil, startArgIdx, err
+	}
+	p := &filterParser{
+		toks:       toks,
+		allowed:    nil,
+		createMode: true,
+		claims:     claims,
+		body:       body,
+		nextArg:    startArgIdx,
+	}
+	sql, err := p.parseOr()
+	if err != nil {
+		return "", nil, startArgIdx, err
+	}
+	if p.peek().kind != fTokEOF {
+		return "", nil, startArgIdx, fmt.Errorf("unexpected token %q in filter", p.peek().val)
+	}
+	return sql, p.args, p.nextArg, nil
+}
+
 func (p *filterParser) peek() fToken { return p.toks[p.pos] }
 func (p *filterParser) next() fToken {
 	t := p.peek()
@@ -160,18 +200,83 @@ func (p *filterParser) next() fToken {
 	return t
 }
 
-func (p *filterParser) isColumnIdent(tok fToken) bool {
+func (p *filterParser) addArg(v any) int {
+	p.args = append(p.args, v)
+	idx := p.nextArg
+	p.nextArg++
+	return idx
+}
+
+func authUserIDStr(claims *AuthClaims) string {
+	if claims == nil {
+		return ""
+	}
+	if claims.RecordID != "" {
+		return claims.RecordID
+	}
+	return claims.UserID
+}
+
+func isDynamicAuthPath(tok fToken) bool {
 	if tok.kind != fTokIdent {
 		return false
 	}
 	lower := strings.ToLower(tok.val)
-	if lower == "true" || lower == "false" || lower == "null" || strings.HasPrefix(lower, "@request.") {
+	if !strings.HasPrefix(lower, "@request.auth.") {
+		return false
+	}
+	rest := lower[len("@request.auth."):]
+	return rest != "id" && rest != "email" && rest != "role" && rest != "collectionname"
+}
+
+func isBodyChangedToken(tok fToken) (string, bool) {
+	if tok.kind != fTokIdent {
+		return "", false
+	}
+	lower := strings.ToLower(tok.val)
+	if strings.HasPrefix(lower, "@request.body.") && strings.HasSuffix(lower, ":changed") {
+		field := tok.val[len("@request.body.") : len(tok.val)-len(":changed")]
+		return field, true
+	}
+	return "", false
+}
+
+func (p *filterParser) isColumnIdent(tok fToken) bool {
+	if tok.kind != fTokIdent || p.createMode {
+		return false
+	}
+	lower := strings.ToLower(tok.val)
+	if lower == "true" || lower == "false" || lower == "null" || lower == "@now" || strings.HasPrefix(lower, "@request.") {
 		return false
 	}
 	if tok.val == "id" || tok.val == "created_at" || tok.val == "updated_at" {
 		return true
 	}
+	if p.allowed == nil {
+		return false
+	}
 	_, ok := p.allowed[tok.val]
+	return ok
+}
+
+func (p *filterParser) isRelationPath(tok fToken) bool {
+	if tok.kind != fTokIdent || p.allowed == nil || !strings.Contains(tok.val, ".") {
+		return false
+	}
+	lower := strings.ToLower(tok.val)
+	if strings.HasPrefix(lower, "@") {
+		return false
+	}
+	parts := strings.Split(tok.val, ".")
+	if len(parts) < 2 || len(parts) > 3 {
+		return false
+	}
+	for _, seg := range parts {
+		if !models.IsValidIdentifier(seg) {
+			return false
+		}
+	}
+	_, ok := p.allowed[parts[0]]
 	return ok
 }
 
@@ -217,9 +322,225 @@ func flipOperator(op string) string {
 		return ">"
 	case "<=":
 		return ">="
+	case "?>":
+		return "?<"
+	case "?>=":
+		return "?<="
+	case "?<":
+		return "?>"
+	case "?<=":
+		return "?>="
 	default:
 		return op
 	}
+}
+
+func stripAnyOp(op string) (string, bool) {
+	if strings.HasPrefix(op, "?") {
+		return op[1:], true
+	}
+	return op, false
+}
+
+func isNegatedOp(op string) bool {
+	base, _ := stripAnyOp(op)
+	return base == "!=" || base == "!~"
+}
+
+// buildJSONBMatchSQL matches a column (either JSONB array or scalar) against a text parameter $argIdx.
+func buildJSONBMatchSQL(colExpr string, baseOp string, argIdx int) string {
+	switch baseOp {
+	case "=":
+		return fmt.Sprintf("((jsonb_typeof(to_jsonb(%s)) = 'array' AND to_jsonb(%s) ? $%d) OR CAST(%s AS TEXT) = $%d)", colExpr, colExpr, argIdx, colExpr, argIdx)
+	case "!=":
+		return fmt.Sprintf("NOT ((jsonb_typeof(to_jsonb(%s)) = 'array' AND to_jsonb(%s) ? $%d) OR CAST(%s AS TEXT) = $%d)", colExpr, colExpr, argIdx, colExpr, argIdx)
+	case "~":
+		return fmt.Sprintf("((jsonb_typeof(to_jsonb(%s)) = 'array' AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(to_jsonb(%s)) _el WHERE _el ILIKE $%d)) OR CAST(%s AS TEXT) ILIKE $%d)", colExpr, colExpr, argIdx, colExpr, argIdx)
+	case "!~":
+		return fmt.Sprintf("NOT ((jsonb_typeof(to_jsonb(%s)) = 'array' AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(to_jsonb(%s)) _el WHERE _el ILIKE $%d)) OR CAST(%s AS TEXT) ILIKE $%d)", colExpr, colExpr, argIdx, colExpr, argIdx)
+	default:
+		return fmt.Sprintf("CAST(%s AS TEXT) %s $%d", colExpr, baseOp, argIdx)
+	}
+}
+
+func buildScalarCompSQL(colExpr string, baseOp string, argIdx int) string {
+	switch baseOp {
+	case "~":
+		return fmt.Sprintf("CAST(%s AS TEXT) ILIKE $%d", colExpr, argIdx)
+	case "!~":
+		return fmt.Sprintf("CAST(%s AS TEXT) NOT ILIKE $%d", colExpr, argIdx)
+	default:
+		return fmt.Sprintf("CAST(%s AS TEXT) %s $%d", colExpr, baseOp, argIdx)
+	}
+}
+
+func (p *filterParser) compileDynamicAuthSQL(authTok fToken, op string, valTok fToken) (string, error) {
+	rest := authTok.val[len("@request.auth."):]
+	parts := strings.Split(rest, ".")
+	if len(parts) < 1 || len(parts) > 2 {
+		return "", fmt.Errorf("unsupported auth relation path %q", authTok.val)
+	}
+	for _, seg := range parts {
+		if !models.IsValidIdentifier(seg) {
+			return "", fmt.Errorf("invalid identifier %q in %q", seg, authTok.val)
+		}
+	}
+
+	val, isNull, err := p.resolveValue(valTok)
+	if err != nil {
+		return "", err
+	}
+	authID := authUserIDStr(p.claims)
+	if authID == "" {
+		if isNegatedOp(op) {
+			return "TRUE", nil
+		}
+		return "FALSE", nil
+	}
+	if isNull {
+		if isNegatedOp(op) {
+			return "TRUE", nil
+		}
+		return "FALSE", nil
+	}
+
+	baseOp, _ := stripAnyOp(op)
+	strVal := fmt.Sprint(val)
+	if baseOp == "~" || baseOp == "!~" {
+		strVal = "%" + strVal + "%"
+	}
+
+	authIdx := p.addArg(authID)
+	valIdx := p.addArg(strVal)
+
+	// 1-part (@request.auth.user_type) or 2-part ending in .id (@request.auth.user_type.id)
+	if len(parts) == 1 || strings.EqualFold(parts[1], "id") {
+		colExpr := fmt.Sprintf(`_au."%s"`, parts[0])
+		matchOp := baseOp
+		neg := false
+		if baseOp == "!=" {
+			matchOp = "="
+			neg = true
+		} else if baseOp == "!~" {
+			matchOp = "~"
+			neg = true
+		}
+		cond := buildJSONBMatchSQL(colExpr, matchOp, valIdx)
+		expr := fmt.Sprintf(`EXISTS (SELECT 1 FROM "users" _au WHERE CAST(_au."id" AS TEXT) = $%d AND %s)`, authIdx, cond)
+		if neg {
+			return "NOT " + expr, nil
+		}
+		return expr, nil
+	}
+
+	// 2-part (@request.auth.<rel>.<subField>, e.g. @request.auth.user_type.type ?= "admin")
+	rel := parts[0]
+	subField := parts[1]
+	matchOp := baseOp
+	neg := false
+	if baseOp == "!=" {
+		matchOp = "="
+		neg = true
+	} else if baseOp == "!~" {
+		matchOp = "~"
+		neg = true
+	}
+	subCond := buildScalarCompSQL(fmt.Sprintf(`_ar."%s"`, subField), matchOp, valIdx)
+	expr := fmt.Sprintf(
+		`EXISTS (SELECT 1 FROM "users" _au JOIN "%s" _ar ON ((jsonb_typeof(to_jsonb(_au."%s")) = 'array' AND to_jsonb(_au."%s") ? CAST(_ar."id" AS TEXT)) OR CAST(_au."%s" AS TEXT) = CAST(_ar."id" AS TEXT)) WHERE CAST(_au."id" AS TEXT) = $%d AND %s)`,
+		rel, rel, rel, rel, authIdx, subCond,
+	)
+	if neg {
+		return "NOT " + expr, nil
+	}
+	return expr, nil
+}
+
+func (p *filterParser) compileRelationPathSQL(relTok fToken, op string, valTok fToken) (string, error) {
+	parts := strings.Split(relTok.val, ".")
+	relField := parts[0]
+	fDef := p.allowed[relField]
+	target1 := fDef.CollectionName
+	if !models.IsValidIdentifier(target1) {
+		target1 = relField
+	}
+
+	val, isNull, err := p.resolveValue(valTok)
+	if err != nil {
+		return "", err
+	}
+	if isNull {
+		if isNegatedOp(op) {
+			return "TRUE", nil
+		}
+		return "FALSE", nil
+	}
+
+	baseOp, _ := stripAnyOp(op)
+	strVal := fmt.Sprint(val)
+	if valTok.kind == fTokIdent && strings.EqualFold(valTok.val, "@request.auth.id") && strVal == "" {
+		if isNegatedOp(op) {
+			return "TRUE", nil
+		}
+		return "FALSE", nil
+	}
+	if baseOp == "~" || baseOp == "!~" {
+		strVal = "%" + strVal + "%"
+	}
+	valIdx := p.addArg(strVal)
+
+	// Shortcut: rel.id ?= val -> match directly on current table's "rel" column
+	if len(parts) == 2 && strings.EqualFold(parts[1], "id") {
+		return buildJSONBMatchSQL(fmt.Sprintf(`"%s"`, relField), baseOp, valIdx), nil
+	}
+
+	matchOp := baseOp
+	neg := false
+	if baseOp == "!=" {
+		matchOp = "="
+		neg = true
+	} else if baseOp == "!~" {
+		matchOp = "~"
+		neg = true
+	}
+
+	// 1-level: rel.subField (e.g. user_type.type ?= "teachers", instance.email = @request.auth.id)
+	if len(parts) == 2 {
+		subCond := buildScalarCompSQL(fmt.Sprintf(`_r1."%s"`, parts[1]), matchOp, valIdx)
+		expr := fmt.Sprintf(
+			`EXISTS (SELECT 1 FROM "%s" _r1 WHERE ((jsonb_typeof(to_jsonb("%s")) = 'array' AND to_jsonb("%s") ? CAST(_r1."id" AS TEXT)) OR CAST("%s" AS TEXT) = CAST(_r1."id" AS TEXT)) AND %s)`,
+			target1, relField, relField, relField, subCond,
+		)
+		if neg {
+			return "NOT " + expr, nil
+		}
+		return expr, nil
+	}
+
+	// 2-level: rel1.rel2.id (e.g. instance.owners.id ?= @request.auth.id)
+	if len(parts) == 3 && strings.EqualFold(parts[2], "id") {
+		subCond := buildJSONBMatchSQL(fmt.Sprintf(`_r1."%s"`, parts[1]), matchOp, valIdx)
+		expr := fmt.Sprintf(
+			`EXISTS (SELECT 1 FROM "%s" _r1 WHERE ((jsonb_typeof(to_jsonb("%s")) = 'array' AND to_jsonb("%s") ? CAST(_r1."id" AS TEXT)) OR CAST("%s" AS TEXT) = CAST(_r1."id" AS TEXT)) AND %s)`,
+			target1, relField, relField, relField, subCond,
+		)
+		if neg {
+			return "NOT " + expr, nil
+		}
+		return expr, nil
+	}
+
+	// 2-level: rel1.rel2.subField
+	target2 := parts[1]
+	subCond := buildScalarCompSQL(fmt.Sprintf(`_r2."%s"`, parts[2]), matchOp, valIdx)
+	expr := fmt.Sprintf(
+		`EXISTS (SELECT 1 FROM "%s" _r1 JOIN "%s" _r2 ON ((jsonb_typeof(to_jsonb(_r1."%s")) = 'array' AND to_jsonb(_r1."%s") ? CAST(_r2."id" AS TEXT)) OR CAST(_r1."%s" AS TEXT) = CAST(_r2."id" AS TEXT)) WHERE ((jsonb_typeof(to_jsonb("%s")) = 'array' AND to_jsonb("%s") ? CAST(_r1."id" AS TEXT)) OR CAST("%s" AS TEXT) = CAST(_r1."id" AS TEXT)) AND %s)`,
+		target1, target2, parts[1], parts[1], parts[1], relField, relField, relField, subCond,
+	)
+	if neg {
+		return "NOT " + expr, nil
+	}
+	return expr, nil
 }
 
 func (p *filterParser) parseAtom() (string, error) {
@@ -243,6 +564,30 @@ func (p *filterParser) parseAtom() (string, error) {
 	}
 	rhs := p.next()
 
+	// Special Case A: @request.body.<field>:changed = false/true
+	if field, ok := isBodyChangedToken(lhs); ok {
+		return p.compileBodyChangedSQL(field, op.val, rhs)
+	}
+	if field, ok := isBodyChangedToken(rhs); ok {
+		return p.compileBodyChangedSQL(field, flipOperator(op.val), lhs)
+	}
+
+	// Special Case B: @request.auth.<customField> or @request.auth.<rel>.<subField>
+	if isDynamicAuthPath(lhs) {
+		return p.compileDynamicAuthSQL(lhs, op.val, rhs)
+	}
+	if isDynamicAuthPath(rhs) {
+		return p.compileDynamicAuthSQL(rhs, flipOperator(op.val), lhs)
+	}
+
+	// Special Case C: Record relation path (e.g. owners.id ?= @request.auth.id, user_type.type ?= "teachers")
+	if p.isRelationPath(lhs) {
+		return p.compileRelationPathSQL(lhs, op.val, rhs)
+	}
+	if p.isRelationPath(rhs) {
+		return p.compileRelationPathSQL(rhs, flipOperator(op.val), lhs)
+	}
+
 	lhsIsCol := p.isColumnIdent(lhs)
 	rhsIsCol := p.isColumnIdent(rhs)
 
@@ -250,20 +595,20 @@ func (p *filterParser) parseAtom() (string, error) {
 	if lhsIsCol && rhsIsCol {
 		lSQL := fmt.Sprintf(`"%s"`, lhs.val)
 		rSQL := fmt.Sprintf(`"%s"`, rhs.val)
-		switch op.val {
+		baseOp, _ := stripAnyOp(op.val)
+		switch baseOp {
 		case "~":
 			return fmt.Sprintf("CAST(%s AS TEXT) ILIKE ('%%' || CAST(%s AS TEXT) || '%%')", lSQL, rSQL), nil
 		case "!~":
 			return fmt.Sprintf("CAST(%s AS TEXT) NOT ILIKE ('%%' || CAST(%s AS TEXT) || '%%')", lSQL, rSQL), nil
 		default:
-			return fmt.Sprintf("%s %s %s", lSQL, op.val, rSQL), nil
+			return fmt.Sprintf("%s %s %s", lSQL, baseOp, rSQL), nil
 		}
 	}
 
 	// Case 2: Both sides are static literals / @request.* values -> evaluate immediately
 	if !lhsIsCol && !rhsIsCol {
-		// Reject unknown bare identifiers that aren't literals or @request.*
-		if lhs.kind == fTokIdent && !isLiteralOrRequestToken(lhs.val) {
+		if lhs.kind == fTokIdent && !isLiteralOrRequestToken(lhs.val) && !p.createMode {
 			return "", fmt.Errorf("unknown filter field %q", lhs.val)
 		}
 		lhsVal, lhsNull, err := p.resolveValue(lhs)
@@ -280,7 +625,7 @@ func (p *filterParser) parseAtom() (string, error) {
 		return "FALSE", nil
 	}
 
-	// Case 3: One side is a column, the other is a value/literal/@request.*
+	// Case 3: One side is a column, the other is a value/literal/@request.*/@now
 	colTok := lhs
 	valTok := rhs
 	effOp := op.val
@@ -290,60 +635,122 @@ func (p *filterParser) parseAtom() (string, error) {
 		effOp = flipOperator(op.val)
 	}
 
+	colSQL := fmt.Sprintf(`"%s"`, colTok.val)
+	baseOp, isAny := stripAnyOp(effOp)
+
+	// Handle @now directly as SQL NOW() so TIMESTAMPTZ comparisons work cleanly.
+	if valTok.kind == fTokIdent && strings.EqualFold(valTok.val, "@now") {
+		return fmt.Sprintf("%s %s NOW()", colSQL, baseOp), nil
+	}
+
 	val, isNull, err := p.resolveValue(valTok)
 	if err != nil {
 		return "", err
 	}
 
-	colSQL := fmt.Sprintf(`"%s"`, colTok.val)
 	if isNull {
-		if effOp == "=" {
+		if baseOp == "=" {
 			return colSQL + " IS NULL", nil
 		}
-		if effOp == "!=" {
+		if baseOp == "!=" {
 			return colSQL + " IS NOT NULL", nil
 		}
 		return "FALSE", nil
 	}
 
-	// When comparing against @request.auth.id (which may be int64 or "" when unauthenticated),
-	// safely compare as TEXT so BIGINT vs TEXT columns never throw a PostgreSQL cast error.
-	if valTok.kind == fTokIdent && strings.EqualFold(valTok.val, "@request.auth.id") && (effOp == "=" || effOp == "!=") {
+	// PocketBase stores empty dates as ""; in PostgreSQL TIMESTAMPTZ columns, empty string causes 22007.
+	if colDef, ok := p.allowed[colTok.val]; ok && (colDef.Type == "date" || colDef.Type == "autodate") {
+		if s, isStr := val.(string); isStr && s == "" {
+			if baseOp == "=" {
+				return fmt.Sprintf("(%s IS NULL OR CAST(%s AS TEXT) = '')", colSQL, colSQL), nil
+			}
+			if baseOp == "!=" {
+				return fmt.Sprintf("(%s IS NOT NULL AND CAST(%s AS TEXT) != '')", colSQL, colSQL), nil
+			}
+		}
+	}
+
+	// Any-of operator (?=, ?!=, ?~, ?!~) on a direct column (e.g. multi-relation JSONB or scalar)
+	if isAny {
+		strVal := fmt.Sprint(val)
+		if valTok.kind == fTokIdent && strings.EqualFold(valTok.val, "@request.auth.id") && strVal == "" {
+			if isNegatedOp(effOp) {
+				return "TRUE", nil
+			}
+			return "FALSE", nil
+		}
+		if baseOp == "~" || baseOp == "!~" {
+			strVal = "%" + strVal + "%"
+		}
+		idx := p.addArg(strVal)
+		return buildJSONBMatchSQL(colSQL, baseOp, idx), nil
+	}
+
+	// When comparing against @request.auth.id, safely compare as TEXT so BIGINT vs TEXT never fails.
+	if valTok.kind == fTokIdent && strings.EqualFold(valTok.val, "@request.auth.id") && (baseOp == "=" || baseOp == "!=") {
 		strVal := fmt.Sprint(val)
 		if strVal == "" {
-			if effOp == "=" {
+			if baseOp == "=" {
 				return "FALSE", nil
 			}
 			return "TRUE", nil
 		}
-		p.args = append(p.args, strVal)
-		idx := p.nextArg
-		p.nextArg++
-		return fmt.Sprintf("CAST(%s AS TEXT) %s $%d", colSQL, effOp, idx), nil
+		idx := p.addArg(strVal)
+		return fmt.Sprintf("CAST(%s AS TEXT) %s $%d", colSQL, baseOp, idx), nil
 	}
 
-	switch effOp {
+	switch baseOp {
 	case "~":
-		p.args = append(p.args, "%"+fmt.Sprint(val)+"%")
-		idx := p.nextArg
-		p.nextArg++
+		idx := p.addArg("%" + fmt.Sprint(val) + "%")
 		return fmt.Sprintf("CAST(%s AS TEXT) ILIKE $%d", colSQL, idx), nil
 	case "!~":
-		p.args = append(p.args, "%"+fmt.Sprint(val)+"%")
-		idx := p.nextArg
-		p.nextArg++
+		idx := p.addArg("%" + fmt.Sprint(val) + "%")
 		return fmt.Sprintf("CAST(%s AS TEXT) NOT ILIKE $%d", colSQL, idx), nil
 	default:
-		p.args = append(p.args, val)
-		idx := p.nextArg
-		p.nextArg++
-		return fmt.Sprintf("%s %s $%d", colSQL, effOp, idx), nil
+		idx := p.addArg(val)
+		return fmt.Sprintf("%s %s $%d", colSQL, baseOp, idx), nil
 	}
+}
+
+func (p *filterParser) compileBodyChangedSQL(field string, op string, valTok fToken) (string, error) {
+	rhsVal, _, err := p.resolveValue(valTok)
+	if err != nil {
+		return "", err
+	}
+	wantChanged := strings.EqualFold(fmt.Sprint(rhsVal), "true")
+	if isNegatedOp(op) {
+		wantChanged = !wantChanged
+	}
+	// If field is not present in incoming body, it is definitely NOT changed.
+	if p.body == nil {
+		if wantChanged {
+			return "FALSE", nil
+		}
+		return "TRUE", nil
+	}
+	incoming, present := p.body[field]
+	if !present {
+		if wantChanged {
+			return "FALSE", nil
+		}
+		return "TRUE", nil
+	}
+	if p.allowed == nil || !models.IsValidIdentifier(field) {
+		if wantChanged {
+			return "TRUE", nil
+		}
+		return "FALSE", nil
+	}
+	idx := p.addArg(fmt.Sprint(incoming))
+	if wantChanged {
+		return fmt.Sprintf(`CAST("%s" AS TEXT) IS DISTINCT FROM $%d`, field, idx), nil
+	}
+	return fmt.Sprintf(`CAST("%s" AS TEXT) IS NOT DISTINCT FROM $%d`, field, idx), nil
 }
 
 func isLiteralOrRequestToken(val string) bool {
 	lower := strings.ToLower(val)
-	return lower == "true" || lower == "false" || lower == "null" || strings.HasPrefix(lower, "@request.")
+	return lower == "true" || lower == "false" || lower == "null" || lower == "@now" || strings.HasPrefix(lower, "@request.")
 }
 
 func (p *filterParser) resolveValue(tok fToken) (any, bool, error) {
@@ -366,14 +773,10 @@ func (p *filterParser) resolveValue(tok fToken) (any, bool, error) {
 			return false, false, nil
 		case lower == "null":
 			return nil, true, nil
+		case lower == "@now":
+			return time.Now().UTC().Format(time.RFC3339), false, nil
 		case lower == "@request.auth.id":
-			if p.claims == nil {
-				return "", false, nil
-			}
-			if p.claims.RecordID != "" {
-				return p.claims.RecordID, false, nil
-			}
-			return p.claims.UserID, false, nil
+			return authUserIDStr(p.claims), false, nil
 		case lower == "@request.auth.email":
 			if p.claims == nil {
 				return "", false, nil
@@ -384,6 +787,21 @@ func (p *filterParser) resolveValue(tok fToken) (any, bool, error) {
 				return "", false, nil
 			}
 			return p.claims.Role, false, nil
+		case lower == "@request.auth.collectionname":
+			if p.claims == nil {
+				return "", false, nil
+			}
+			if p.claims.Role == "superuser" {
+				return "_superusers", false, nil
+			}
+			return "users", false, nil
+		case strings.HasPrefix(lower, "@request.body.") && strings.HasSuffix(lower, ":isset"):
+			field := tok.val[len("@request.body.") : len(tok.val)-len(":isset")]
+			if p.body == nil {
+				return false, false, nil
+			}
+			_, ok := p.body[field]
+			return ok, false, nil
 		case strings.HasPrefix(lower, "@request.body."):
 			field := tok.val[len("@request.body."):]
 			if p.body == nil {
@@ -395,6 +813,15 @@ func (p *filterParser) resolveValue(tok fToken) (any, bool, error) {
 			}
 			return v, false, nil
 		default:
+			if p.createMode && p.body != nil {
+				if v, ok := p.body[tok.val]; ok {
+					if v == nil {
+						return nil, true, nil
+					}
+					return v, false, nil
+				}
+				return "", false, nil
+			}
 			return tok.val, false, nil
 		}
 	default:
@@ -525,14 +952,10 @@ func (e *dataRuleEval) resolve(tok fToken) (any, bool) {
 			return false, false
 		case lower == "null":
 			return nil, true
+		case lower == "@now":
+			return time.Now().UTC().Format(time.RFC3339), false
 		case lower == "@request.auth.id":
-			if e.claims == nil {
-				return "", false
-			}
-			if e.claims.RecordID != "" {
-				return e.claims.RecordID, false
-			}
-			return e.claims.UserID, false
+			return authUserIDStr(e.claims), false
 		case lower == "@request.auth.email":
 			if e.claims == nil {
 				return "", false
@@ -543,6 +966,28 @@ func (e *dataRuleEval) resolve(tok fToken) (any, bool) {
 				return "", false
 			}
 			return e.claims.Role, false
+		case lower == "@request.auth.collectionname":
+			if e.claims == nil {
+				return "", false
+			}
+			if e.claims.Role == "superuser" {
+				return "_superusers", false
+			}
+			return "users", false
+		case strings.HasPrefix(lower, "@request.body.") && strings.HasSuffix(lower, ":isset"):
+			field := tok.val[len("@request.body.") : len(tok.val)-len(":isset")]
+			if e.data == nil {
+				return false, false
+			}
+			_, ok := e.data[field]
+			return ok, false
+		case strings.HasPrefix(lower, "@request.body.") && strings.HasSuffix(lower, ":changed"):
+			field := tok.val[len("@request.body.") : len(tok.val)-len(":changed")]
+			if e.data == nil {
+				return false, false
+			}
+			_, ok := e.data[field]
+			return ok, false
 		case strings.HasPrefix(lower, "@request.body."):
 			field := tok.val[len("@request.body."):]
 			if e.data == nil {
@@ -586,8 +1031,27 @@ func toFloat64(v any) (float64, bool) {
 }
 
 func evalComparison(lhs any, lNull bool, op string, rhs any, rNull bool) bool {
+	baseOp, isAny := stripAnyOp(op)
+	if isAny {
+		if arr, ok := lhs.([]any); ok {
+			for _, item := range arr {
+				if evalComparison(item, item == nil, baseOp, rhs, rNull) {
+					return true
+				}
+			}
+			return false
+		}
+		if arr, ok := lhs.([]string); ok {
+			for _, item := range arr {
+				if evalComparison(item, false, baseOp, rhs, rNull) {
+					return true
+				}
+			}
+			return false
+		}
+	}
 	if lNull || rNull {
-		switch op {
+		switch baseOp {
 		case "=":
 			return lNull && rNull
 		case "!=":
@@ -598,7 +1062,7 @@ func evalComparison(lhs any, lNull bool, op string, rhs any, rNull bool) bool {
 	}
 	ls := fmt.Sprint(lhs)
 	rs := fmt.Sprint(rhs)
-	switch op {
+	switch baseOp {
 	case "=":
 		if lf, lok := toFloat64(lhs); lok {
 			if rf, rok := toFloat64(rhs); rok {
@@ -620,7 +1084,7 @@ func evalComparison(lhs any, lNull bool, op string, rhs any, rNull bool) bool {
 	case ">", ">=", "<", "<=":
 		if lf, lok := toFloat64(lhs); lok {
 			if rf, rok := toFloat64(rhs); rok {
-				switch op {
+				switch baseOp {
 				case ">":
 					return lf > rf
 				case ">=":
@@ -632,7 +1096,7 @@ func evalComparison(lhs any, lNull bool, op string, rhs any, rNull bool) bool {
 				}
 			}
 		}
-		switch op {
+		switch baseOp {
 		case ">":
 			return ls > rs
 		case ">=":

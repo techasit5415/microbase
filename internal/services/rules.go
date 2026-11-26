@@ -1,9 +1,12 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/techasit5415/microbase/internal/models"
 )
@@ -121,4 +124,58 @@ func EvalCreateRule(col *models.Collection, claims *AuthClaims, data map[string]
 func CheckAPIRule(col *models.Collection, action string, claims *AuthClaims) error {
 	_, _, _, err := CompileAPIRule(col, action, claims, nil, 1)
 	return err
+}
+
+// EvalCreateRuleWithDB evaluates a collection's "create" rule, supporting @request.auth.<rel>.<field>
+// queries via PostgreSQL when a pool is available.
+func EvalCreateRuleWithDB(ctx context.Context, pool *pgxpool.Pool, col *models.Collection, claims *AuthClaims, data map[string]any) error {
+	if claims != nil && claims.Role == "superuser" {
+		return nil
+	}
+	if col == nil || col.APIRules == nil {
+		return ErrForbidden
+	}
+	raw, exists := col.APIRules["create"]
+	if !exists {
+		return ErrForbidden
+	}
+	rule := strings.TrimSpace(raw)
+	if rule == "" || strings.EqualFold(rule, "public") {
+		return nil
+	}
+	lower := strings.ToLower(rule)
+	switch lower {
+	case "locked", "superuser":
+		return ErrForbidden
+	case "admin":
+		if claims == nil || (claims.Role != "admin" && claims.Role != "superuser") {
+			return ErrForbidden
+		}
+		return nil
+	case "auth":
+		if claims == nil {
+			return ErrForbidden
+		}
+		return nil
+	}
+
+	if pool != nil && strings.Contains(lower, "@request.auth.") {
+		sqlExpr, args, _, err := ParseCreateFilterToSQL(rule, claims, data, 1)
+		if err != nil {
+			return ErrForbidden
+		}
+		if sqlExpr == "TRUE" {
+			return nil
+		}
+		if sqlExpr == "FALSE" {
+			return ErrForbidden
+		}
+		var allowed bool
+		if err := pool.QueryRow(ctx, "SELECT COALESCE(("+sqlExpr+"), FALSE)", args...).Scan(&allowed); err != nil || !allowed {
+			return ErrForbidden
+		}
+		return nil
+	}
+
+	return EvalCreateRule(col, claims, data)
 }

@@ -157,7 +157,7 @@ func (s *RecordService) Create(ctx context.Context, colName string, data models.
 		}
 	}
 
-	if err := EvalCreateRule(col, claims, data); err != nil {
+	if err := EvalCreateRuleWithDB(ctx, s.pool, col, claims, data); err != nil {
 		return nil, err
 	}
 

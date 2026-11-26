@@ -2,6 +2,7 @@ package services
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/techasit5415/microbase/internal/models"
@@ -100,5 +101,80 @@ func TestUsersCollectionRowLevelRule(t *testing.T) {
 	}
 	if err := EvalCreateRule(usersCol, nil, map[string]any{"email": "a@b.com", "role": "user"}); err != nil {
 		t.Fatalf("expected user create allowed, got %v", err)
+	}
+}
+
+
+func TestPocketBaseParityRules(t *testing.T) {
+	userClaims := &AuthClaims{UserID: "usr_123", RecordID: "usr_123", Email: "student@example.edu", Role: "user"}
+
+	announcements := &models.Collection{
+		Name: "announcements",
+		Fields: []models.FieldDef{
+			{Name: "status", Type: "text"},
+			{Name: "start_at", Type: "date"},
+			{Name: "end_at", Type: "date"},
+			{Name: "created_by", Type: "relation", CollectionName: "users"},
+		},
+		APIRules: map[string]string{
+			"list": `(@request.auth.id != "" && (@request.auth.user_type.id ?= "000000000000000" || @request.auth.user_type.id ?= "000000000000009")) || (status = "published" && (start_at = "" || start_at <= @now) && (end_at = "" || end_at > @now))`,
+			"update": `@request.auth.id != "" && @request.auth.user_type.id ?= "000000000000000" && @request.body.created_by:isset = false`,
+		},
+	}
+
+	// Unauthenticated user should compile announcements.list cleanly (not 403)
+	sql, _, _, err := CompileAPIRule(announcements, "list", nil, nil, 1)
+	if err != nil {
+		t.Fatalf("announcements.list unauthenticated failed: %v", err)
+	}
+	if !strings.Contains(sql, "NOW()") || !strings.Contains(sql, `"start_at" IS NULL`) {
+		t.Fatalf("unexpected announcements SQL: %s", sql)
+	}
+
+	// Update with created_by omitted passes :isset = false
+	sql, _, _, err = CompileAPIRule(announcements, "update", userClaims, map[string]any{"status": "published"}, 1)
+	if err != nil {
+		t.Fatalf("announcements.update failed: %v", err)
+	}
+	if !strings.Contains(sql, `EXISTS (SELECT 1 FROM "users" _au`) {
+		t.Fatalf("expected dynamic auth EXISTS in announcements.update SQL: %s", sql)
+	}
+
+	// instances & instance_infra 1-level and 2-level relation traversal
+	instances := &models.Collection{
+		Name: "instances",
+		Fields: []models.FieldDef{
+			{Name: "email", Type: "relation", CollectionName: "users"},
+			{Name: "owners", Type: "relation", CollectionName: "users", MaxSelect: 10},
+		},
+		APIRules: map[string]string{
+			"list": `@request.auth.id != "" && (email = @request.auth.id || owners.id ?= @request.auth.id || (@request.auth.user_type.type ?= "admin" || @request.auth.user_type.type ?= "head"))`,
+		},
+	}
+	sql, _, _, err = CompileAPIRule(instances, "list", userClaims, nil, 1)
+	if err != nil {
+		t.Fatalf("instances.list failed: %v", err)
+	}
+	if !strings.Contains(sql, `to_jsonb("owners")`) || !strings.Contains(sql, `JOIN "user_type" _ar`) {
+		t.Fatalf("unexpected instances.list SQL: %s", sql)
+	}
+
+	// users.view with collectionName + relation traversal
+	usersCol := &models.Collection{
+		Name: "users",
+		Type: "auth",
+		Fields: []models.FieldDef{
+			{Name: "user_type", Type: "relation", CollectionName: "user_type", MaxSelect: 10},
+		},
+		APIRules: map[string]string{
+			"view": `@request.auth.id != "" && (id = @request.auth.id || user_type.type ?= "teachers" || @request.auth.collectionName = "_superusers" || @request.auth.user_type.type ?= "admin")`,
+			"update": `@request.auth.id = id && @request.body.user_type:isset = false`,
+		},
+	}
+	if _, _, _, err := CompileAPIRule(usersCol, "view", userClaims, nil, 2); err != nil {
+		t.Fatalf("users.view failed: %v", err)
+	}
+	if _, _, _, err := CompileAPIRule(usersCol, "update", userClaims, map[string]any{"name": "ok"}, 2); err != nil {
+		t.Fatalf("users.update without user_type should pass, got: %v", err)
 	}
 }
