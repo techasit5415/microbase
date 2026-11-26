@@ -76,21 +76,40 @@ func buildWhereClause(
 
 // buildOrderBy converts a sort expression (e.g. "-created_at", "title") into a safe SQL ORDER BY clause.
 func buildOrderBy(sort string, allowed map[string]models.FieldDef) (string, error) {
+	sort = strings.TrimSpace(sort)
 	if sort == "" {
 		return `"id" DESC`, nil
 	}
 
-	dir := "ASC"
-	field := sort
-	if strings.HasPrefix(sort, "-") {
-		dir = "DESC"
-		field = strings.TrimPrefix(sort, "-")
-	} else if strings.HasPrefix(sort, "+") {
-		field = strings.TrimPrefix(sort, "+")
+	parts := strings.Split(sort, ",")
+	clauses := make([]string, 0, len(parts))
+	for _, raw := range parts {
+		item := strings.TrimSpace(raw)
+		if item == "" {
+			continue
+		}
+		dir := "ASC"
+		field := item
+		if strings.HasPrefix(item, "-") {
+			dir = "DESC"
+			field = strings.TrimSpace(strings.TrimPrefix(item, "-"))
+		} else if strings.HasPrefix(item, "+") {
+			field = strings.TrimSpace(strings.TrimPrefix(item, "+"))
+		}
+		if _, ok := allowed[field]; !ok && !reservedColumns[field] {
+			// PocketBase compatibility aliases for collections without explicit created/updated columns
+			if field == "created" {
+				field = "created_at"
+			} else if field == "updated" {
+				field = "updated_at"
+			} else {
+				return "", fmt.Errorf("unknown sort field %q", field)
+			}
+		}
+		clauses = append(clauses, fmt.Sprintf(`"%s" %s`, field, dir))
 	}
-
-	if _, ok := allowed[field]; !ok && !reservedColumns[field] {
-		return "", fmt.Errorf("unknown sort field %q", field)
+	if len(clauses) == 0 {
+		return `"id" DESC`, nil
 	}
-	return fmt.Sprintf(`"%s" %s`, field, dir), nil
+	return strings.Join(clauses, ", "), nil
 }
