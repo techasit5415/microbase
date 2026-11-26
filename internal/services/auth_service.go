@@ -482,3 +482,50 @@ func (s *AuthService) GenerateCollectionToken(collection, recordID, email, role 
 	}
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(s.jwtSecret)
 }
+
+
+// GenerateFileToken mints a short-lived (2-minute) signed JWT scoped strictly for protected file access.
+func (s *AuthService) GenerateFileToken(claims *AuthClaims) (string, error) {
+	if claims == nil {
+		return "", ErrInvalidToken
+	}
+	now := time.Now()
+	exp := now.Add(2 * time.Minute)
+	sub := claims.RecordID
+	if sub == "" {
+		sub = claims.UserID
+	}
+	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"sub":   sub,
+		"email": claims.Email,
+		"role":  claims.Role,
+		"scope": "file",
+		"iat":   now.Unix(),
+		"exp":   exp.Unix(),
+	})
+	return tok.SignedString(s.jwtSecret)
+}
+
+// ValidateFileToken verifies a short-lived file access token minted by GenerateFileToken.
+func (s *AuthService) ValidateFileToken(tokenStr string) (*AuthClaims, error) {
+	parsed, err := jwt.Parse(tokenStr, func(t *jwt.Token) (any, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, ErrInvalidToken
+		}
+		return s.jwtSecret, nil
+	})
+	if err != nil || !parsed.Valid {
+		return nil, ErrInvalidToken
+	}
+	mc, ok := parsed.Claims.(jwt.MapClaims)
+	if !ok || fmt.Sprint(mc["scope"]) != "file" {
+		return nil, ErrInvalidToken
+	}
+	sub := fmt.Sprint(mc["sub"])
+	return &AuthClaims{
+		UserID:   sub,
+		RecordID: sub,
+		Email:    fmt.Sprint(mc["email"]),
+		Role:     fmt.Sprint(mc["role"]),
+	}, nil
+}

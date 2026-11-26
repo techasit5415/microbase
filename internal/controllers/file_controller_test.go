@@ -15,7 +15,7 @@ import (
 
 func TestThumbnailRejectsNegativeDimensions(t *testing.T) {
 	for _, spec := range []string{"-1x10", "10x-1", "0x0", "2049x10", "bad"} {
-		if _, _, ok := parseThumbSpec(spec); ok {
+		if _, _, _, ok := parseThumbSpec(spec); ok {
 			t.Errorf("accepted %s", spec)
 		}
 	}

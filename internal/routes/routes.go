@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,11 +23,23 @@ import (
 // Register attaches global middlewares, embedded UI, and API routes to Echo.
 func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStore, cfg *config.Config) {
 	e.Use(middleware.Recover())
-	e.Use(middleware.CORS())
+	if cfg != nil && strings.TrimSpace(cfg.Origins) != "" {
+		allowed := make([]string, 0)
+		for _, o := range strings.Split(cfg.Origins, ",") {
+			if s := strings.TrimSpace(o); s != "" {
+				allowed = append(allowed, s)
+			}
+		}
+		e.Use(middleware.CORSWithConfig(middleware.CORSConfig{AllowOrigins: allowed}))
+	} else {
+		e.Use(middleware.CORS())
+	}
 	e.Use(middlewares.RequestLogger())
 
-	// Embedded SvelteKit Admin Dashboard under /_/.
-	ui.Register(e)
+	// Embedded SvelteKit Admin Dashboard under /_/ (skipped when --no-ui / DISABLE_ADMIN_UI=true).
+	if cfg == nil || !cfg.DisableAdminUI {
+		ui.Register(e)
+	}
 
 	// Health endpoint.
 	healthCtrl := controllers.NewHealthController(cacheStore)
@@ -64,8 +77,12 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStor
 				savedS3 = &cfg
 			}
 		}
-		fileStorage := storage.NewSwitchableStorage("./storage", savedS3)
-		fileCtrl := controllers.NewFileController(fileStorage)
+		storageDir := "./storage"
+		if cfg != nil && cfg.DataDir != "" {
+			storageDir = cfg.DataDir
+		}
+		fileStorage := storage.NewSwitchableStorage(storageDir, savedS3)
+		fileCtrl := controllers.NewFileController(fileStorage, authService)
 		systemCtrl := controllers.NewSystemController(pool)
 		webhookCtrl := controllers.NewWebhookController(webhookService)
 		openapiCtrl := controllers.NewOpenAPIController(colService)
@@ -155,6 +172,7 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStor
 		api.DELETE("/webhooks/:id", webhookCtrl.Delete, adminOnly)
 		api.GET("/realtime", realtimeCtrl.Stream, middlewares.OptionalAuth(authService))
 		api.POST("/files", fileCtrl.Upload)
+		api.POST("/files/token", fileCtrl.CreateToken)
 		api.GET("/files/:filename", fileCtrl.Serve)
 		api.GET("/system/:table", systemCtrl.List, adminOnly)
 		api.POST("/system/:table", systemCtrl.Create, adminOnly)

@@ -185,23 +185,155 @@ func (h *RecordController) maskHidden(c echo.Context, rec models.Record) models.
 }
 
 // projectFields filters a record map down to only the comma-separated ?fields= keys when specified.
+type excerptSpec struct {
+	maxLen       int
+	withEllipsis bool
+}
+
+func splitFieldsParam(param string) []string {
+	var parts []string
+	var cur strings.Builder
+	depth := 0
+	for _, r := range param {
+		switch r {
+		case '(':
+			depth++
+			cur.WriteRune(r)
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+			cur.WriteRune(r)
+		case ',':
+			if depth == 0 {
+				if s := strings.TrimSpace(cur.String()); s != "" {
+					parts = append(parts, s)
+				}
+				cur.Reset()
+			} else {
+				cur.WriteRune(r)
+			}
+		default:
+			cur.WriteRune(r)
+		}
+	}
+	if s := strings.TrimSpace(cur.String()); s != "" {
+		parts = append(parts, s)
+	}
+	return parts
+}
+
+func applyExcerpt(v any, spec excerptSpec) any {
+	s, ok := v.(string)
+	if !ok || spec.maxLen <= 0 {
+		return v
+	}
+	// Strip simple HTML tags for clean plain-text excerpt
+	var plain strings.Builder
+	inTag := false
+	for _, r := range s {
+		if r == '<' {
+			inTag = true
+			continue
+		}
+		if r == '>' {
+			inTag = false
+			continue
+		}
+		if !inTag {
+			plain.WriteRune(r)
+		}
+	}
+	runes := []rune(strings.TrimSpace(plain.String()))
+	if len(runes) <= spec.maxLen {
+		return string(runes)
+	}
+	out := strings.TrimSpace(string(runes[:spec.maxLen]))
+	if spec.withEllipsis {
+		return out + "..."
+	}
+	return out
+}
+
 func projectFields(rec models.Record, fieldsParam string) models.Record {
 	if strings.TrimSpace(fieldsParam) == "" {
 		return rec
 	}
-	want := make(map[string]bool)
-	for _, f := range strings.Split(fieldsParam, ",") {
-		f = strings.TrimSpace(f)
-		if f != "" {
-			want[f] = true
-		}
-	}
-	if len(want) == 0 {
+	parts := splitFieldsParam(fieldsParam)
+	if len(parts) == 0 {
 		return rec
 	}
-	out := make(models.Record, len(want))
+	wantAll := false
+	want := make(map[string]bool)
+	excerpts := make(map[string]excerptSpec)
+	expandFields := make(map[string][]string)
+
+	for _, raw := range parts {
+		if raw == "*" {
+			wantAll = true
+			continue
+		}
+		if strings.HasPrefix(raw, "expand.") {
+			rest := strings.TrimPrefix(raw, "expand.")
+			dot := strings.IndexByte(rest, '.')
+			if dot > 0 {
+				rel := rest[:dot]
+				sub := rest[dot+1:]
+				expandFields[rel] = append(expandFields[rel], sub)
+				want["expand"] = true
+				continue
+			}
+		}
+		if idx := strings.Index(raw, ":excerpt("); idx > 0 && strings.HasSuffix(raw, ")") {
+			fname := strings.TrimSpace(raw[:idx])
+			argsStr := raw[idx+len(":excerpt(") : len(raw)-1]
+			args := strings.Split(argsStr, ",")
+			maxLen, _ := strconv.Atoi(strings.TrimSpace(args[0]))
+			withEllipsis := len(args) > 1 && strings.EqualFold(strings.TrimSpace(args[1]), "true")
+			want[fname] = true
+			excerpts[fname] = excerptSpec{maxLen: maxLen, withEllipsis: withEllipsis}
+			continue
+		}
+		want[raw] = true
+	}
+
+	out := make(models.Record, len(rec))
 	for k, v := range rec {
-		if want[k] || k == "expand" {
+		if !wantAll && !want[k] && k != "expand" {
+			continue
+		}
+		if k == "expand" && len(expandFields) > 0 {
+			if expMap, ok := v.(map[string]any); ok {
+				filteredExp := make(map[string]any, len(expMap))
+				for rel, relVal := range expMap {
+					subList, hasSub := expandFields[rel]
+					if !hasSub {
+						if wantAll {
+							filteredExp[rel] = relVal
+						}
+						continue
+					}
+					subParam := strings.Join(subList, ",")
+					switch rv := relVal.(type) {
+					case models.Record:
+						filteredExp[rel] = projectFields(rv, subParam)
+					case []models.Record:
+						arr := make([]models.Record, len(rv))
+						for i, item := range rv {
+							arr[i] = projectFields(item, subParam)
+						}
+						filteredExp[rel] = arr
+					default:
+						filteredExp[rel] = relVal
+					}
+				}
+				out[k] = filteredExp
+				continue
+			}
+		}
+		if spec, hasEx := excerpts[k]; hasEx {
+			out[k] = applyExcerpt(v, spec)
+		} else {
 			out[k] = v
 		}
 	}

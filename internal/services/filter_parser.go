@@ -588,6 +588,14 @@ func (p *filterParser) parseAtom() (string, error) {
 		return p.compileRelationPathSQL(rhs, flipOperator(op.val), lhs)
 	}
 
+	// Special Case D: Column modifier :lower or :length (e.g. email:lower = 'a@b.com', tags:length > 0)
+	if colName, mod, ok := p.parseColModifier(lhs); ok {
+		return p.compileColModifierSQL(colName, mod, op.val, rhs)
+	}
+	if colName, mod, ok := p.parseColModifier(rhs); ok {
+		return p.compileColModifierSQL(colName, mod, flipOperator(op.val), lhs)
+	}
+
 	lhsIsCol := p.isColumnIdent(lhs)
 	rhsIsCol := p.isColumnIdent(rhs)
 
@@ -710,6 +718,50 @@ func (p *filterParser) parseAtom() (string, error) {
 		idx := p.addArg(val)
 		return fmt.Sprintf("%s %s $%d", colSQL, baseOp, idx), nil
 	}
+}
+
+func (p *filterParser) parseColModifier(tok fToken) (string, string, bool) {
+	if tok.kind != fTokIdent || p.createMode {
+		return "", "", false
+	}
+	idx := strings.LastIndexByte(tok.val, ':')
+	if idx <= 0 {
+		return "", "", false
+	}
+	col := tok.val[:idx]
+	mod := strings.ToLower(tok.val[idx+1:])
+	if mod != "lower" && mod != "length" {
+		return "", "", false
+	}
+	if !p.isColumnIdent(fToken{kind: fTokIdent, val: col}) {
+		return "", "", false
+	}
+	return col, mod, true
+}
+
+func (p *filterParser) compileColModifierSQL(col, mod, op string, valTok fToken) (string, error) {
+	val, isNull, err := p.resolveValue(valTok)
+	if err != nil || isNull {
+		return "FALSE", err
+	}
+	baseOp, _ := stripAnyOp(op)
+	if mod == "lower" {
+		s := strings.ToLower(fmt.Sprint(val))
+		if baseOp == "~" || baseOp == "!~" {
+			s = "%" + s + "%"
+			idx := p.addArg(s)
+			if baseOp == "!~" {
+				return fmt.Sprintf(`LOWER(CAST("%s" AS TEXT)) NOT LIKE $%d`, col, idx), nil
+			}
+			return fmt.Sprintf(`LOWER(CAST("%s" AS TEXT)) LIKE $%d`, col, idx), nil
+		}
+		idx := p.addArg(s)
+		return fmt.Sprintf(`LOWER(CAST("%s" AS TEXT)) %s $%d`, col, baseOp, idx), nil
+	}
+	// mod == "length"
+	idx := p.addArg(val)
+	lenExpr := fmt.Sprintf(`(CASE WHEN "%s" IS NULL THEN 0 WHEN jsonb_typeof(to_jsonb("%s")) = 'array' THEN jsonb_array_length(to_jsonb("%s")) ELSE char_length(CAST("%s" AS TEXT)) END)`, col, col, col, col)
+	return fmt.Sprintf("%s %s $%d", lenExpr, baseOp, idx), nil
 }
 
 func (p *filterParser) compileBodyChangedSQL(field string, op string, valTok fToken) (string, error) {
