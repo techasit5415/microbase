@@ -5,7 +5,7 @@
 	import { page as pageState } from '$app/state';
 	import { deleteCollection, listCollections } from '#lib/api/collections.ts';
 	import { deleteRecord, listRecords } from '#lib/api/records.ts';
-	import { listSystemTable } from '#lib/api/system.ts';
+	import { deleteSystemRecord, listSystemTable } from '#lib/api/system.ts';
 	import { deleteSuperuser, deleteUser, listUsers } from '#lib/api/users.ts';
 	import type { Collection, RecordRow } from '#lib/api/types.ts';
 	import { confirmAction } from '#lib/stores/confirm.svelte.ts';
@@ -147,7 +147,8 @@
 	}
 
 	async function handleDeleteRecord(id: number | string) {
-		if (activeCol.type === 'system' && activeCol.name !== '_superusers') return;
+		const deletableSystem = activeCol.name === '_superusers' || activeCol.name === '_authOrigins' || activeCol.name === '_oauth_accounts';
+		if (activeCol.type === 'system' && !deletableSystem) return;
 		const ok = await confirmAction({
 			title: `Delete record #${id}?`,
 			description: `Are you sure you want to permanently delete this record from "${activeCol.name}"?`,
@@ -157,7 +158,8 @@
 		if (!ok) return;
 		try {
 			if (activeCol.name === '_superusers') await deleteSuperuser(Number(id));
-			else if (activeCol.type === 'auth') await deleteUser(Number(id));
+			else if (activeCol.name === '_authOrigins' || activeCol.name === '_oauth_accounts') await deleteSystemRecord(activeCol.name, id);
+			else if (activeCol.type === 'auth') await deleteUser(id);
 			else await deleteRecord(activeCol.name, id);
 			toast.success('Record deleted');
 			await refreshRecords();
@@ -178,7 +180,8 @@
 		try {
 			for (const id of ids) {
 				if (activeCol.name === '_superusers') await deleteSuperuser(Number(id));
-				else if (activeCol.type === 'auth') await deleteUser(Number(id));
+				else if (activeCol.name === '_authOrigins' || activeCol.name === '_oauth_accounts') await deleteSystemRecord(activeCol.name, id);
+				else if (activeCol.type === 'auth') await deleteUser(id);
 				else await deleteRecord(activeCol.name, id);
 			}
 			toast.success(`Deleted ${ids.length} records`);
