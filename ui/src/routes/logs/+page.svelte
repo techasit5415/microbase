@@ -1,9 +1,8 @@
 <script lang="ts">
-	import { cubicOut } from 'svelte/easing';
-	import { fade, scale } from 'svelte/transition';
 	import { onMount } from 'svelte';
-	import { RefreshCw, Search, X } from '@lucide/svelte';
+	import { Download, RefreshCw, Search, X } from '@lucide/svelte';
 	import { apiRequest } from '#lib/api/client.ts';
+	import Drawer from '#lib/components/ui/Drawer.svelte';
 	import { toast } from '#lib/stores/toast.svelte.ts';
 	import { formatTimestamp, uiPrefs } from '#lib/stores/uiPrefs.svelte.ts';
 
@@ -12,11 +11,17 @@
 		timestamp: string;
 		method: string;
 		path: string;
+		url?: string;
 		status: number;
 		code?: string;
 		message?: string;
 		latency_ms: number;
+		exec_time_ms?: number;
 		ip: string;
+		remote_ip?: string;
+		referer?: string;
+		user_agent?: string;
+		auth?: string;
 		auth_role?: string;
 		auth_email?: string;
 		auth_id?: string;
@@ -32,13 +37,12 @@
 
 	let filtered = $derived(
 		logs.filter((l) =>
-			`${l.method} ${l.path} ${l.status} ${l.code ?? ''} ${l.message ?? ''} ${l.auth_role || 'guest'} ${l.auth_email ?? ''} ${l.auth_id ?? ''}`
+			`${l.method} ${l.url || l.path} ${l.status} ${l.code ?? ''} ${l.message ?? ''} ${l.auth || '_guest'} ${l.auth_role ?? ''} ${l.auth_email ?? ''} ${l.auth_id ?? ''} ${l.user_agent ?? ''}`
 				.toLowerCase()
 				.includes(filter.trim().toLowerCase())
 		)
 	);
 
-	// Group recent logs into 20 visual chart buckets
 	let chartBars = $derived.by(() => {
 		const buckets: { label: string; ok: number; err: number; total: number }[] = [];
 		const byMinute = new Map<string, { ok: number; err: number }>();
@@ -57,6 +61,48 @@
 	});
 
 	let maxBar = $derived(Math.max(1, ...chartBars.map((b) => b.total)));
+
+	function logLevelMeta(status: number): { label: string; dotClass: string } {
+		if (status >= 500) return { label: 'ERROR (8)', dotClass: 'bg-destructive' };
+		if (status >= 400) return { label: 'WARN (4)', dotClass: 'bg-amber-500' };
+		return { label: 'INFO (0)', dotClass: 'bg-emerald-500' };
+	}
+
+	function formatExecTime(row: LogEntry): string {
+		if (typeof row.exec_time_ms === 'number' && row.exec_time_ms > 0) {
+			return `${Number(row.exec_time_ms.toFixed(6))}ms`;
+		}
+		return `${row.latency_ms}ms`;
+	}
+
+	function downloadLogJson(row: LogEntry) {
+		const payload = {
+			id: row.id,
+			level: row.status >= 500 ? 8 : row.status >= 400 ? 4 : 0,
+			created: row.timestamp,
+			data: {
+				execTime: row.exec_time_ms ?? row.latency_ms,
+				type: 'request',
+				auth: row.auth || '_guest',
+				authEmail: row.auth_email || undefined,
+				authId: row.auth_id || undefined,
+				status: row.status,
+				method: row.method,
+				url: row.url || row.path,
+				referer: row.referer || '',
+				remoteIP: row.remote_ip || row.ip,
+				userIP: row.ip,
+				userAgent: row.user_agent || ''
+			}
+		};
+		const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `log_${row.id ?? 'entry'}.json`;
+		a.click();
+		URL.revokeObjectURL(url);
+	}
 
 	async function loadLogs() {
 		loading = true;
@@ -132,12 +178,11 @@
 			<input
 				type="text"
 				bind:value={filter}
-				placeholder="Filter by method, path, auth (superuser/user/email/guest), status..."
+				placeholder="Filter by method, url, auth (users / _superusers / email / _guest), userAgent, status..."
 				class="w-full rounded-full border border-transparent bg-muted/80 py-2 pr-4 pl-10 text-xs outline-none transition focus:border-border focus:bg-accent/70"
 			/>
 		</div>
 
-		<!-- Mini PocketBase-style Request Volume Chart -->
 		{#if chartBars.length > 0}
 			<div class="flex h-16 items-end gap-1 rounded-md border border-border bg-background/70 px-3 pt-2 pb-1">
 				{#each chartBars as bar (bar.label)}
@@ -161,11 +206,9 @@
 				<tr>
 					<th class="px-5 py-3 font-semibold">Status</th>
 					<th class="px-4 py-3 font-semibold">Method</th>
-					<th class="px-4 py-3 font-semibold">Path</th>
+					<th class="px-4 py-3 font-semibold">URL</th>
 					<th class="px-4 py-3 font-semibold">Auth</th>
-					<th class="px-4 py-3 font-semibold">Code</th>
-					<th class="px-4 py-3 font-semibold">Message</th>
-					<th class="px-4 py-3 font-semibold">Latency</th>
+					<th class="px-4 py-3 font-semibold">Exec time</th>
 					<th class="px-4 py-3 font-semibold">IP</th>
 					<th class="px-5 py-3 font-semibold">Timestamp</th>
 				</tr>
@@ -173,11 +216,12 @@
 			{#key refreshGen}
 				<tbody class="divide-y divide-border font-mono">
 					{#if loading && logs.length === 0}
-						<tr><td colspan="9" class="px-5 py-10 text-center text-muted-foreground">Loading logs...</td></tr>
+						<tr><td colspan="7" class="px-5 py-10 text-center text-muted-foreground">Loading logs...</td></tr>
 					{:else if filtered.length === 0}
-						<tr><td colspan="9" class="px-5 py-10 text-center text-muted-foreground">No logs yet.</td></tr>
+						<tr><td colspan="7" class="px-5 py-10 text-center text-muted-foreground">No logs yet.</td></tr>
 					{:else}
 						{#each filtered as row, i (row.id ?? `${row.timestamp}-${i}`)}
+							{@const authName = row.auth || (row.auth_role === 'superuser' ? '_superusers' : row.auth_role ? 'users' : '_guest')}
 							<tr
 								onclick={() => (selectedLog = row)}
 								class="animate-row-in cursor-pointer bg-card transition-colors hover:bg-muted/60"
@@ -195,16 +239,16 @@
 									</span>
 								</td>
 								<td class="px-4 py-2.5 font-semibold">{row.method}</td>
-								<td class="max-w-xs truncate px-4 py-2.5 text-foreground" title={row.path}>{row.path}</td>
-								<td class="max-w-52 px-4 py-2.5 whitespace-nowrap">
-									{#if row.auth_role || row.auth_email}
+								<td class="max-w-sm truncate px-4 py-2.5 text-foreground" title={row.url || row.path}>{row.url || row.path}</td>
+								<td class="max-w-56 px-4 py-2.5 whitespace-nowrap">
+									{#if authName !== '_guest'}
 										<span class="inline-flex max-w-full items-center gap-1.5">
 											<span
-												class="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold {row.auth_role === 'superuser'
+												class="shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold {authName === '_superusers'
 													? 'bg-violet-500/15 text-violet-700 dark:text-violet-400'
 													: 'bg-sky-500/15 text-sky-700 dark:text-sky-400'}"
 											>
-												{row.auth_role || 'auth'}
+												{authName}
 											</span>
 											{#if row.auth_email || row.auth_id}
 												<span class="truncate font-sans text-xs text-foreground/90" title={row.auth_email || row.auth_id}>
@@ -213,27 +257,10 @@
 											{/if}
 										</span>
 									{:else}
-										<span class="text-muted-foreground/60">guest</span>
+										<span class="text-muted-foreground/60">_guest</span>
 									{/if}
 								</td>
-								<td class="px-4 py-2.5">
-									<span
-										class="rounded px-1.5 py-0.5 text-xs {row.status >= 400
-											? 'bg-destructive/10 text-destructive'
-											: 'bg-muted text-muted-foreground'}"
-									>
-										{row.code || (row.status >= 400 ? String(row.status) : 'OK')}
-									</span>
-								</td>
-								<td
-									class="max-w-xs truncate px-4 py-2.5 font-sans text-xs {row.status >= 400
-										? 'text-destructive'
-										: 'text-muted-foreground'}"
-									title={row.message || ''}
-								>
-									{row.message || '—'}
-								</td>
-								<td class="px-4 py-2.5 text-muted-foreground">{row.latency_ms}ms</td>
+								<td class="px-4 py-2.5 text-muted-foreground">{formatExecTime(row)}</td>
 								<td class="px-4 py-2.5 text-muted-foreground">{row.ip}</td>
 								<td class="px-5 py-2.5 text-muted-foreground">
 									{formatTimestamp(row.timestamp, uiPrefs.prefs.dateFormat)}
@@ -247,27 +274,130 @@
 	</div>
 </main>
 
-<!-- Log Preview Modal -->
-{#if selectedLog}
-	<div transition:fade={{ duration: 150 }} class="fixed inset-0 z-50 flex items-center justify-center p-4">
-		<button
-			type="button"
-			aria-label="Close log preview"
-			onclick={() => (selectedLog = null)}
-			class="animate-fade-in fixed inset-0 bg-black/45 backdrop-blur-[2px]"
-		></button>
-		<div class="animate-modal-in relative z-10 w-full max-w-lg rounded-lg border border-border bg-card p-6 shadow-xl">
-			<div class="mb-4 flex items-center justify-between">
-				<h3 class="text-base font-semibold">Request Log #{selectedLog.id ?? ''}</h3>
+<!-- PocketBase-style Log details Slide-over Drawer -->
+<Drawer
+	open={selectedLog !== null}
+	maxWidth="max-w-xl"
+	onClose={() => (selectedLog = null)}
+>
+	{#if selectedLog}
+		{@const lvl = logLevelMeta(selectedLog.status)}
+		{@const authCol = selectedLog.auth || (selectedLog.auth_role === 'superuser' ? '_superusers' : selectedLog.auth_role ? 'users' : '_guest')}
+		<div class="flex h-full flex-col bg-card">
+			<div class="flex items-center justify-between border-b border-border px-6 py-4">
+				<h2 class="text-base font-semibold text-foreground">Log details</h2>
 				<button
 					type="button"
+					aria-label="Close log details"
 					onclick={() => (selectedLog = null)}
-					class="cursor-pointer rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+					class="cursor-pointer rounded-md p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"
 				>
 					<X class="h-4 w-4" />
 				</button>
 			</div>
-			<pre class="overflow-auto rounded-md border border-border bg-muted/50 p-4 font-mono text-xs leading-relaxed">{JSON.stringify(selectedLog, null, 2)}</pre>
+
+			<div class="flex-1 overflow-y-auto p-6">
+				<div class="overflow-hidden rounded-md border border-border bg-card text-sm">
+					<table class="w-full border-collapse text-left">
+						<tbody class="divide-y divide-border">
+							<tr>
+								<td class="w-40 px-4 py-3 font-medium text-muted-foreground">id</td>
+								<td class="px-4 py-3 font-mono text-foreground">{selectedLog.id ?? '—'}</td>
+							</tr>
+							<tr>
+								<td class="px-4 py-3 font-medium text-muted-foreground">level</td>
+								<td class="px-4 py-3">
+									<span class="inline-flex items-center gap-1.5 rounded bg-secondary px-2.5 py-0.5 text-xs font-semibold text-foreground">
+										<span class="h-2 w-2 rounded-full {lvl.dotClass}"></span>
+										{lvl.label}
+									</span>
+								</td>
+							</tr>
+							<tr>
+								<td class="px-4 py-3 font-medium text-muted-foreground">created</td>
+								<td class="px-4 py-3">
+									<div class="font-mono text-foreground">{formatTimestamp(selectedLog.timestamp, 'local')}</div>
+									<div class="font-mono text-xs text-muted-foreground">{new Date(selectedLog.timestamp).toISOString()}</div>
+								</td>
+							</tr>
+							<tr>
+								<td class="px-4 py-3 font-medium text-muted-foreground">data.execTime</td>
+								<td class="px-4 py-3 font-mono text-foreground">{formatExecTime(selectedLog)}</td>
+							</tr>
+							<tr>
+								<td class="px-4 py-3 font-medium text-muted-foreground">data.type</td>
+								<td class="px-4 py-3 font-mono text-foreground">request</td>
+							</tr>
+							<tr>
+								<td class="px-4 py-3 font-medium text-muted-foreground">data.auth</td>
+								<td class="px-4 py-3 font-mono text-foreground">{authCol}</td>
+							</tr>
+							{#if selectedLog.auth_email}
+								<tr>
+									<td class="px-4 py-3 font-medium text-muted-foreground">data.authEmail</td>
+									<td class="px-4 py-3 font-mono text-foreground">{selectedLog.auth_email}</td>
+								</tr>
+							{/if}
+							{#if selectedLog.auth_id}
+								<tr>
+									<td class="px-4 py-3 font-medium text-muted-foreground">data.authId</td>
+									<td class="px-4 py-3 font-mono text-foreground">{selectedLog.auth_id}</td>
+								</tr>
+							{/if}
+							<tr>
+								<td class="px-4 py-3 font-medium text-muted-foreground">data.status</td>
+								<td class="px-4 py-3 font-mono text-foreground">{selectedLog.status}</td>
+							</tr>
+							<tr>
+								<td class="px-4 py-3 font-medium text-muted-foreground">data.method</td>
+								<td class="px-4 py-3 font-mono text-foreground">{selectedLog.method}</td>
+							</tr>
+							<tr>
+								<td class="px-4 py-3 font-medium text-muted-foreground">data.url</td>
+								<td class="px-4 py-3 font-mono break-all text-foreground">{selectedLog.url || selectedLog.path}</td>
+							</tr>
+							<tr>
+								<td class="px-4 py-3 font-medium text-muted-foreground">data.referer</td>
+								<td class="px-4 py-3 font-mono break-all {selectedLog.referer ? 'text-foreground' : 'text-muted-foreground/60'}">
+									{selectedLog.referer || 'N/A'}
+								</td>
+							</tr>
+							<tr>
+								<td class="px-4 py-3 font-medium text-muted-foreground">data.remoteIP</td>
+								<td class="px-4 py-3 font-mono text-foreground">{selectedLog.remote_ip || selectedLog.ip}</td>
+							</tr>
+							<tr>
+								<td class="px-4 py-3 font-medium text-muted-foreground">data.userIP</td>
+								<td class="px-4 py-3 font-mono text-foreground">{selectedLog.ip}</td>
+							</tr>
+							<tr>
+								<td class="px-4 py-3 font-medium text-muted-foreground">data.userAgent</td>
+								<td class="px-4 py-3 font-mono break-all {selectedLog.user_agent ? 'text-foreground' : 'text-muted-foreground/60'}">
+									{selectedLog.user_agent || 'N/A'}
+								</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+			</div>
+
+			<div class="flex shrink-0 items-center justify-between border-t border-border bg-card px-6 py-4">
+				<button
+					type="button"
+					onclick={() => (selectedLog = null)}
+					class="cursor-pointer rounded-md px-4 py-2 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
+				>
+					Close
+				</button>
+				<button
+					type="button"
+					onclick={() => selectedLog && downloadLogJson(selectedLog)}
+					class="inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-foreground px-4 py-2 text-xs font-semibold text-background transition hover:opacity-90"
+				>
+					<Download class="h-3.5 w-3.5" />
+					Download JSON
+				</button>
+			</div>
 		</div>
-	</div>
-{/if}
+	{/if}
+</Drawer>

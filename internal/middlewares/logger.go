@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -17,18 +18,24 @@ import (
 
 // RequestLogEntry represents one recorded HTTP request for the Admin Logs view.
 type RequestLogEntry struct {
-	ID        int64     `json:"id,omitempty"`
-	Timestamp time.Time `json:"timestamp"`
-	Method    string    `json:"method"`
-	Path      string    `json:"path"`
-	Status    int       `json:"status"`
-	Code      string    `json:"code"`
-	Message   string    `json:"message"`
-	LatencyMs int64     `json:"latency_ms"`
-	IP        string    `json:"ip"`
-	AuthRole  string    `json:"auth_role,omitempty"`
-	AuthEmail string    `json:"auth_email,omitempty"`
-	AuthID    string    `json:"auth_id,omitempty"`
+	ID             int64     `json:"id,omitempty"`
+	Timestamp      time.Time `json:"timestamp"`
+	Method         string    `json:"method"`
+	Path           string    `json:"path"`
+	URL            string    `json:"url,omitempty"`
+	Status         int       `json:"status"`
+	Code           string    `json:"code"`
+	Message        string    `json:"message"`
+	LatencyMs      int64     `json:"latency_ms"`
+	ExecTimeMs     float64   `json:"exec_time_ms"`
+	IP             string    `json:"ip"`
+	RemoteIP       string    `json:"remote_ip,omitempty"`
+	Referer        string    `json:"referer,omitempty"`
+	UserAgent      string    `json:"user_agent,omitempty"`
+	Auth           string    `json:"auth,omitempty"` // "_superusers", "users", custom auth collection, or "_guest"
+	AuthRole       string    `json:"auth_role,omitempty"`
+	AuthEmail      string    `json:"auth_email,omitempty"`
+	AuthID         string    `json:"auth_id,omitempty"`
 }
 
 const maxLogEntries = 200
@@ -54,7 +61,8 @@ func RecentLogs(ctx context.Context) []RequestLogEntry {
 
 	if pool != nil {
 		rows, err := pool.Query(ctx, `
-			SELECT id, status, method, path, code, message, latency_ms, ip, auth_role, auth_email, auth_id, created_at
+			SELECT id, status, method, path, full_url, code, message, latency_ms, exec_time_ms,
+			       ip, remote_ip, referer, user_agent, auth_collection, auth_role, auth_email, auth_id, created_at
 			FROM _logs
 			ORDER BY id DESC
 			LIMIT 200`)
@@ -63,7 +71,17 @@ func RecentLogs(ctx context.Context) []RequestLogEntry {
 			out := make([]RequestLogEntry, 0, 64)
 			for rows.Next() {
 				var e RequestLogEntry
-				if rows.Scan(&e.ID, &e.Status, &e.Method, &e.Path, &e.Code, &e.Message, &e.LatencyMs, &e.IP, &e.AuthRole, &e.AuthEmail, &e.AuthID, &e.Timestamp) == nil {
+				if rows.Scan(
+					&e.ID, &e.Status, &e.Method, &e.Path, &e.URL, &e.Code, &e.Message,
+					&e.LatencyMs, &e.ExecTimeMs, &e.IP, &e.RemoteIP, &e.Referer, &e.UserAgent,
+					&e.Auth, &e.AuthRole, &e.AuthEmail, &e.AuthID, &e.Timestamp,
+				) == nil {
+					if e.URL == "" {
+						e.URL = e.Path
+					}
+					if e.RemoteIP == "" {
+						e.RemoteIP = e.IP
+					}
 					out = append(out, e)
 				}
 			}
@@ -94,9 +112,13 @@ func appendLog(entry RequestLogEntry) {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 			_, _ = pool.Exec(ctx, `
-				INSERT INTO _logs (status, method, path, code, message, latency_ms, ip, auth_role, auth_email, auth_id, created_at)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-				e.Status, e.Method, e.Path, e.Code, e.Message, e.LatencyMs, e.IP, e.AuthRole, e.AuthEmail, e.AuthID, e.Timestamp,
+				INSERT INTO _logs (
+					status, method, path, full_url, code, message, latency_ms, exec_time_ms,
+					ip, remote_ip, referer, user_agent, auth_collection, auth_role, auth_email, auth_id, created_at
+				)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+				e.Status, e.Method, e.Path, e.URL, e.Code, e.Message, e.LatencyMs, e.ExecTimeMs,
+				e.IP, e.RemoteIP, e.Referer, e.UserAgent, e.Auth, e.AuthRole, e.AuthEmail, e.AuthID, e.Timestamp,
 			)
 		}(entry)
 	}
@@ -114,6 +136,14 @@ func extractCodeAndMessage(status int, err error) (string, string) {
 		return strconv.Itoa(status), http.StatusText(status)
 	}
 	return "OK", http.StatusText(status)
+}
+
+func stripPort(remoteAddr string) string {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err == nil && host != "" {
+		return host
+	}
+	return remoteAddr
 }
 
 // RequestLogger logs HTTP requests via slog and persists them to _logs for /api/logs.
@@ -135,6 +165,7 @@ func RequestLogger() echo.MiddlewareFunc {
 			status := c.Response().Status
 			code, msg := extractCodeAndMessage(status, err)
 
+			authCol := "_guest"
 			var authRole, authEmail, authID string
 			if claims := GetAuthClaims(c); claims != nil {
 				authRole = claims.Role
@@ -143,20 +174,39 @@ func RequestLogger() echo.MiddlewareFunc {
 				if authID == "" {
 					authID = claims.UserID
 				}
+				switch {
+				case claims.Role == "superuser":
+					authCol = "_superusers"
+				case claims.Collection != "":
+					authCol = claims.Collection
+				default:
+					authCol = "users"
+				}
+			}
+
+			fullURL := c.Request().URL.RequestURI()
+			if fullURL == "" {
+				fullURL = path
 			}
 
 			entry := RequestLogEntry{
-				Timestamp: start.UTC(),
-				Method:    c.Request().Method,
-				Path:      path,
-				Status:    status,
-				Code:      code,
-				Message:   msg,
-				LatencyMs: dur.Milliseconds(),
-				IP:        c.RealIP(),
-				AuthRole:  authRole,
-				AuthEmail: authEmail,
-				AuthID:    authID,
+				Timestamp:  start.UTC(),
+				Method:     c.Request().Method,
+				Path:       path,
+				URL:        fullURL,
+				Status:     status,
+				Code:       code,
+				Message:    msg,
+				LatencyMs:  dur.Milliseconds(),
+				ExecTimeMs: float64(dur.Nanoseconds()) / 1e6,
+				IP:         c.RealIP(),
+				RemoteIP:   stripPort(c.Request().RemoteAddr),
+				Referer:    c.Request().Referer(),
+				UserAgent:  c.Request().UserAgent(),
+				Auth:       authCol,
+				AuthRole:   authRole,
+				AuthEmail:  authEmail,
+				AuthID:     authID,
 			}
 			appendLog(entry)
 
@@ -168,8 +218,8 @@ func RequestLogger() echo.MiddlewareFunc {
 				"latency", dur.Round(time.Millisecond).String(),
 				"ip", entry.IP,
 			}
-			if authRole != "" {
-				attrs = append(attrs, "auth", authRole+":"+authEmail)
+			if authCol != "_guest" {
+				attrs = append(attrs, "auth", authCol)
 			}
 			if status >= 400 && entry.Message != "" {
 				attrs = append(attrs, "message", entry.Message)
