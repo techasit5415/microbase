@@ -342,26 +342,60 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, ext *oauth.External
 
 	var user models.User
 	err = tx.QueryRow(ctx, `
-		SELECT u.id, u.email, COALESCE(u.password_hash, ''), u.role, u.created_at, u.updated_at
+		SELECT u.id::text, u.email, COALESCE(u.password_hash, ''), COALESCE(u.role, 'user'), u.created_at, u.updated_at
 		FROM _oauth_accounts oa
-		JOIN users u ON u.id = oa.user_id
+		JOIN "users" u ON u.id::text = oa.user_id::text
 		WHERE oa.provider = $1 AND oa.provider_user_id = $2`,
 		ext.Provider, ext.ProviderUserID,
 	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.Role, &user.CreatedAt, &user.UpdatedAt)
 	if err == nil {
-		return &user, tx.Commit(ctx)
+		if err := tx.Commit(ctx); err != nil {
+			return nil, err
+		}
+		s.syncExtraFields(ctx, user.ID, ext.ExtraFields)
+		return &user, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return nil, err
 	}
 
+	// Try matching an existing user by email first (supports migrated TEXT-ID users without touching id).
 	err = tx.QueryRow(ctx, `
-		INSERT INTO users (email)
-		VALUES ($1)
-		ON CONFLICT (email) DO UPDATE SET updated_at = NOW()
-		RETURNING id, email, COALESCE(password_hash, ''), role, created_at, updated_at`,
+		SELECT id::text, email, COALESCE(password_hash, ''), COALESCE(role, 'user'), created_at, updated_at
+		FROM "users"
+		WHERE LOWER(email) = LOWER($1)
+		LIMIT 1`,
 		email,
 	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.Role, &user.CreatedAt, &user.UpdatedAt)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Check whether "users".id is TEXT without a default (PocketBase-migrated schema).
+		var idDataType string
+		var idDefault *string
+		_ = tx.QueryRow(ctx, `
+			SELECT data_type, column_default
+			FROM information_schema.columns
+			WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'id'`).Scan(&idDataType, &idDefault)
+
+		if idDataType == "text" && (idDefault == nil || *idDefault == "") {
+			newID := generateRandomHex(8)[:15]
+			err = tx.QueryRow(ctx, `
+				INSERT INTO "users" (id, email)
+				VALUES ($1, $2)
+				ON CONFLICT (email) DO UPDATE SET updated_at = NOW()
+				RETURNING id::text, email, COALESCE(password_hash, ''), COALESCE(role, 'user'), created_at, updated_at`,
+				newID, email,
+			).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.Role, &user.CreatedAt, &user.UpdatedAt)
+		} else {
+			err = tx.QueryRow(ctx, `
+				INSERT INTO "users" (email)
+				VALUES ($1)
+				ON CONFLICT (email) DO UPDATE SET updated_at = NOW()
+				RETURNING id::text, email, COALESCE(password_hash, ''), COALESCE(role, 'user'), created_at, updated_at`,
+				email,
+			).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.Role, &user.CreatedAt, &user.UpdatedAt)
+		}
+	}
 	if err != nil {
 		return nil, fmt.Errorf("upsert oauth user: %w", err)
 	}

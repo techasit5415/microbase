@@ -151,12 +151,22 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		);`,
 		`CREATE TABLE IF NOT EXISTS _oauth_accounts (
 			id               BIGSERIAL PRIMARY KEY,
-			user_id          BIGINT NOT NULL REFERENCES "users"(id) ON DELETE CASCADE,
+			user_id          TEXT NOT NULL,
 			provider         TEXT NOT NULL,
 			provider_user_id TEXT NOT NULL,
 			created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			UNIQUE (provider, provider_user_id)
 		);`,
+		`DO $$
+		BEGIN
+			IF EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'public' AND table_name = '_oauth_accounts' AND column_name = 'user_id' AND data_type <> 'text'
+			) THEN
+				ALTER TABLE _oauth_accounts DROP CONSTRAINT IF EXISTS _oauth_accounts_user_id_fkey;
+				ALTER TABLE _oauth_accounts ALTER COLUMN user_id TYPE TEXT USING user_id::text;
+			END IF;
+		END $$;`,
 	}
 
 	migrations = append(migrations,
