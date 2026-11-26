@@ -220,7 +220,7 @@
 						<div transition:slide={{ duration: 180, easing: cubicOut }} class="space-y-3.5 rounded-md border border-border bg-background p-4">
 							<div class="flex items-center justify-between">
 								<span class="text-sm font-semibold">{editingProvider.display_name} settings</span>
-								<Switch bind:checked={enabled} label={enabled ? 'Enabled' : 'Disabled'} />
+								<Switch bind:checked={enabled} disabled={saving} label={enabled ? 'Enabled' : 'Disabled'} onChange={() => saveProvider()} />
 							</div>
 
 							<div>
