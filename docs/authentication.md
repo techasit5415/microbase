@@ -2,7 +2,7 @@
 
 ## Superusers (`_superusers`)
 
-Superusers have full administrative access and automatically bypass all collection API rules.
+Superusers have full administrative access and automatically bypass all collection API rules. Superuser login is **email/password only** (end-user OAuth2 buttons are intentionally excluded from `/_/`).
 
 | Endpoint | Auth | Description |
 |---|---|---|
@@ -34,6 +34,12 @@ Superusers have full administrative access and automatically bypass all collecti
 
 *(When SMTP Mail is disabled in Settings, verification/reset/OTP tokens are printed to the server log for easy local development.)*
 
+### Login Fingerprints (`_authOrigins`)
+
+Each successful superuser or user login records a device/origin fingerprint (`SHA-256(IP|User-Agent)`) in the `_authOrigins` system collection (matching PocketBase's `_authOrigins`), viewable and manageable under **System -> `_authOrigins`**.
+
+---
+
 ## OAuth2 & OIDC (Google, Discord, Standard OIDC & Custom IAM)
 
 Configure providers in `/_/` -> **Collections -> `users` -> ⚙️ -> Options -> OAuth2**.
@@ -55,25 +61,86 @@ Configure providers in `/_/` -> **Collections -> `users` -> ⚙️ -> Options ->
      -d '{"code":"<ONE_TIME_CODE>"}'
    ```
 
-### Standard OIDC (Auto-Discovery)
+### Standard OIDC (`oidc`)
 
 For standard OIDC providers (Keycloak, Authentik, Auth0, Okta, Google):
 - Fill **Client ID**, **Client Secret**, and **OIDC Issuer URL**.
-- Leave **Auth URL**, **Token URL**, **UserInfo URL**, and **Claim / Field Mapping** blank.
-- Microbase automatically discovers endpoints from `<issuer_url>/.well-known/openid-configuration` and verifies `id_token`.
+- Leave **Auth URL**, **Token URL**, and **UserInfo URL** blank for automatic discovery via `<issuer_url>/.well-known/openid-configuration`, or set them explicitly if needed.
 
-### Custom IAM / Non-Standard OAuth2 (e.g. University IAM)
+### KMITL Science IAM (`scikmitl`) & Custom University IAM
 
-For custom IAM systems without `.well-known/openid-configuration`:
-1. Set **Display name** (e.g. `KMITL IAM`) and **Scopes**.
-2. Fill **Auth URL**, **Token URL**, and **UserInfo / Profile API URL** (e.g. `https://api.science.kmitl.ac.th/iam/o/v2/students`).
-3. Add **Claim / Field Mapping** rules (`_users column <- IAM JSON dot-path`):
-   - `sub <- student_id`
-   - `email <- email`
-   - `name <- firstname_th`
-   - `department <- department.name`
-   - `major <- major.name`
-4. On login, Microbase fetches the UserInfo JSON with the access token and automatically syncs mapped values into `_users`.
+Microbase includes a dedicated **`scikmitl`** provider pre-configured with KMITL Science IAM v2 endpoints:
+- **Auth URL**: `https://iam.science.kmitl.ac.th/o/oauth2/auth`
+- **Token URL**: `https://api.science.kmitl.ac.th/iam/oidc2/token`
+- **UserInfo URL**: `https://api.science.kmitl.ac.th/iam/oidc2/userinfo`
+- **Scopes**: `openid profile email`
+
+#### Optional Profile Enrichment API
+If your IAM exposes extra user attributes on a separate endpoint, you can configure **Profile Enrichment API URL** and **API Key** (sent as `Authorization: Bearer <key>`):
+- Supports URL template placeholders: `{user_id}`, `{sub}`, `{email}`, `{student_id}`, or any dot-path claim (e.g. `{data.id}`).
+- Automatically unwraps `{ "data": { ... } }` envelopes while keeping `data.*` intact.
+- Non-2xx responses (e.g. `403 Forbidden`) are safely ignored so error payloads never pollute user claims.
+
+---
+
+### JSON Path Syntax (Claim Mapping & Access Restrictions)
+
+Both **Claim / Field Mapping** and **Access Restriction** share the same JSON path resolver:
+
+| Syntax | Example | Behavior |
+|---|---|---|
+| Dot-path | `profile.departmentId` | Traverses nested JSON objects. |
+| Array index | `student_profile.0.department` | Selects a specific 0-based index from a JSON array. |
+| Implicit array traversal | `profile.profiles.department.id` | Automatically walks every element in a JSON array (`profiles[]`) and collects matching values. |
+| Explicit wildcard | `profile.profiles.*.department.id` | Same as implicit array traversal; matches any element in the array. |
+| Fallback paths (`\|`) | `profile.departmentId \| profile.profiles.department.id` | Evaluates left-to-right. In **Field Mapping**, uses the first non-empty value. In **Access Restrictions**, passes if **any** path/element matches. |
+
+---
+
+### Claim / Field Mapping (`users column <- IAM JSON path`)
+
+Maps claims from `id_token`, `userinfo`, or the Profile Enrichment API into columns on the `users` collection on every OAuth login.
+
+Example mappings:
+- `name` <- `name | profile.firstNameTh | profile.firstname_th`
+- `iam_role` <- `role`
+- `department` <- `profile.departmentId | profile.profiles.department.id`
+
+> **Protected Columns**: For security, OIDC Claim Mapping **never overwrites** `id`, `email`, `password_hash`, or `role` on `users`. This prevents external OIDC claims (such as `role: "admin"`) from escalating privileges.
+>
+> **Recommended pattern for IAM roles (`student` / `staff` / `guest`)**:
+> 1. Add a custom `text` field named `iam_role` to the `users` collection.
+> 2. Add a Claim Mapping: `iam_role` <- `role`.
+> 3. In your app's OAuth callback, read `user.iam_role` when assigning a default application role (e.g. `user_type`) for new users, without overwriting existing manually assigned roles like `admin`.
+
+---
+
+### Access Restrictions (`Allowed IAM Claims`)
+
+Restricts who is allowed to sign in via OAuth2/OIDC. Users who fail any rule are rejected with `403` (`OAUTH_FAILED`) **before** a `users` record is created.
+
+- **Multiple rows = `AND`**: Every configured rule row must pass.
+- **Comma-separated values in one row = `OR`**: Any listed value (case-insensitive) satisfies that row.
+- **Do not duplicate the same claim key on two rows**: Rules are stored as a JSON map (`{ "claim_path": ["val1", "val2"] }`), so a second row with the same key overwrites the first. Always combine multiple allowed values for the same key into **one comma-separated row**.
+
+#### Example: Restrict to KMITL Computer Science Students & Staff
+
+In KMITL Science IAM `/oidc2/userinfo`:
+- Students have `role: "student"` and `profile.departmentId: "lock-05-06"`.
+- Staff/lecturers have `role: "staff"` and `profile.profiles[].department.id: "lock-05-06"`.
+
+Configure two rows in **Access Restriction**:
+
+| Claim Path | Allowed Values (comma-separated) |
+|---|---|
+| `role` | `student, staff` |
+| `profile.departmentId \| profile.profiles.department.id` | `lock-05-06` |
+
+- CS students (`role = "student"`, `profile.departmentId = "lock-05-06"`) -> **Allowed**
+- CS lecturers/staff (`role = "staff"`, any entry in `profile.profiles[]` with `department.id = "lock-05-06"`) -> **Allowed**
+- Other departments or `guest` accounts -> **Blocked** (`OAUTH_FAILED`)
+
+---
 
 ## API Rules (Secure by Default)
 
