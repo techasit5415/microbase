@@ -160,6 +160,9 @@ func (o *OIDCProvider) ExchangeUser(ctx context.Context, code string) (*External
 			return
 		}
 		defer resp.Body.Close()
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return
+		}
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		var userInfo map[string]any
 		if json.Unmarshal(body, &userInfo) == nil {
