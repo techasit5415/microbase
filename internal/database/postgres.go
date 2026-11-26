@@ -186,6 +186,7 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		`ALTER TABLE _logs ADD COLUMN IF NOT EXISTS referer TEXT NOT NULL DEFAULT '';`,
 		`ALTER TABLE _logs ADD COLUMN IF NOT EXISTS remote_ip TEXT NOT NULL DEFAULT '';`,
 		`ALTER TABLE _logs ADD COLUMN IF NOT EXISTS user_agent TEXT NOT NULL DEFAULT '';`,
+		`ALTER TABLE _logs ADD COLUMN IF NOT EXISTS level INT NOT NULL DEFAULT 0;`,
 		`ALTER TABLE _webhooks ADD COLUMN IF NOT EXISTS auth_token TEXT NOT NULL DEFAULT '';`,
 	)
 

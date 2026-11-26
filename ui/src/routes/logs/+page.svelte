@@ -1,13 +1,16 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Download, RefreshCw, Search, X } from '@lucide/svelte';
+	import { Download, Info, RefreshCw, Search, Settings, Trash2, X } from '@lucide/svelte';
 	import { apiRequest } from '#lib/api/client.ts';
 	import Drawer from '#lib/components/ui/Drawer.svelte';
+	import Switch from '#lib/components/ui/Switch.svelte';
+	import { confirmAction } from '#lib/stores/confirm.svelte.ts';
 	import { toast } from '#lib/stores/toast.svelte.ts';
 	import { formatTimestamp, uiPrefs } from '#lib/stores/uiPrefs.svelte.ts';
 
 	interface LogEntry {
 		id?: number;
+		level?: number;
 		timestamp: string;
 		method: string;
 		path: string;
@@ -27,20 +30,107 @@
 		auth_id?: string;
 	}
 
+	interface LogSettings {
+		max_days: number;
+		min_level: number;
+		max_bytes: number;
+		log_ip: boolean;
+		log_auth_id: boolean;
+	}
+
+	const LEVEL_PRESETS = [
+		{ value: -4, tag: '-4:DEBUG' },
+		{ value: 0, tag: '0:INFO' },
+		{ value: 4, tag: '4:WARN' },
+		{ value: 8, tag: '8:ERROR' }
+	];
+
 	let logs = $state<LogEntry[]>([]);
 	let filter = $state('');
 	let loading = $state(true);
 	let spinning = $state(false);
 	let refreshGen = $state(0);
 	let selectedLog = $state<LogEntry | null>(null);
-	let maxDays = $state(7);
+
+	let settings = $state<LogSettings>({
+		max_days: 7,
+		min_level: 0,
+		max_bytes: 0,
+		log_ip: true,
+		log_auth_id: true
+	});
+
+	let settingsOpen = $state(false);
+	let savingSettings = $state(false);
+	let clearingLogs = $state(false);
+	let draftMaxDays = $state('7');
+	let draftMinLevel = $state('0');
+	let draftMaxBytes = $state('');
+	let draftLogIP = $state(true);
+	let draftLogAuthID = $state(true);
+
+	let hasSettingsChanges = $derived.by(() => {
+		const parsedDays = Number.parseInt(draftMaxDays, 10);
+		const parsedLevel = Number.parseInt(draftMinLevel, 10);
+		const parsedBytes = draftMaxBytes.trim() === '' ? 0 : Number.parseInt(draftMaxBytes, 10);
+		return (
+			parsedDays !== settings.max_days ||
+			parsedLevel !== settings.min_level ||
+			parsedBytes !== settings.max_bytes ||
+			draftLogIP !== settings.log_ip ||
+			draftLogAuthID !== settings.log_auth_id
+		);
+	});
+
+	function resolveLevel(row: LogEntry): number {
+		if (typeof row.level === 'number' && (row.level !== 0 || row.status < 400)) {
+			return row.level;
+		}
+		if (row.status >= 500) return 8;
+		if (row.status >= 400) return 4;
+		return 0;
+	}
+
+	function logLevelMeta(level: number): { short: string; label: string; dotClass: string; badgeClass: string } {
+		if (level >= 8) {
+			return {
+				short: 'ERROR',
+				label: `ERROR (${level})`,
+				dotClass: 'bg-destructive',
+				badgeClass: 'bg-destructive/10 text-destructive'
+			};
+		}
+		if (level >= 4) {
+			return {
+				short: 'WARN',
+				label: `WARN (${level})`,
+				dotClass: 'bg-amber-500',
+				badgeClass: 'bg-amber-500/10 text-amber-700 dark:text-amber-400'
+			};
+		}
+		if (level < 0) {
+			return {
+				short: 'DEBUG',
+				label: `DEBUG (${level})`,
+				dotClass: 'bg-sky-500',
+				badgeClass: 'bg-sky-500/10 text-sky-700 dark:text-sky-400'
+			};
+		}
+		return {
+			short: 'INFO',
+			label: `INFO (${level})`,
+			dotClass: 'bg-emerald-500',
+			badgeClass: 'bg-secondary text-foreground'
+		};
+	}
 
 	let filtered = $derived(
-		logs.filter((l) =>
-			`${l.method} ${l.url || l.path} ${l.status} ${l.code ?? ''} ${l.message ?? ''} ${l.auth && l.auth !== '_guest' ? l.auth : ''} ${l.auth_role ?? ''} ${l.auth_email ?? ''} ${l.auth_id ?? ''} ${l.user_agent ?? ''}`
+		logs.filter((l) => {
+			const lvl = logLevelMeta(resolveLevel(l));
+			return `${lvl.short} ${lvl.label} ${l.method} ${l.url || l.path} ${l.status} ${l.code ?? ''} ${l.message ?? ''} ${l.auth && l.auth !== '_guest' ? l.auth : ''} ${l.auth_role ?? ''} ${l.auth_email ?? ''} ${l.auth_id ?? ''} ${l.user_agent ?? ''} ${l.ip ?? ''}`
 				.toLowerCase()
-				.includes(filter.trim().toLowerCase())
-		)
+				.includes(filter.trim().toLowerCase());
+		})
 	);
 
 	let chartBars = $derived.by(() => {
@@ -62,12 +152,6 @@
 
 	let maxBar = $derived(Math.max(1, ...chartBars.map((b) => b.total)));
 
-	function logLevelMeta(status: number): { label: string; dotClass: string } {
-		if (status >= 500) return { label: 'ERROR (8)', dotClass: 'bg-destructive' };
-		if (status >= 400) return { label: 'WARN (4)', dotClass: 'bg-amber-500' };
-		return { label: 'INFO (0)', dotClass: 'bg-emerald-500' };
-	}
-
 	function formatExecTime(row: LogEntry): string {
 		if (typeof row.exec_time_ms === 'number' && row.exec_time_ms > 0) {
 			return `${Number(row.exec_time_ms.toFixed(6))}ms`;
@@ -75,10 +159,87 @@
 		return `${row.latency_ms}ms`;
 	}
 
+	function openSettingsModal() {
+		draftMaxDays = String(settings.max_days);
+		draftMinLevel = String(settings.min_level);
+		draftMaxBytes = settings.max_bytes > 0 ? String(settings.max_bytes) : '';
+		draftLogIP = settings.log_ip;
+		draftLogAuthID = settings.log_auth_id;
+		settingsOpen = true;
+	}
+
+	async function saveLogSettings(e: SubmitEvent) {
+		e.preventDefault();
+		const maxDays = Number.parseInt(draftMaxDays, 10);
+		const minLevel = Number.parseInt(draftMinLevel, 10);
+		const maxBytes = draftMaxBytes.trim() === '' ? 0 : Number.parseInt(draftMaxBytes, 10);
+
+		if (Number.isNaN(maxDays) || maxDays < 0 || maxDays > 365) {
+			toast.error('Max days retention must be between 0 and 365');
+			return;
+		}
+		if (Number.isNaN(minLevel) || minLevel < -8 || minLevel > 12) {
+			toast.error('Min log level must be between -8 and 12');
+			return;
+		}
+		if (Number.isNaN(maxBytes) || maxBytes < 0 || maxBytes > 1048576) {
+			toast.error('Max data size must be between 0 and 1048576 bytes');
+			return;
+		}
+
+		savingSettings = true;
+		try {
+			const updated = await apiRequest<LogSettings>('/api/settings/logs', {
+				method: 'PUT',
+				body: JSON.stringify({
+					max_days: maxDays,
+					min_level: minLevel,
+					max_bytes: maxBytes,
+					log_ip: draftLogIP,
+					log_auth_id: draftLogAuthID
+				})
+			});
+			settings = updated;
+			settingsOpen = false;
+			toast.success(
+				updated.max_days === 0
+					? 'Logs persistence disabled and all logs cleared'
+					: 'Log settings saved'
+			);
+			await loadLogs();
+		} catch (err) {
+			toast.error(err, 'Failed to save log settings');
+		} finally {
+			savingSettings = false;
+		}
+	}
+
+	async function handleClearLogs() {
+		const ok = await confirmAction({
+			title: 'Delete all logs?',
+			description: 'This will permanently delete all persisted request logs from the database.',
+			confirmLabel: 'Delete all logs',
+			destructive: true
+		});
+		if (!ok) return;
+
+		clearingLogs = true;
+		try {
+			await apiRequest('/api/logs', { method: 'DELETE' });
+			logs = [];
+			selectedLog = null;
+			toast.success('All logs cleared');
+		} catch (err) {
+			toast.error(err, 'Failed to clear logs');
+		} finally {
+			clearingLogs = false;
+		}
+	}
+
 	function downloadLogJson(row: LogEntry) {
 		const payload = {
 			id: row.id,
-			level: row.status >= 500 ? 8 : row.status >= 400 ? 4 : 0,
+			level: resolveLevel(row),
 			created: row.timestamp,
 			data: {
 				execTime: row.exec_time_ms ?? row.latency_ms,
@@ -90,8 +251,8 @@
 				method: row.method,
 				url: row.url || row.path,
 				referer: row.referer || '',
-				remoteIP: row.remote_ip || row.ip,
-				userIP: row.ip,
+				remoteIP: row.remote_ip || row.ip || '',
+				userIP: row.ip || '',
 				userAgent: row.user_agent || ''
 			}
 		};
@@ -123,30 +284,36 @@
 		}
 	}
 
-	async function saveRetention(days: number) {
-		maxDays = days;
+	async function loadSettings() {
 		try {
-			await apiRequest('/api/settings/logs', { method: 'PUT', body: JSON.stringify({ max_days: days }) });
-			toast.success(`Log retention set to ${days} days`);
-		} catch (err) {
-			toast.error(err);
-		}
+			const r = await apiRequest<Partial<LogSettings>>('/api/settings/logs');
+			settings = {
+				max_days: typeof r.max_days === 'number' ? r.max_days : 7,
+				min_level: typeof r.min_level === 'number' ? r.min_level : 0,
+				max_bytes: typeof r.max_bytes === 'number' ? r.max_bytes : 0,
+				log_ip: typeof r.log_ip === 'boolean' ? r.log_ip : true,
+				log_auth_id: typeof r.log_auth_id === 'boolean' ? r.log_auth_id : true
+			};
+		} catch {}
 	}
 
-	onMount(async () => {
+	onMount(() => {
 		loadLogs();
-		try {
-			const r = await apiRequest<{ max_days: number }>('/api/settings/logs');
-			if (r.max_days) maxDays = r.max_days;
-		} catch {}
+		loadSettings();
 	});
 </script>
 
+<svelte:window
+	onkeydown={(e) => {
+		if (e.key === 'Escape' && settingsOpen) settingsOpen = false;
+	}}
+/>
+
 <main class="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
 	<header class="space-y-3 border-b border-border bg-card px-6 py-4">
-		<div class="flex items-center justify-between">
-			<div class="flex items-center gap-2 text-sm">
-				<h1 class="font-semibold text-foreground">Logs</h1>
+		<div class="flex items-center justify-between gap-4">
+			<div class="flex items-center gap-1.5 text-sm">
+				<h1 class="mr-1 font-semibold text-foreground">Logs</h1>
 				<button
 					type="button"
 					onclick={loadLogs}
@@ -156,19 +323,28 @@
 				>
 					<RefreshCw class="h-4 w-4 transition-transform {spinning ? 'animate-spin text-foreground' : ''}" />
 				</button>
+				<button
+					type="button"
+					onclick={openSettingsModal}
+					title="Logs settings"
+					class="cursor-pointer rounded-md p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"
+				>
+					<Settings class="h-4 w-4" />
+				</button>
 			</div>
+
 			<div class="flex items-center gap-3 text-xs text-muted-foreground">
-				<label class="flex items-center gap-1.5">
-					<span>Retention (days):</span>
-					<input
-						type="number"
-						min="1"
-						max="365"
-						value={maxDays}
-						onchange={(e) => saveRetention(parseInt(e.currentTarget.value, 10) || 7)}
-						class="w-16 rounded border border-input bg-background px-2 py-0.5 font-mono text-xs text-foreground outline-none focus:border-ring"
-					/>
-				</label>
+				<button
+					type="button"
+					onclick={openSettingsModal}
+					class="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 font-mono text-[11px] text-foreground transition hover:bg-muted"
+					title="Configure logs settings"
+				>
+					<span class="h-1.5 w-1.5 rounded-full {logLevelMeta(settings.min_level).dotClass}"></span>
+					<span>Min: {logLevelMeta(settings.min_level).label}</span>
+					<span class="text-muted-foreground">·</span>
+					<span>{settings.max_days === 0 ? 'Disabled' : `${settings.max_days}d`}</span>
+				</button>
 				<span>Showing {filtered.length} persisted requests</span>
 			</div>
 		</div>
@@ -178,7 +354,7 @@
 			<input
 				type="text"
 				bind:value={filter}
-				placeholder="Filter by method, url, auth (users / _superusers / email), userAgent, status..."
+				placeholder="Filter by level (INFO / WARN / ERROR), method, url, auth, email, ip, status..."
 				class="w-full rounded-full border border-transparent bg-muted/80 py-2 pr-4 pl-10 text-xs outline-none transition focus:border-border focus:bg-accent/70"
 			/>
 		</div>
@@ -204,8 +380,9 @@
 		<table class="w-full border-collapse text-left text-xs">
 			<thead class="sticky top-0 z-10 border-b border-border bg-card/95 text-muted-foreground backdrop-blur-xs">
 				<tr>
-					<th class="px-5 py-3 font-semibold">Status</th>
-					<th class="px-4 py-3 font-semibold">Method</th>
+					<th class="px-5 py-3 font-semibold">Level</th>
+					<th class="px-3 py-3 font-semibold">Status</th>
+					<th class="px-3 py-3 font-semibold">Method</th>
 					<th class="px-4 py-3 font-semibold">URL</th>
 					<th class="px-4 py-3 font-semibold">Auth</th>
 					<th class="px-4 py-3 font-semibold">Exec time</th>
@@ -216,18 +393,29 @@
 			{#key refreshGen}
 				<tbody class="divide-y divide-border font-mono">
 					{#if loading && logs.length === 0}
-						<tr><td colspan="7" class="px-5 py-10 text-center text-muted-foreground">Loading logs...</td></tr>
+						<tr><td colspan="8" class="px-5 py-10 text-center text-muted-foreground">Loading logs...</td></tr>
 					{:else if filtered.length === 0}
-						<tr><td colspan="7" class="px-5 py-10 text-center text-muted-foreground">No logs yet.</td></tr>
+						<tr>
+							<td colspan="8" class="px-5 py-10 text-center text-muted-foreground">
+								{settings.max_days === 0 ? 'Logs persistence is disabled (Max days retention = 0).' : 'No logs yet.'}
+							</td>
+						</tr>
 					{:else}
 						{#each filtered as row, i (row.id ?? `${row.timestamp}-${i}`)}
+							{@const lvl = logLevelMeta(resolveLevel(row))}
 							{@const authName = (row.auth && row.auth !== '_guest' ? row.auth : '') || (row.auth_role === 'superuser' ? '_superusers' : row.auth_role ? 'users' : '')}
 							<tr
 								onclick={() => (selectedLog = row)}
 								class="animate-row-in cursor-pointer bg-card transition-colors hover:bg-muted/60"
 								style="animation-delay: {Math.min(i * 15, 180)}ms;"
 							>
-								<td class="px-5 py-2.5">
+								<td class="px-5 py-2.5 whitespace-nowrap">
+									<span class="inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] font-semibold {lvl.badgeClass}">
+										<span class="h-1.5 w-1.5 rounded-full {lvl.dotClass}"></span>
+										{lvl.short}
+									</span>
+								</td>
+								<td class="px-3 py-2.5 whitespace-nowrap">
 									<span
 										class="rounded px-2 py-0.5 text-xs font-semibold {row.status >= 500
 											? 'bg-destructive/15 text-destructive'
@@ -238,7 +426,7 @@
 										{row.status}
 									</span>
 								</td>
-								<td class="px-4 py-2.5 font-semibold">{row.method}</td>
+								<td class="px-3 py-2.5 font-semibold whitespace-nowrap">{row.method}</td>
 								<td class="max-w-sm truncate px-4 py-2.5 text-foreground" title={row.url || row.path}>{row.url || row.path}</td>
 								<td class="max-w-56 px-4 py-2.5 whitespace-nowrap">
 									{#if authName}
@@ -260,9 +448,9 @@
 										<span class="text-muted-foreground/60">&mdash;</span>
 									{/if}
 								</td>
-								<td class="px-4 py-2.5 text-muted-foreground">{formatExecTime(row)}</td>
-								<td class="px-4 py-2.5 text-muted-foreground">{row.ip}</td>
-								<td class="px-5 py-2.5 text-muted-foreground">
+								<td class="px-4 py-2.5 whitespace-nowrap text-muted-foreground">{formatExecTime(row)}</td>
+								<td class="px-4 py-2.5 whitespace-nowrap text-muted-foreground">{row.ip || '—'}</td>
+								<td class="px-5 py-2.5 whitespace-nowrap text-muted-foreground">
 									{formatTimestamp(row.timestamp, uiPrefs.prefs.dateFormat)}
 								</td>
 							</tr>
@@ -274,6 +462,142 @@
 	</div>
 </main>
 
+<!-- PocketBase-style Logs settings Modal -->
+{#if settingsOpen}
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-[1px]"
+		role="presentation"
+		onclick={(e) => {
+			if (e.target === e.currentTarget) settingsOpen = false;
+		}}
+	>
+		<form
+			onsubmit={saveLogSettings}
+			class="w-full max-w-md overflow-hidden rounded-xl border border-border bg-card shadow-2xl"
+		>
+			<div class="px-6 pt-6 pb-4 text-center">
+				<h2 class="text-lg font-semibold text-foreground">Logs settings</h2>
+			</div>
+
+			<div class="space-y-5 px-6 pb-6">
+				<!-- Max days retention -->
+				<div class="space-y-1.5">
+					<div class="rounded-md border border-border/80 bg-muted/60 px-3.5 py-2.5 focus-within:border-ring focus-within:bg-background">
+						<label for="logs-max-days" class="block text-xs font-semibold text-muted-foreground">
+							Max days retention <span class="text-destructive">*</span>
+						</label>
+						<input
+							id="logs-max-days"
+							type="number"
+							min="0"
+							max="365"
+							required
+							bind:value={draftMaxDays}
+							class="mt-1 w-full bg-transparent text-sm text-foreground outline-none"
+						/>
+					</div>
+					<p class="text-xs text-muted-foreground">
+						Set to <code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground">0</code> to delete all logs and disable logs persistence.
+					</p>
+				</div>
+
+				<!-- Min log level -->
+				<div class="space-y-1.5">
+					<div class="rounded-md border border-border/80 bg-muted/60 px-3.5 py-2.5 focus-within:border-ring focus-within:bg-background">
+						<label for="logs-min-level" class="block text-xs font-semibold text-muted-foreground">
+							Min log level <span class="text-destructive">*</span>
+						</label>
+						<input
+							id="logs-min-level"
+							type="number"
+							min="-8"
+							max="12"
+							required
+							bind:value={draftMinLevel}
+							class="mt-1 w-full bg-transparent text-sm text-foreground outline-none"
+						/>
+					</div>
+					<p class="text-xs text-muted-foreground">Logs with level below the minimum will be ignored.</p>
+					<div class="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+						<span>Default log levels:</span>
+						{#each LEVEL_PRESETS as preset (preset.value)}
+							{@const active = Number.parseInt(draftMinLevel, 10) === preset.value}
+							<button
+								type="button"
+								onclick={() => (draftMinLevel = String(preset.value))}
+								class="cursor-pointer rounded px-1.5 py-0.5 font-mono text-[11px] transition {active
+									? 'bg-foreground text-background font-semibold'
+									: 'bg-muted text-foreground hover:bg-accent'}"
+							>
+								{preset.tag}
+							</button>
+						{/each}
+					</div>
+				</div>
+
+				<!-- Max data size (bytes) -->
+				<div class="space-y-1.5">
+					<div class="rounded-md border border-border/80 bg-muted/60 px-3.5 py-2.5 focus-within:border-ring focus-within:bg-background">
+						<label for="logs-max-bytes" class="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+							<span>Max data size <span class="font-normal">(bytes)</span></span>
+							<span title="Maximum allowed size in bytes for log data fields. Leave empty or 0 for default (~16KB).">
+								<Info class="h-3.5 w-3.5 text-muted-foreground" />
+							</span>
+						</label>
+						<input
+							id="logs-max-bytes"
+							type="number"
+							min="0"
+							max="1048576"
+							placeholder="Default to ~16KB"
+							bind:value={draftMaxBytes}
+							class="mt-1 w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground/70 outline-none"
+						/>
+					</div>
+				</div>
+
+				<!-- Toggles -->
+				<div class="space-y-3 pt-1">
+					<div class="flex items-center">
+						<Switch bind:checked={draftLogIP} label="Enable IP logging" />
+					</div>
+					<div class="flex items-center">
+						<Switch bind:checked={draftLogAuthID} label="Enable Auth Id logging" />
+					</div>
+				</div>
+			</div>
+
+			<div class="flex items-center justify-between border-t border-border bg-card px-6 py-4">
+				<button
+					type="button"
+					onclick={() => (settingsOpen = false)}
+					class="cursor-pointer rounded-md px-3 py-2 text-xs font-semibold text-foreground transition hover:bg-muted"
+				>
+					Close
+				</button>
+				<div class="flex items-center gap-3">
+					<button
+						type="button"
+						onclick={handleClearLogs}
+						disabled={clearingLogs}
+						title="Delete all logs"
+						class="cursor-pointer rounded-md p-2 text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+					>
+						<Trash2 class="h-4 w-4" />
+					</button>
+					<button
+						type="submit"
+						disabled={savingSettings || !hasSettingsChanges}
+						class="cursor-pointer rounded-md bg-foreground px-4 py-2 text-xs font-semibold text-background transition hover:opacity-90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
+					>
+						{savingSettings ? 'Saving...' : 'Save changes'}
+					</button>
+				</div>
+			</div>
+		</form>
+	</div>
+{/if}
+
 <!-- PocketBase-style Log details Slide-over Drawer -->
 <Drawer
 	open={selectedLog !== null}
@@ -281,7 +605,7 @@
 	onClose={() => (selectedLog = null)}
 >
 	{#if selectedLog}
-		{@const lvl = logLevelMeta(selectedLog.status)}
+		{@const lvl = logLevelMeta(resolveLevel(selectedLog))}
 		{@const authCol = (selectedLog.auth && selectedLog.auth !== '_guest' ? selectedLog.auth : '') || (selectedLog.auth_role === 'superuser' ? '_superusers' : selectedLog.auth_role ? 'users' : '')}
 		<div class="flex h-full flex-col bg-card">
 			<div class="flex items-center justify-between border-b border-border px-6 py-4">
@@ -307,7 +631,7 @@
 							<tr>
 								<td class="px-4 py-3 font-medium text-muted-foreground">level</td>
 								<td class="px-4 py-3">
-									<span class="inline-flex items-center gap-1.5 rounded bg-secondary px-2.5 py-0.5 text-xs font-semibold text-foreground">
+									<span class="inline-flex items-center gap-1.5 rounded px-2.5 py-0.5 text-xs font-semibold {lvl.badgeClass}">
 										<span class="h-2 w-2 rounded-full {lvl.dotClass}"></span>
 										{lvl.label}
 									</span>
@@ -364,11 +688,15 @@
 							</tr>
 							<tr>
 								<td class="px-4 py-3 font-medium text-muted-foreground">data.remoteIP</td>
-								<td class="px-4 py-3 font-mono text-foreground">{selectedLog.remote_ip || selectedLog.ip}</td>
+								<td class="px-4 py-3 font-mono {selectedLog.remote_ip || selectedLog.ip ? 'text-foreground' : 'text-muted-foreground/60'}">
+									{selectedLog.remote_ip || selectedLog.ip || 'N/A'}
+								</td>
 							</tr>
 							<tr>
 								<td class="px-4 py-3 font-medium text-muted-foreground">data.userIP</td>
-								<td class="px-4 py-3 font-mono text-foreground">{selectedLog.ip}</td>
+								<td class="px-4 py-3 font-mono {selectedLog.ip ? 'text-foreground' : 'text-muted-foreground/60'}">
+									{selectedLog.ip || 'N/A'}
+								</td>
 							</tr>
 							<tr>
 								<td class="px-4 py-3 font-medium text-muted-foreground">data.userAgent</td>

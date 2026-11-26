@@ -428,36 +428,78 @@ func (h *OpsController) UpdateRateLimits(c echo.Context) error {
 
 // GetLogSettings handles GET /api/settings/logs.
 func (h *OpsController) GetLogSettings(c echo.Context) error {
-	var raw string
-	_ = h.pool.QueryRow(c.Request().Context(), `SELECT value FROM _settings WHERE key = 'logs_max_days'`).Scan(&raw)
-	maxDays := 7
-	if raw != "" {
-		var n int
-		if _, err := fmt.Sscanf(raw, "%d", &n); err == nil && n >= 1 {
-			maxDays = n
-		}
-	}
-	return response.OK(c, map[string]any{"max_days": maxDays})
+	cfg := middlewares.LoadLogSettingsFromDB(c.Request().Context(), h.pool)
+	return response.OK(c, cfg)
 }
 
 // UpdateLogSettings handles PUT /api/settings/logs.
 func (h *OpsController) UpdateLogSettings(c echo.Context) error {
 	var req struct {
-		MaxDays int `json:"max_days"`
+		MaxDays   *int  `json:"max_days"`
+		MinLevel  *int  `json:"min_level"`
+		MaxBytes  *int  `json:"max_bytes"`
+		LogIP     *bool `json:"log_ip"`
+		LogAuthID *bool `json:"log_auth_id"`
 	}
-	if err := c.Bind(&req); err != nil || req.MaxDays < 1 || req.MaxDays > 365 {
-		return response.Error(c, http.StatusBadRequest, "INVALID_INPUT", "max_days must be between 1 and 365")
+	if err := c.Bind(&req); err != nil {
+		return response.Error(c, http.StatusBadRequest, "INVALID_INPUT", "invalid log settings payload")
 	}
+
+	cfg := middlewares.GetLogSettings()
+	if req.MaxDays != nil {
+		if *req.MaxDays < 0 || *req.MaxDays > 365 {
+			return response.Error(c, http.StatusBadRequest, "INVALID_INPUT", "max_days must be between 0 and 365")
+		}
+		cfg.MaxDays = *req.MaxDays
+	}
+	if req.MinLevel != nil {
+		if *req.MinLevel < -8 || *req.MinLevel > 12 {
+			return response.Error(c, http.StatusBadRequest, "INVALID_INPUT", "min_level must be between -8 and 12")
+		}
+		cfg.MinLevel = *req.MinLevel
+	}
+	if req.MaxBytes != nil {
+		if *req.MaxBytes < 0 || *req.MaxBytes > 1048576 {
+			return response.Error(c, http.StatusBadRequest, "INVALID_INPUT", "max_bytes must be between 0 and 1048576")
+		}
+		cfg.MaxBytes = *req.MaxBytes
+	}
+	if req.LogIP != nil {
+		cfg.LogIP = *req.LogIP
+	}
+	if req.LogAuthID != nil {
+		cfg.LogAuthID = *req.LogAuthID
+	}
+
+	middlewares.SetLogSettings(cfg)
+	encoded, _ := json.Marshal(cfg)
 	_, err := h.pool.Exec(c.Request().Context(), `
 		INSERT INTO _settings (key, value, updated_at)
-		VALUES ('logs_max_days', $1, NOW())
+		VALUES ('logs_settings', $1, NOW())
 		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
-		fmt.Sprintf("%d", req.MaxDays),
+		string(encoded),
 	)
 	if err != nil {
 		return response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 	}
-	return response.OK(c, map[string]any{"max_days": req.MaxDays})
+	_, _ = h.pool.Exec(c.Request().Context(), `
+		INSERT INTO _settings (key, value, updated_at)
+		VALUES ('logs_max_days', $1, NOW())
+		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+		fmt.Sprintf("%d", cfg.MaxDays),
+	)
+	if cfg.MaxDays == 0 {
+		_ = middlewares.ClearLogs(c.Request().Context())
+	}
+	return response.OK(c, cfg)
+}
+
+// ClearLogs handles DELETE /api/logs.
+func (h *OpsController) ClearLogs(c echo.Context) error {
+	if err := middlewares.ClearLogs(c.Request().Context()); err != nil {
+		return response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+	}
+	return response.OK(c, map[string]any{"cleared": true})
 }
 
 type dbConnRequest struct {

@@ -35,6 +35,7 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStor
 		middlewares.SetLogPool(pool)
 		services.LoadAppSettingsFromDB(context.Background(), pool)
 		middlewares.LoadRateLimitConfigFromDB(context.Background(), pool)
+		middlewares.LoadLogSettingsFromDB(context.Background(), pool)
 		services.StartCronScheduler(pool)
 		hub := realtime.NewHub()
 		webhookService := services.NewWebhookService(pool)
@@ -157,6 +158,7 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStor
 		api.GET("/logs", func(c echo.Context) error {
 			return c.JSON(200, map[string]any{"items": middlewares.RecentLogs(c.Request().Context())})
 		}, adminOnly)
+		api.DELETE("/logs", opsCtrl.ClearLogs, adminOnly)
 
 		// Collections & Schema Portability.
 		api.GET("/collections", colCtrl.List, adminOnly)
