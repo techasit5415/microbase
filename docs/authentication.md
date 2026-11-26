@@ -123,21 +123,21 @@ Restricts who is allowed to sign in via OAuth2/OIDC. Users who fail any rule are
 - **Comma-separated values in one row = `OR`**: Any listed value (case-insensitive) satisfies that row.
 - **Do not duplicate the same claim key on two rows**: Rules are stored as a JSON map (`{ "claim_path": ["val1", "val2"] }`), so a second row with the same key overwrites the first. Always combine multiple allowed values for the same key into **one comma-separated row**.
 
-#### Example: Restrict to KMITL Computer Science Students & Staff
+#### Example: Restrict to One Department (Students & Staff)
 
-In KMITL Science IAM `/oidc2/userinfo`:
-- Students have `role: "student"` and `profile.departmentId: "lock-05-06"`.
-- Staff/lecturers have `role: "staff"` and `profile.profiles[].department.id: "lock-05-06"`.
+For example, if your IAM `/oidc2/userinfo` returns:
+- Students have `role: "student"` and `profile.departmentId: "dept-cs-01"`.
+- Staff/lecturers have `role: "staff"` and `profile.profiles[].department.id: "dept-cs-01"`.
 
 Configure two rows in **Access Restriction**:
 
 | Claim Path | Allowed Values (comma-separated) |
 |---|---|
 | `role` | `student, staff` |
-| `profile.departmentId \| profile.profiles.department.id` | `lock-05-06` |
+| `profile.departmentId \| profile.profiles.department.id` | `dept-cs-01` |
 
-- CS students (`role = "student"`, `profile.departmentId = "lock-05-06"`) -> **Allowed**
-- CS lecturers/staff (`role = "staff"`, any entry in `profile.profiles[]` with `department.id = "lock-05-06"`) -> **Allowed**
+- CS students (`role = "student"`, `profile.departmentId = "dept-cs-01"`) -> **Allowed**
+- CS lecturers/staff (`role = "staff"`, any entry in `profile.profiles[]` with `department.id = "dept-cs-01"`) -> **Allowed**
 - Other departments or `guest` accounts -> **Blocked** (`OAUTH_FAILED`)
 
 ---

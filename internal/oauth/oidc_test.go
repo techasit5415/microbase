@@ -7,7 +7,7 @@ import (
 
 func TestCheckAllowedClaimsDepartmentLock(t *testing.T) {
 	rawCS := map[string]any{
-		"student_id": "66050160",
+		"student_id": "66050001",
 		"department": map[string]any{
 			"id":   "CS",
 			"name": "Computer Science",
@@ -15,7 +15,7 @@ func TestCheckAllowedClaimsDepartmentLock(t *testing.T) {
 		"status": "active",
 	}
 	rawMath := map[string]any{
-		"student_id": "66050999",
+		"student_id": "66050002",
 		"department": map[string]any{
 			"id":   "MATH",
 			"name": "Mathematics",
@@ -47,22 +47,22 @@ func TestCheckAllowedClaimsDepartmentLock(t *testing.T) {
 
 func TestResolveUserInfoURLAndIAMv2DataEnvelope(t *testing.T) {
 	claims := map[string]any{
-		"sub": "usr_66050160",
+		"sub": "usr_0001",
 	}
-	got := resolveUserInfoURL("https://api.science.kmitl.ac.th/iam/o/v2/users/{user_id}", claims)
-	want := "https://api.science.kmitl.ac.th/iam/o/v2/users/usr_66050160"
+	got := resolveUserInfoURL("https://iam.example.edu/o/v2/users/{user_id}", claims)
+	want := "https://iam.example.edu/o/v2/users/usr_0001"
 	if got != want {
 		t.Fatalf("resolveUserInfoURL got %q want %q", got, want)
 	}
 
 	iamResponse := map[string]any{
 		"data": map[string]any{
-			"id":          "usr_66050160",
-			"email":       "66050160@kmitl.ac.th",
+			"id":          "usr_0001",
+			"email":       "student01@example.edu",
 			"role":        "student",
 			"status":      "active",
-			"firstnameEn": "Techasit",
-			"lastnameEn":  "Vanitpattarakul",
+			"firstnameEn": "Alice",
+			"lastnameEn":  "Example",
 			"student_profile": []any{
 				map[string]any{
 					"department": "Computer Science",
@@ -72,7 +72,7 @@ func TestResolveUserInfoURLAndIAMv2DataEnvelope(t *testing.T) {
 	}
 	mergeUserInfoClaims(claims, iamResponse)
 
-	if v := valueToString(extractJSONPath(claims, "email")); v != "66050160@kmitl.ac.th" {
+	if v := valueToString(extractJSONPath(claims, "email")); v != "student01@example.edu" {
 		t.Fatalf("expected flattened email, got %q", v)
 	}
 	if v := valueToString(extractJSONPath(claims, "data.role")); v != "student" {
@@ -91,25 +91,25 @@ func TestCheckAllowedClaimsArrayAndFallbackPaths(t *testing.T) {
 	studentCS := map[string]any{
 		"role": "student",
 		"profile": map[string]any{
-			"departmentId": "lock-05-06",
-			"firstNameTh":  "เตชสิทธิ์",
+			"departmentId": "dept-cs-01",
+			"firstNameTh":  "สมชาย",
 		},
 	}
 	staffCS := map[string]any{
 		"role": "staff",
 		"profile": map[string]any{
-			"firstname_th": "อาจารย์คอม",
+			"firstname_th": "อาจารย์สมหญิง",
 			"profiles": []any{
 				map[string]any{
 					"is_default_profile": false,
 					"department": map[string]any{
-						"id": "lock-05-01",
+						"id": "dept-math-01",
 					},
 				},
 				map[string]any{
 					"is_default_profile": true,
 					"department": map[string]any{
-						"id": "lock-05-06",
+						"id": "dept-cs-01",
 					},
 				},
 			},
@@ -121,7 +121,7 @@ func TestCheckAllowedClaimsArrayAndFallbackPaths(t *testing.T) {
 			"profiles": []any{
 				map[string]any{
 					"department": map[string]any{
-						"id": "lock-05-02",
+						"id": "dept-phys-01",
 					},
 				},
 			},
@@ -130,7 +130,7 @@ func TestCheckAllowedClaimsArrayAndFallbackPaths(t *testing.T) {
 
 	rules := map[string][]string{
 		"role": {"student", "staff"},
-		"profile.departmentId | profile.profiles.department.id": {"lock-05-06"},
+		"profile.departmentId | profile.profiles.department.id": {"dept-cs-01"},
 	}
 
 	if err := CheckAllowedClaims(rules, studentCS); err != nil {
@@ -144,13 +144,13 @@ func TestCheckAllowedClaimsArrayAndFallbackPaths(t *testing.T) {
 	}
 
 	// Wildcard syntax and fallback field mapping
-	if v := valueToString(extractJSONPath(studentCS, "profile.firstNameTh | profile.firstname_th")); v != "เตชสิทธิ์" {
+	if v := valueToString(extractJSONPath(studentCS, "profile.firstNameTh | profile.firstname_th")); v != "สมชาย" {
 		t.Fatalf("expected student fallback firstname, got %q", v)
 	}
-	if v := valueToString(extractJSONPath(staffCS, "profile.firstNameTh | profile.firstname_th")); v != "อาจารย์คอม" {
+	if v := valueToString(extractJSONPath(staffCS, "profile.firstNameTh | profile.firstname_th")); v != "อาจารย์สมหญิง" {
 		t.Fatalf("expected staff fallback firstname, got %q", v)
 	}
-	if err := CheckAllowedClaims(map[string][]string{"profile.profiles.*.department.id": {"lock-05-06"}}, staffCS); err != nil {
+	if err := CheckAllowedClaims(map[string][]string{"profile.profiles.*.department.id": {"dept-cs-01"}}, staffCS); err != nil {
 		t.Fatalf("expected wildcard array syntax allowed, got %v", err)
 	}
 }
