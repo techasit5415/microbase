@@ -249,7 +249,7 @@
 </script>
 
 <div class="relative flex-1 overflow-auto">
-	<table class="w-full border-collapse text-left text-[13px]">
+	<table class="w-full border-collapse text-left text-sm">
 		<thead class="sticky top-0 z-10 border-b border-border bg-card/95 text-xs text-muted-foreground backdrop-blur-xs">
 			<tr>
 				{#if !readOnly && onBulkDelete}
@@ -459,7 +459,7 @@
 												</span>
 											{/each}
 											{#if rels.length > 3}
-												<span class="rounded-md bg-secondary px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+												<span class="rounded-md bg-secondary px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
 													+{rels.length - 3}
 												</span>
 											{/if}

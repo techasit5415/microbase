@@ -186,7 +186,7 @@
 								</span>
 
 								<!-- PocketBase ID Pill: Eye (hover for JSON) + Copy ID -->
-								<span class="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-secondary px-2.5 py-1 font-mono text-[13px] text-foreground">
+								<span class="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-secondary px-2.5 py-1 font-mono text-sm text-foreground">
 									<span
 										role="presentation"
 										onmouseenter={(e) => showRecordTooltip(e, opt.record)}
@@ -200,7 +200,7 @@
 										type="button"
 										title="Copy ID"
 										onclick={(e) => copyId(e, opt.id)}
-										class="inline-flex cursor-pointer items-center gap-1.5 rounded bg-background/80 px-2 py-0.5 text-[13px] text-foreground transition hover:bg-background"
+										class="inline-flex cursor-pointer items-center gap-1.5 rounded bg-background/80 px-2 py-0.5 text-sm text-foreground transition hover:bg-background"
 									>
 										<Copy class="h-3.5 w-3.5 text-muted-foreground" />
 										<span>{opt.id}</span>
@@ -222,7 +222,7 @@
 						<div class="flex flex-wrap gap-2">
 							{#each draftIds as id (id)}
 								{@const info = optionMap[id]}
-								<span class="inline-flex items-center gap-1.5 rounded-md bg-secondary px-2.5 py-1.5 text-[13px] text-foreground">
+								<span class="inline-flex items-center gap-1.5 rounded-md bg-secondary px-2.5 py-1.5 text-sm text-foreground">
 									<span
 										role="presentation"
 										onmouseenter={(e) => showRecordTooltip(e, info?.record)}
@@ -231,7 +231,7 @@
 									>
 										<Eye class="h-4 w-4" />
 									</span>
-									<span class="rounded bg-background/85 px-2 py-0.5 font-mono text-[13px]">{id}</span>
+									<span class="rounded bg-background/85 px-2 py-0.5 font-mono text-sm">{id}</span>
 									<button
 										type="button"
 										aria-label="Remove {id}"

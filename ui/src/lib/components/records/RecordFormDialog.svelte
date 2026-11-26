@@ -426,7 +426,7 @@
 					<div class="mb-1 font-semibold text-emerald-700 dark:text-emerald-400">
 						Impersonation JWT (copied):
 					</div>
-					<code class="block break-all font-mono text-[11px]">{impersonateToken}</code>
+					<code class="block break-all font-mono text-xs">{impersonateToken}</code>
 				</div>
 			{/if}
 
@@ -658,7 +658,7 @@
 									{field.name}{#if field.required}<span class="text-destructive"> *</span>{/if}
 								</span>
 								{#if field.collection_name}
-									<span class="font-mono text-[11px]">&rarr; {field.collection_name}{maxSel > 1 ? ` (max ${maxSel})` : ''}</span>
+									<span class="font-mono text-xs">&rarr; {field.collection_name}{maxSel > 1 ? ` (max ${maxSel})` : ''}</span>
 								{/if}
 							</div>
 							{#if selectedList.length > 0}
@@ -666,7 +666,7 @@
 									{#each selectedList as sid (sid)}
 										{@const matched = (relationOptions[field.name] ?? []).find((o) => o.id === sid)}
 										<span
-											class="inline-flex items-center gap-1.5 rounded-md bg-secondary px-2.5 py-1 text-[13px] text-foreground"
+											class="inline-flex items-center gap-1.5 rounded-md bg-secondary px-2.5 py-1 text-sm text-foreground"
 										>
 											<span
 												role="presentation"
@@ -676,7 +676,7 @@
 											>
 												<Eye class="h-4 w-4" />
 											</span>
-											<span class="rounded bg-background/85 px-2 py-0.5 font-mono text-[13px]">{sid}</span>
+											<span class="rounded bg-background/85 px-2 py-0.5 font-mono text-sm">{sid}</span>
 											<button
 												type="button"
 												onclick={() => {
@@ -744,7 +744,7 @@
 											type="button"
 											onclick={() =>
 												(values[field.name] = (values[field.name] ?? '') + fmt.wrap[0] + 'text' + fmt.wrap[1])}
-											class="cursor-pointer rounded bg-card px-1.5 py-0.5 font-mono text-[11px] font-semibold hover:bg-accent"
+											class="cursor-pointer rounded bg-card px-1.5 py-0.5 font-mono text-xs font-semibold hover:bg-accent"
 										>
 											{fmt.lbl}
 										</button>
