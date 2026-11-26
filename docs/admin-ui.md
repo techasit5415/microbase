@@ -30,14 +30,15 @@ Visiting `/_/settings` automatically redirects to `/_/settings/application`.
 
 ## Collections & Records (`/_/collections`)
 
-### Resizable Sidebar
+### Resizable & Pinnable Sidebar
 - Drag the vertical divider on the right edge of the Collections sidebar (`180px`–`480px`). Width is saved automatically in `localStorage`.
-- Collections are grouped into **Collections** (user-created tables/views/auth) and **System** (`_superusers`).
+- **Pin Collections (📌)**: Hover any collection and click the **Pin** icon to pin frequently used tables to a dedicated **Pinned** section at the top of the sidebar (persisted in `localStorage`).
+- Collections are grouped into **Pinned**, **Collections** (user-created tables/views/auth), and **System** (`_superusers`, `_authOrigins`, `_oauth_accounts`, `_oauth_providers`, `_webhooks`).
 
 ### Records Table
 - **Copyable ID Pills**: Click any record ID pill to copy it to the clipboard.
 - **Column Sorting**: Click any column header to toggle `ASC` / `DESC` sorting without table flicker.
-- **Relation Pills & Eye Preview (`👁`)**: Expanded single and multi-relations display human-readable `Presentable` labels. Hover the **Eye** icon to inspect the full expanded record JSON in a floating dark tooltip.
+- **Relation Pills & Eye Preview (`👁`)**: Expanded single and multi-relations display human-readable `Presentable` labels. Hover the **Eye** icon to preview the related record JSON (auto-flips above when near the bottom of the screen), or **click** the Eye icon to pin and scroll the preview popover.
 - **Records Picker Modal**: When creating or editing a record with a `relation` field, click the picker to search, filter, and select one or multiple related records.
 - **Pagination Bar**: Jump to first/last/specific pages and change rows per page (`10`, `20`, `30`, `50`, `100`).
 - **Impersonate**: On auth collections (such as `users`), open a record or use the Impersonate action to mint a temporary JWT for debugging user-scoped API Rules.
@@ -82,3 +83,7 @@ All appearance preferences are stored locally in the browser (`localStorage: mic
 - **Corner Radius**: `Sharp`, `Default`, `Rounded`
 - **Date Format**: `Local`, `UTC`, or `Relative`
 - **Default Rows Per Page**: `10`, `20`, `30`, `50`, or `100`
+
+
+### API Preview Drawer
+- Click **API Preview** on any collection to view ready-to-copy snippets for **JS SDK** (`@techasit5415/microbase-sdk`, with automatic `Authorization: Bearer` from `mb.authStore.token`), **JS (fetch)**, **TypeScript**, **curl**, and **Go**, plus full `?query params` documentation (`page`, `perPage`, `sort` including `@random`, `filter`, `search`, `expand`, `fields`, `skipTotal`).

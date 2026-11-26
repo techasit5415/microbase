@@ -116,7 +116,7 @@ Supports both `BIGSERIAL` integer IDs and PocketBase-compatible 15-char `TEXT` I
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| `GET` | `/api/collections/:name/records` | `Rule` | List records (`?page`, `?per_page`, `?sort`, `?filter`, `?expand`, `?fields`) |
+| `GET` | `/api/collections/:name/records` | `Rule` | List records (`?page`, `?perPage`/`?per_page`, `?sort`, `?filter`, `?search`, `?expand`, `?fields`, `?skipTotal`) |
 | `POST` | `/api/collections/:name/records` | `Rule` | Create a record (`application/json` or `multipart/form-data`) |
 | `GET` | `/api/collections/:name/records/:id` | `Rule` | Fetch a single record (`?expand`, `?fields`) |
 | `PATCH` | `/api/collections/:name/records/:id` | `Rule` | Partially update a record |
@@ -125,6 +125,21 @@ Supports both `BIGSERIAL` integer IDs and PocketBase-compatible 15-char `TEXT` I
 | `POST` | `/api/collections/:name/register` | `Public` | Register an account in a custom `auth` collection |
 | `POST` | `/api/collections/:name/auth-with-password` | `Public` | Login to a custom `auth` collection (`identity`/`email`, `password`) |
 | `POST` | `/api/collections/:name/auth-refresh` | `Auth` | Refresh JWT for a custom `auth` collection |
+
+### List Query Parameters (`GET /api/collections/:name/records`)
+
+| Query Param | Type | Description |
+|---|---|---|
+| `page` | `Number` | Page number (offset) of the paginated list (default `1`). |
+| `perPage` / `per_page` | `Number` | Maximum returned records per page (default `20`, max `100`). |
+| `sort` | `String` | Comma-separated sort fields (`-` DESC / `+` ASC), e.g. `?sort=-created,id`. Supports `@random` (`ORDER BY RANDOM()`) and `created`/`updated` aliases (`created_at`/`updated_at`). |
+| `filter` | `String` | PocketBase-compatible filter expression (see [API Rules & Filters](api-rules.md)). |
+| `search` | `String` | Full-text (English FTS) + Thai `ILIKE` search across all text columns. |
+| `expand` | `String` | Auto-expand relation fields into `record.expand`, e.g. `?expand=author,user_type` (enforces target collection `view` rules). |
+| `fields` | `String` | Comma-separated field projection, e.g. `?fields=id,title,created_at`. |
+| `skipTotal` / `skip_total` | `Boolean` | If `1` or `true`, skips the `COUNT(*)` query and returns `total_items: -1` for faster pagination/search. |
+
+> **JS SDK Auto-Auth**: When using `@techasit5415/microbase-sdk`, any token stored in `mb.authStore.token` is attached automatically as `Authorization: Bearer <token>` on every request — you do not need to pass the header manually.
 
 ### Common List Query Parameters
 

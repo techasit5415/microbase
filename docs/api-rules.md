@@ -127,3 +127,34 @@ To **lock** a rule back to Superusers only, omit that key from `api_rules` or se
 - **Hidden Fields**: Fields marked `hidden: true` are automatically stripped from API responses for non-superusers, even when a rule passes.
 - **Realtime SSE (`/api/realtime`)**: Subscriptions require passing the collection's `list` / `view` rule.
 - **Rate Limiting**: API rules run after the per-route Rate Limiter (which can be toggled live under **Settings → Application → Rate limiting**).
+
+
+---
+
+## PocketBase Parity: Any-Of Operators, Relation Traversal & Modifiers
+
+Microbase compiles full PocketBase-style expressions into parameterized PostgreSQL SQL (`EXISTS` / `JSONB`):
+
+### Any-Of Operators (Multi-Relation / JSONB Arrays)
+
+| Operator | Description | Example |
+|---|---|---|
+| `?=` | Any element equals | `owners.id ?= @request.auth.id` |
+| `?!=` | No element equals | `tags ?!= "archived"` |
+| `?~` | Any element contains (case-insensitive) | `tags ?~ "gpu"` |
+| `?!~` | No element contains | `tags ?!~ "draft"` |
+| `?>`, `?>=`, `?<`, `?<=` | Any element comparison | `scores ?>= 80` |
+
+### Special Tokens & Modifiers
+
+| Token / Modifier | Description | Example |
+|---|---|---|
+| `@now` | Current UTC timestamp (`NOW()` in PostgreSQL) | `(start_at = "" \|\| start_at <= @now) && (end_at = "" \|\| end_at > @now)` |
+| `@request.auth.collectionName` | Auth collection name (`"users"`, `"_superusers"`, or `""`) | `@request.auth.collectionName = "_superusers"` |
+| `@request.auth.<field>` | Direct field on the authenticated `users` record | `@request.auth.user_type ?= "000000000000009"` |
+| `@request.auth.<rel>.<field>` | Relation traversal from the authenticated `users` record | `@request.auth.user_type.type ?= "admin"` |
+| `<rel>.<field>` / `<rel1>.<rel2>.<field>` | 1- or 2-level relation traversal from the current record | `instance.owners.id ?= @request.auth.id` |
+| `@request.body.<field>:isset` | `true` if `<field>` is present in the request JSON body | `@request.body.user_type:isset = false` |
+| `@request.body.<field>:changed` | `true` if `<field>` is present and differs from the stored value | `@request.body.status:changed = false` |
+
+> **Empty date strings**: Comparing a `date` or `autodate` column against `""` (`start_at = ""` / `end_at != ""`) is automatically compiled to `IS NULL` / `IS NOT NULL` checks so migrated PocketBase rules never fail on PostgreSQL `TIMESTAMPTZ` columns.
