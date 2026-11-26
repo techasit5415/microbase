@@ -68,5 +68,6 @@ npm install @techasit5415/microbase-sdk
 | **[Authentication & OAuth2/OIDC](docs/authentication.md)** | Register/Login, JWT, OTP, Password Reset, Impersonation, Google/Discord/OIDC Claim Mapping |
 | **[Storage, Redis, Backups & Operations](docs/storage-and-operations.md)** | S3/R2/MinIO storage, Redis cache, SMTP mail, Webhooks, Crons, Rate Limits, `pg_dump` Backups |
 | **[REST API Reference](docs/api-reference.md)** | Complete endpoint table for Auth, Collections, Records, Realtime, Files, Logs, Settings, Backups, Crons & SQL |
+| **[CLI, Migrations & JS Hooks](docs/cli-hooks-migrations.md)** | CLI Flags (`--no-ui`, `update`, `superuser`), `mb_migrations`, `mb_hooks` (Goja), Thumbnails, File Tokens |
 | **[Admin Dashboard Guide (`/_/`)](docs/admin-ui.md)** | Bookmarkable routes (`/_/settings/:section`), UI Appearance customizer, ERD Canvas, Logs Drawer & Settings modal |
 | **[Load Testing (Grafana k6)](loadtest/k6/README.md)** | Smoke, Load (50 VUs), and Stress (150 VUs) benchmark scripts |
