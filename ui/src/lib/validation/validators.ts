@@ -1,6 +1,6 @@
 import type { FieldDef, IndexDef } from '#lib/api/types.ts';
 
-const IDENT_RE = /^[a-z][a-z0-9_]{0,62}$/;
+const IDENT_RE = /^[a-zA-Z_][a-zA-Z0-9_]{0,62}$/;
 const RESERVED_COLLECTIONS = new Set([
 	'users',
 	'superusers',
@@ -27,7 +27,7 @@ export function validateCollectionForm(
 	if (!isEdit) {
 		if (!cleanName) return 'Collection name is required.';
 		if (!IDENT_RE.test(cleanName)) {
-			return `Collection name "${cleanName}" must start with a lowercase letter (a-z) and contain only a-z, 0-9, or _.`;
+			return `Collection name "${cleanName}" must start with a letter or _ and contain only a-z, A-Z, 0-9, or _.`;
 		}
 		if (RESERVED_COLLECTIONS.has(cleanName)) {
 			return `Collection name "${cleanName}" is reserved by Microbase.`;
@@ -42,7 +42,7 @@ export function validateCollectionForm(
 			return `Field #${i + 1} (${f.type}) must have a column name.`;
 		}
 		if (!IDENT_RE.test(fn)) {
-			return `Field "${fn}" must start with a lowercase letter and contain only a-z, 0-9, or _.`;
+			return `Field "${fn}" must start with a letter or _ and contain only a-z, A-Z, 0-9, or _.`;
 		}
 		if (RESERVED_COLUMNS.has(fn)) {
 			return `Field "${fn}" is reserved (id, created_at, updated_at are managed automatically).`;
@@ -83,12 +83,12 @@ export function validateCollectionForm(
 		}
 	}
 
-	const validIndexCols = new Set<string>(['id', 'created_at', 'updated_at', ...seenFields]);
+	const validIndexCols = new Set<string>(['id', 'created_at', 'updated_at', 'email', 'role', 'verified', 'email_visibility', 'token_key', ...seenFields]);
 	const seenIndexes = new Set<string>();
 	for (const idx of indexes) {
 		const iname = idx.name.trim();
 		if (!iname || !IDENT_RE.test(iname)) {
-			return `Index name "${iname}" is invalid (must start with a-z and use a-z, 0-9, _).`;
+			return `Index name "${iname}" is invalid (must start with a-z, A-Z, or _ and use a-z, A-Z, 0-9, _).`;
 		}
 		if (seenIndexes.has(iname)) {
 			return `Duplicate index name "${iname}".`;
@@ -172,10 +172,12 @@ export function buildAndValidateRecordPayload(
 				return { error: `Field "${field.name}" must be one of: ${field.values.join(', ')}.` };
 			}
 			payload[field.name] = raw;
-		} else if (field.type === 'integer' || (field.type === 'relation' && (field.max_select ?? 1) <= 1)) {
+		} else if (field.type === 'relation' && (field.max_select ?? 1) <= 1) {
+			payload[field.name] = /^\d+$/.test(raw) ? Number(raw) : raw;
+		} else if (field.type === 'integer') {
 			const n = Number(raw);
 			if (!Number.isInteger(n)) {
-				return { error: `Field "${field.name}" must be a valid integer ID.` };
+				return { error: `Field "${field.name}" must be a valid integer.` };
 			}
 			if (field.min !== undefined && n < field.min) {
 				return { error: `Field "${field.name}" must be >= ${field.min}.` };
