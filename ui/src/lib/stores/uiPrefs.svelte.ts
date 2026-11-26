@@ -2,7 +2,9 @@ export type TableDensity = 'compact' | 'normal' | 'comfortable';
 export type BorderRadiusPreset = 'sharp' | 'default' | 'rounded';
 
 export interface UiPrefs {
-	fontSize: number; // px, 14..20 (default 17)
+	fontSize: number; // Base root UI size (14..20px, default 17)
+	sidebarFontSize: number; // Collections & Settings sidebar items (12..19px, default 14)
+	tableFontSize: number; // Records table cells & headers (12..20px, default 14)
 	density: TableDensity;
 	radius: BorderRadiusPreset;
 }
@@ -11,6 +13,8 @@ const STORAGE_KEY = 'microbase_ui_prefs';
 
 export const DEFAULT_UI_PREFS: UiPrefs = {
 	fontSize: 17,
+	sidebarFontSize: 14,
+	tableFontSize: 14,
 	density: 'normal',
 	radius: 'default'
 };
@@ -21,14 +25,21 @@ const RADIUS_VALUES: Record<BorderRadiusPreset, string> = {
 	rounded: '10px'
 };
 
+function clamp(val: unknown, min: number, max: number, fallback: number): number {
+	const n = Number(val);
+	if (Number.isNaN(n)) return fallback;
+	return Math.max(min, Math.min(max, n));
+}
+
 class UiPrefsStore {
 	prefs = $state<UiPrefs>({ ...DEFAULT_UI_PREFS });
 
 	apply(next: UiPrefs = this.prefs) {
 		if (typeof document === 'undefined') return;
 		const root = document.documentElement;
-		const clamped = Math.max(14, Math.min(20, Number(next.fontSize) || DEFAULT_UI_PREFS.fontSize));
-		root.style.fontSize = `${clamped}px`;
+		root.style.fontSize = `${clamp(next.fontSize, 14, 20, DEFAULT_UI_PREFS.fontSize)}px`;
+		root.style.setProperty('--ui-sidebar-size', `${clamp(next.sidebarFontSize, 12, 19, DEFAULT_UI_PREFS.sidebarFontSize)}px`);
+		root.style.setProperty('--ui-table-size', `${clamp(next.tableFontSize, 12, 20, DEFAULT_UI_PREFS.tableFontSize)}px`);
 		root.style.setProperty('--radius', RADIUS_VALUES[next.radius] ?? RADIUS_VALUES.default);
 		root.dataset.density = next.density;
 	}
@@ -40,10 +51,9 @@ class UiPrefsStore {
 			if (raw) {
 				const parsed = JSON.parse(raw) as Partial<UiPrefs>;
 				this.prefs = {
-					fontSize:
-						typeof parsed.fontSize === 'number' && parsed.fontSize >= 14 && parsed.fontSize <= 20
-							? parsed.fontSize
-							: DEFAULT_UI_PREFS.fontSize,
+					fontSize: clamp(parsed.fontSize, 14, 20, DEFAULT_UI_PREFS.fontSize),
+					sidebarFontSize: clamp(parsed.sidebarFontSize, 12, 19, DEFAULT_UI_PREFS.sidebarFontSize),
+					tableFontSize: clamp(parsed.tableFontSize, 12, 20, DEFAULT_UI_PREFS.tableFontSize),
 					density:
 						parsed.density === 'compact' || parsed.density === 'normal' || parsed.density === 'comfortable'
 							? parsed.density

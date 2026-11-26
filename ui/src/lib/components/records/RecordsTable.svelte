@@ -249,8 +249,8 @@
 </script>
 
 <div class="relative flex-1 overflow-auto">
-	<table class="w-full border-collapse text-left text-sm">
-		<thead class="sticky top-0 z-10 border-b border-border bg-card/95 text-xs text-muted-foreground backdrop-blur-xs">
+	<table class="w-full border-collapse text-left text-[length:var(--ui-table-size)]">
+		<thead class="sticky top-0 z-10 border-b border-border bg-card/95 text-[length:calc(var(--ui-table-size)*0.92)] text-muted-foreground backdrop-blur-xs">
 			<tr>
 				{#if !readOnly && onBulkDelete}
 					<th class="w-11 px-4 py-3">

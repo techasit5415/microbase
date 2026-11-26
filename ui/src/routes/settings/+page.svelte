@@ -286,7 +286,7 @@
 	<!-- PocketBase-style Settings Left Sub-Sidebar -->
 	<aside class="flex w-60 shrink-0 flex-col overflow-y-auto border-r border-border bg-card px-3 py-5">
 		<!-- System group -->
-		<div class="mb-2 px-3 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">System</div>
+		<div class="mb-2 px-3 text-xs font-semibold tracking-wider text-muted-foreground uppercase">System</div>
 		<nav class="space-y-0.5">
 			{#each [
 				{ id: 'application', label: 'Application', icon: Home },
@@ -300,7 +300,7 @@
 				<button
 					type="button"
 					onclick={() => (activeSection = item.id as SectionKey)}
-					class="flex w-full cursor-pointer items-center gap-2.5 rounded-md px-3 py-2 text-left text-[13px] transition {activeSection === item.id
+					class="flex w-full cursor-pointer items-center gap-2.5 rounded-md px-3 py-2 text-left text-[length:var(--ui-sidebar-size)] transition {activeSection === item.id
 						? 'bg-accent font-medium text-foreground'
 						: 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'}"
 				>
@@ -311,12 +311,12 @@
 		</nav>
 
 		<!-- Sync group -->
-		<div class="mt-6 mb-2 px-3 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">Sync</div>
+		<div class="mt-6 mb-2 px-3 text-xs font-semibold tracking-wider text-muted-foreground uppercase">Sync</div>
 		<nav class="space-y-0.5">
 			<button
 				type="button"
 				onclick={() => (activeSection = 'export')}
-				class="flex w-full cursor-pointer items-center gap-2.5 rounded-md px-3 py-2 text-left text-[13px] transition {activeSection === 'export'
+				class="flex w-full cursor-pointer items-center gap-2.5 rounded-md px-3 py-2 text-left text-[length:var(--ui-sidebar-size)] transition {activeSection === 'export'
 					? 'bg-accent font-medium text-foreground'
 					: 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'}"
 			>
@@ -326,7 +326,7 @@
 			<button
 				type="button"
 				onclick={() => (activeSection = 'import')}
-				class="flex w-full cursor-pointer items-center gap-2.5 rounded-md px-3 py-2 text-left text-[13px] transition {activeSection === 'import'
+				class="flex w-full cursor-pointer items-center gap-2.5 rounded-md px-3 py-2 text-left text-[length:var(--ui-sidebar-size)] transition {activeSection === 'import'
 					? 'bg-accent font-medium text-foreground'
 					: 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'}"
 			>
@@ -336,11 +336,11 @@
 		</nav>
 
 		<!-- Debug group -->
-		<div class="mt-6 mb-2 px-3 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">Debug</div>
+		<div class="mt-6 mb-2 px-3 text-xs font-semibold tracking-wider text-muted-foreground uppercase">Debug</div>
 		<nav class="space-y-0.5">
 			<a
 				href="/_/sql"
-				class="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-[13px] text-muted-foreground transition hover:bg-accent/60 hover:text-foreground"
+				class="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-[length:var(--ui-sidebar-size)] text-muted-foreground transition hover:bg-accent/60 hover:text-foreground"
 			>
 				<Terminal class="h-4 w-4 shrink-0" />
 				<span>SQL console</span>

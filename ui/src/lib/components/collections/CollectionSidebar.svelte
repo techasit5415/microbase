@@ -119,7 +119,7 @@
 						<button
 							type="button"
 							onclick={() => onSelect(sys.name)}
-							class="flex w-full shrink-0 cursor-pointer items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm transition {activeName ===
+							class="flex w-full shrink-0 cursor-pointer items-center gap-2.5 rounded-md px-3 py-2 text-left text-[length:var(--ui-sidebar-size)] transition {activeName ===
 							sys.name
 								? 'bg-accent font-medium text-foreground'
 								: 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'}"

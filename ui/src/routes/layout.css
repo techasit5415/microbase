@@ -41,6 +41,8 @@
 	--ring: #687278;
 	--radius: 5px;
 	--row-py: 0.625rem;
+	--ui-sidebar-size: 14px;
+	--ui-table-size: 14px;
 	font-size: 17px;
 
 	--sidebar: var(--pb-surface);
@@ -145,7 +147,7 @@
 
 @layer base {
 	html {
-		font-size: 16.5px;
+		font-size: 1rem;
 		font-family: var(--font-sans);
 		-webkit-font-smoothing: antialiased;
 	}

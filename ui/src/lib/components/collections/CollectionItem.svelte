@@ -15,7 +15,7 @@
 </script>
 
 <div
-	class="group relative flex h-9 shrink-0 items-center rounded-md text-sm transition {active
+	class="group relative flex h-9 shrink-0 items-center rounded-md text-[length:var(--ui-sidebar-size)] transition {active
 		? 'bg-accent font-medium text-foreground'
 		: 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'}"
 >

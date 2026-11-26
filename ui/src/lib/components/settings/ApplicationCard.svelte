@@ -248,7 +248,7 @@
 				</span>
 				<span class="flex items-center gap-2.5">
 					<span class="rounded bg-muted px-2 py-0.5 font-mono text-xs font-medium text-foreground">
-						{uiPrefs.prefs.fontSize}px &middot; {uiPrefs.prefs.density}
+						UI {uiPrefs.prefs.fontSize}px &middot; Table {uiPrefs.prefs.tableFontSize}px &middot; Sidebar {uiPrefs.prefs.sidebarFontSize}px
 					</span>
 					<ChevronDown class="h-4 w-4 text-muted-foreground transition-transform {openAccordion === 'appearance' ? 'rotate-180' : ''}" />
 				</span>
@@ -290,10 +290,57 @@
 							oninput={(e) => uiPrefs.update({ fontSize: Number((e.currentTarget as HTMLInputElement).value) })}
 							class="w-full cursor-pointer accent-primary"
 						/>
-						<div class="flex justify-between font-mono text-[11px] text-muted-foreground">
+						<div class="flex justify-between font-mono text-xs text-muted-foreground">
 							<span>14px</span>
 							<span>17px</span>
 							<span>20px</span>
+						</div>
+					</div>
+
+					<!-- Independent Sidebar & Table Data Font Sizes -->
+					<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+						<div class="space-y-1.5 rounded-md border border-border bg-card p-3">
+							<div class="flex items-center justify-between">
+								<label for="ui-sidebar-size" class="text-xs font-medium text-foreground">Sidebar font size</label>
+								<span class="font-mono text-xs font-semibold text-primary">{uiPrefs.prefs.sidebarFontSize}px</span>
+							</div>
+							<input
+								id="ui-sidebar-size"
+								type="range"
+								min="12"
+								max="19"
+								step="0.5"
+								value={uiPrefs.prefs.sidebarFontSize}
+								oninput={(e) => uiPrefs.update({ sidebarFontSize: Number((e.currentTarget as HTMLInputElement).value) })}
+								class="w-full cursor-pointer accent-primary"
+							/>
+							<div class="flex justify-between font-mono text-[11px] text-muted-foreground">
+								<span>12px</span>
+								<span>14px</span>
+								<span>19px</span>
+							</div>
+						</div>
+
+						<div class="space-y-1.5 rounded-md border border-border bg-card p-3">
+							<div class="flex items-center justify-between">
+								<label for="ui-table-size" class="text-xs font-medium text-foreground">Table data font size</label>
+								<span class="font-mono text-xs font-semibold text-primary">{uiPrefs.prefs.tableFontSize}px</span>
+							</div>
+							<input
+								id="ui-table-size"
+								type="range"
+								min="12"
+								max="20"
+								step="0.5"
+								value={uiPrefs.prefs.tableFontSize}
+								oninput={(e) => uiPrefs.update({ tableFontSize: Number((e.currentTarget as HTMLInputElement).value) })}
+								class="w-full cursor-pointer accent-primary"
+							/>
+							<div class="flex justify-between font-mono text-[11px] text-muted-foreground">
+								<span>12px</span>
+								<span>14px</span>
+								<span>20px</span>
+							</div>
 						</div>
 					</div>
 
