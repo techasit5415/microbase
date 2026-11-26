@@ -8,7 +8,7 @@
 	import Switch from '#lib/components/ui/Switch.svelte';
 	import { appSettings, type AppSettingsData } from '#lib/stores/appSettings.svelte.ts';
 	import { toast } from '#lib/stores/toast.svelte.ts';
-	import { uiPrefs, type BorderRadiusPreset, type TableDensity } from '#lib/stores/uiPrefs.svelte.ts';
+	import { formatTimestamp, uiPrefs, type BorderRadiusPreset, type DateFormatMode, type FontFamilyPreset, type TableDensity, type ThemeMode } from '#lib/stores/uiPrefs.svelte.ts';
 
 	let form = $state<AppSettingsData>(JSON.parse(JSON.stringify(appSettings.data)));
 	let proxyHeadersText = $state((appSettings.data.trusted_proxy.headers ?? []).join(', '));
@@ -381,6 +381,88 @@
 						</div>
 					</div>
 
+					<!-- Font Family & Theme Mode -->
+					<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+						<div class="space-y-1.5">
+							<span class="block text-xs font-medium text-foreground">Font family</span>
+							<div class="grid grid-cols-3 gap-1 rounded-md border border-border bg-card p-1">
+								{#each [
+									{ id: 'ibm-plex-thai' as FontFamilyPreset, label: 'Plex Thai' },
+									{ id: 'inter' as FontFamilyPreset, label: 'Inter' },
+									{ id: 'system' as FontFamilyPreset, label: 'System' }
+								] as f (f.id)}
+									<button
+										type="button"
+										onclick={() => uiPrefs.update({ fontFamily: f.id })}
+										class="cursor-pointer rounded px-2 py-1.5 text-xs font-medium transition {uiPrefs.prefs.fontFamily === f.id
+											? 'bg-primary text-primary-foreground'
+											: 'text-muted-foreground hover:bg-muted hover:text-foreground'}"
+									>
+										{f.label}
+									</button>
+								{/each}
+							</div>
+						</div>
+
+						<div class="space-y-1.5">
+							<span class="block text-xs font-medium text-foreground">Theme mode</span>
+							<div class="grid grid-cols-3 gap-1 rounded-md border border-border bg-card p-1">
+								{#each (['light', 'dark', 'system'] as ThemeMode[]) as tm (tm)}
+									<button
+										type="button"
+										onclick={() => uiPrefs.update({ theme: tm })}
+										class="cursor-pointer rounded px-2 py-1.5 text-xs font-medium capitalize transition {uiPrefs.prefs.theme === tm
+											? 'bg-primary text-primary-foreground'
+											: 'text-muted-foreground hover:bg-muted hover:text-foreground'}"
+									>
+										{tm}
+									</button>
+								{/each}
+							</div>
+						</div>
+					</div>
+
+					<!-- Date Format & Default Rows Per Page -->
+					<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+						<div class="space-y-1.5">
+							<span class="block text-xs font-medium text-foreground">Date &amp; time format</span>
+							<div class="grid grid-cols-3 gap-1 rounded-md border border-border bg-card p-1">
+								{#each [
+									{ id: 'local' as DateFormatMode, label: 'Local' },
+									{ id: 'utc' as DateFormatMode, label: 'UTC' },
+									{ id: 'relative' as DateFormatMode, label: 'Relative' }
+								] as df (df.id)}
+									<button
+										type="button"
+										onclick={() => uiPrefs.update({ dateFormat: df.id })}
+										class="cursor-pointer rounded px-2 py-1.5 text-xs font-medium transition {uiPrefs.prefs.dateFormat === df.id
+											? 'bg-primary text-primary-foreground'
+											: 'text-muted-foreground hover:bg-muted hover:text-foreground'}"
+									>
+										{df.label}
+									</button>
+								{/each}
+							</div>
+						</div>
+
+						<div class="space-y-1.5">
+							<span class="block text-xs font-medium text-foreground">Default rows per page</span>
+							<div class="grid grid-cols-5 gap-1 rounded-md border border-border bg-card p-1">
+								{#each [10, 20, 30, 50, 100] as n (n)}
+									<button
+										type="button"
+										onclick={() => uiPrefs.update({ defaultPerPage: n })}
+										class="cursor-pointer rounded px-1.5 py-1.5 font-mono text-xs font-medium transition {uiPrefs.prefs.defaultPerPage === n
+											? 'bg-primary text-primary-foreground'
+											: 'text-muted-foreground hover:bg-muted hover:text-foreground'}"
+									>
+										{n}
+									</button>
+								{/each}
+							</div>
+						</div>
+					</div>
+
 					<!-- Live Preview (Sidebar + Table Data + Density + Radius) -->
 					<div class="space-y-1.5">
 						<span class="block text-xs font-medium text-muted-foreground">Live preview</span>
@@ -409,6 +491,7 @@
 											<th class="px-3 py-1.5 font-semibold">email</th>
 											<th class="px-3 py-1.5 font-semibold">verified</th>
 											<th class="px-3 py-1.5 font-semibold">name</th>
+											<th class="px-3 py-1.5 font-semibold">created_at</th>
 										</tr>
 									</thead>
 									<tbody class="divide-y divide-border">
@@ -421,6 +504,7 @@
 												<span class="rounded-[var(--radius)] bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">True</span>
 											</td>
 											<td class="px-3 py-[var(--row-py)] whitespace-nowrap">นาย เตชสิทธิ์</td>
+											<td class="px-3 py-[var(--row-py)] font-mono text-xs whitespace-nowrap">{formatTimestamp(new Date(Date.now() - 300000).toISOString(), uiPrefs.prefs.dateFormat)}</td>
 										</tr>
 										<tr>
 											<td class="px-3 py-[var(--row-py)] whitespace-nowrap">
@@ -431,6 +515,7 @@
 												<span class="rounded-[var(--radius)] bg-secondary px-2 py-0.5 text-xs font-medium text-muted-foreground">False</span>
 											</td>
 											<td class="px-3 py-[var(--row-py)] whitespace-nowrap">สมชาย ใจดี</td>
+											<td class="px-3 py-[var(--row-py)] font-mono text-xs whitespace-nowrap">{formatTimestamp(new Date(Date.now() - 86400000 * 2).toISOString(), uiPrefs.prefs.dateFormat)}</td>
 										</tr>
 									</tbody>
 								</table>

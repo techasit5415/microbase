@@ -23,6 +23,7 @@
 	} from '@lucide/svelte';
 	import type { Collection, FieldDef, RecordRow } from '#lib/api/types.ts';
 	import { toast } from '#lib/stores/toast.svelte.ts';
+	import { formatTimestamp, uiPrefs } from '#lib/stores/uiPrefs.svelte.ts';
 
 	interface Props {
 		collection: Collection;
@@ -235,10 +236,8 @@
 		if (val === null || val === undefined || val === '') return 'N/A';
 		if (typeof val === 'object') return JSON.stringify(val);
 		const str = String(val);
-		const iso = str.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})(?:\.(\d+))?(?:Z|[+-]\d{2}:\d{2})$/);
-		if (iso) {
-			const ms = iso[3] ? `.${iso[3].slice(0, 3).padEnd(3, '0')}` : '';
-			return `${iso[1]} ${iso[2]}${ms}`;
+		if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}/.test(str)) {
+			return formatTimestamp(str, uiPrefs.prefs.dateFormat);
 		}
 		return str;
 	}

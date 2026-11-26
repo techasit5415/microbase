@@ -10,6 +10,7 @@
 	import type { Collection, RecordRow } from '#lib/api/types.ts';
 	import { confirmAction } from '#lib/stores/confirm.svelte.ts';
 	import { toast } from '#lib/stores/toast.svelte.ts';
+	import { uiPrefs } from '#lib/stores/uiPrefs.svelte.ts';
 	import CollectionDrawer from '#lib/components/collections/CollectionDrawer.svelte';
 	import CollectionSidebar from '#lib/components/collections/CollectionSidebar.svelte';
 	import PaginationBar from '#lib/components/records/PaginationBar.svelte';
@@ -57,7 +58,7 @@
 
 	let items = $state<RecordRow[]>([]);
 	let currentPage = $state(1);
-	let perPage = $state(20);
+	let perPage = $state(uiPrefs.prefs.defaultPerPage);
 	let totalItems = $state(0);
 	let search = $state('');
 	let sort = $state('');
@@ -188,6 +189,7 @@
 	}
 
 	onMount(() => {
+		perPage = uiPrefs.prefs.defaultPerPage;
 		refreshCollections();
 	});
 </script>
