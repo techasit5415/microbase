@@ -70,7 +70,7 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStor
 		toolsCtrl := controllers.NewAdminToolsController(pool)
 		opsCtrl := controllers.NewOpsController(pool, "./backups")
 
-		api := e.Group("/api", middlewares.RateLimit(cacheStore, 100, time.Minute))
+		api := e.Group("/api", middlewares.RateLimit(cacheStore, 100, time.Minute), middlewares.OptionalAuth(authService))
 
 		adminOnly := middlewares.RequireSuperuser(authService)
 
