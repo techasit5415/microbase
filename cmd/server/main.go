@@ -157,11 +157,6 @@ func runSuperuserCLI(args []string) {
 	fmt.Printf("Superuser %q upserted successfully.\n", email)
 }
 
-func runMigrateCLI(args []string) {
-	fmt.Fprintln(os.Stderr, "migrate subcommand is being initialized in Phase 2 — stay tuned.")
-	os.Exit(1)
-}
-
 func runServe(args []string) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	showVersion := fs.Bool("version", false, "Print version and exit")
