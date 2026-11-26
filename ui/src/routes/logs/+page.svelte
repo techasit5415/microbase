@@ -37,7 +37,7 @@
 
 	let filtered = $derived(
 		logs.filter((l) =>
-			`${l.method} ${l.url || l.path} ${l.status} ${l.code ?? ''} ${l.message ?? ''} ${l.auth || '_guest'} ${l.auth_role ?? ''} ${l.auth_email ?? ''} ${l.auth_id ?? ''} ${l.user_agent ?? ''}`
+			`${l.method} ${l.url || l.path} ${l.status} ${l.code ?? ''} ${l.message ?? ''} ${l.auth && l.auth !== '_guest' ? l.auth : ''} ${l.auth_role ?? ''} ${l.auth_email ?? ''} ${l.auth_id ?? ''} ${l.user_agent ?? ''}`
 				.toLowerCase()
 				.includes(filter.trim().toLowerCase())
 		)
@@ -83,7 +83,7 @@
 			data: {
 				execTime: row.exec_time_ms ?? row.latency_ms,
 				type: 'request',
-				auth: row.auth || '_guest',
+				auth: row.auth && row.auth !== '_guest' ? row.auth : '',
 				authEmail: row.auth_email || undefined,
 				authId: row.auth_id || undefined,
 				status: row.status,
@@ -178,7 +178,7 @@
 			<input
 				type="text"
 				bind:value={filter}
-				placeholder="Filter by method, url, auth (users / _superusers / email / _guest), userAgent, status..."
+				placeholder="Filter by method, url, auth (users / _superusers / email), userAgent, status..."
 				class="w-full rounded-full border border-transparent bg-muted/80 py-2 pr-4 pl-10 text-xs outline-none transition focus:border-border focus:bg-accent/70"
 			/>
 		</div>
@@ -221,7 +221,7 @@
 						<tr><td colspan="7" class="px-5 py-10 text-center text-muted-foreground">No logs yet.</td></tr>
 					{:else}
 						{#each filtered as row, i (row.id ?? `${row.timestamp}-${i}`)}
-							{@const authName = row.auth || (row.auth_role === 'superuser' ? '_superusers' : row.auth_role ? 'users' : '_guest')}
+							{@const authName = (row.auth && row.auth !== '_guest' ? row.auth : '') || (row.auth_role === 'superuser' ? '_superusers' : row.auth_role ? 'users' : '')}
 							<tr
 								onclick={() => (selectedLog = row)}
 								class="animate-row-in cursor-pointer bg-card transition-colors hover:bg-muted/60"
@@ -241,7 +241,7 @@
 								<td class="px-4 py-2.5 font-semibold">{row.method}</td>
 								<td class="max-w-sm truncate px-4 py-2.5 text-foreground" title={row.url || row.path}>{row.url || row.path}</td>
 								<td class="max-w-56 px-4 py-2.5 whitespace-nowrap">
-									{#if authName !== '_guest'}
+									{#if authName}
 										<span class="inline-flex max-w-full items-center gap-1.5">
 											<span
 												class="shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold {authName === '_superusers'
@@ -257,7 +257,7 @@
 											{/if}
 										</span>
 									{:else}
-										<span class="text-muted-foreground/60">_guest</span>
+										<span class="text-muted-foreground/60">&mdash;</span>
 									{/if}
 								</td>
 								<td class="px-4 py-2.5 text-muted-foreground">{formatExecTime(row)}</td>
@@ -282,7 +282,7 @@
 >
 	{#if selectedLog}
 		{@const lvl = logLevelMeta(selectedLog.status)}
-		{@const authCol = selectedLog.auth || (selectedLog.auth_role === 'superuser' ? '_superusers' : selectedLog.auth_role ? 'users' : '_guest')}
+		{@const authCol = (selectedLog.auth && selectedLog.auth !== '_guest' ? selectedLog.auth : '') || (selectedLog.auth_role === 'superuser' ? '_superusers' : selectedLog.auth_role ? 'users' : '')}
 		<div class="flex h-full flex-col bg-card">
 			<div class="flex items-center justify-between border-b border-border px-6 py-4">
 				<h2 class="text-base font-semibold text-foreground">Log details</h2>
@@ -330,7 +330,7 @@
 							</tr>
 							<tr>
 								<td class="px-4 py-3 font-medium text-muted-foreground">data.auth</td>
-								<td class="px-4 py-3 font-mono text-foreground">{authCol}</td>
+								<td class="px-4 py-3 font-mono {authCol ? 'text-foreground' : 'text-muted-foreground/60'}">{authCol || 'N/A'}</td>
 							</tr>
 							{#if selectedLog.auth_email}
 								<tr>

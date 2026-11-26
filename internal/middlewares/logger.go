@@ -165,7 +165,7 @@ func RequestLogger() echo.MiddlewareFunc {
 			status := c.Response().Status
 			code, msg := extractCodeAndMessage(status, err)
 
-			authCol := "_guest"
+			authCol := ""
 			var authRole, authEmail, authID string
 			if claims := GetAuthClaims(c); claims != nil {
 				authRole = claims.Role
@@ -218,7 +218,7 @@ func RequestLogger() echo.MiddlewareFunc {
 				"latency", dur.Round(time.Millisecond).String(),
 				"ip", entry.IP,
 			}
-			if authCol != "_guest" {
+			if authCol != "" {
 				attrs = append(attrs, "auth", authCol)
 			}
 			if status >= 400 && entry.Message != "" {
