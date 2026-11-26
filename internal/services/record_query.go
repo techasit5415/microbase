@@ -48,13 +48,11 @@ func buildWhereClause(
 			seen["email"] = true
 		}
 		for _, f := range col.Fields {
-			if seen[f.Name] {
+			if seen[f.Name] || f.Hidden || f.Type == "vector" || f.Type == "password" {
 				continue
 			}
-			if f.Type == "text" || f.Type == "email" || f.Type == "url" || f.Type == "editor" || (f.Type == "select" && f.MaxSelect <= 1) {
-				textCols = append(textCols, fmt.Sprintf(`coalesce("%s", '')`, f.Name))
-				seen[f.Name] = true
-			}
+			textCols = append(textCols, fmt.Sprintf(`coalesce(CAST("%s" AS TEXT), '')`, f.Name))
+			seen[f.Name] = true
 		}
 		if len(textCols) > 0 {
 			concatExpr := fmt.Sprintf("concat_ws(' ', %s)", strings.Join(textCols, ", "))
