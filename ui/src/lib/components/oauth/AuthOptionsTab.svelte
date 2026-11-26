@@ -266,12 +266,12 @@
 								</div>
 							</div>
 
-							{#if editingProvider.name === 'oidc'}
+							{#if editingProvider.name === 'oidc' || editingProvider.name === 'scikmitl'}
 								<div class="space-y-3 rounded-md border border-border bg-muted/25 p-3.5">
 									<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 										<div>
 											<label for="oa-dname" class="mb-1 block text-xs font-medium">Display name</label>
-											<input id="oa-dname" type="text" bind:value={displayName} placeholder="e.g. KMITL IAM" class="w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs outline-none focus:border-ring" />
+											<input id="oa-dname" type="text" bind:value={displayName} placeholder={editingProvider.name === 'scikmitl' ? 'KMITL Science IAM (OIDC)' : 'OpenID Connect (OIDC)'} class="w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs outline-none focus:border-ring" />
 										</div>
 										<div>
 											<label for="oa-scopes" class="mb-1 block text-xs font-medium">Scopes</label>
@@ -280,29 +280,31 @@
 									</div>
 									<div>
 										<label for="oa-issuer" class="mb-1 block text-xs font-medium">OIDC Issuer URL (auto-discovery, optional if manual URLs set)</label>
-										<input id="oa-issuer" type="url" bind:value={issuerUrl} placeholder="https://api.science.kmitl.ac.th/iam" class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring" />
+										<input id="oa-issuer" type="url" bind:value={issuerUrl} placeholder={editingProvider.name === 'scikmitl' ? 'Leave empty (KMITL IAM uses manual URLs)' : 'https://accounts.example.com'} class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring" />
 									</div>
 									<div class="grid grid-cols-1 gap-2.5">
 										<div>
 											<label for="oa-auth" class="mb-1 block text-xs font-medium">Auth URL (manual override)</label>
-											<input id="oa-auth" type="url" bind:value={authUrl} placeholder="https://api.science.kmitl.ac.th/iam/oauth/authorize" class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring" />
+											<input id="oa-auth" type="url" bind:value={authUrl} placeholder={editingProvider.name === 'scikmitl' ? 'https://iam.science.kmitl.ac.th/o/oauth2/auth' : 'https://accounts.example.com/oauth/authorize'} class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring" />
 										</div>
 										<div>
 											<label for="oa-token" class="mb-1 block text-xs font-medium">Token URL (manual override)</label>
-											<input id="oa-token" type="url" bind:value={tokenUrl} placeholder="https://api.science.kmitl.ac.th/iam/oauth/token" class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring" />
+											<input id="oa-token" type="url" bind:value={tokenUrl} placeholder={editingProvider.name === 'scikmitl' ? 'https://api.science.kmitl.ac.th/iam/oidc2/token' : 'https://accounts.example.com/oauth/token'} class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring" />
 										</div>
 										<div>
 											<label for="oa-userinfo" class="mb-1 block text-xs font-medium">UserInfo URL</label>
-											<input id="oa-userinfo" type="text" bind:value={userInfoUrl} placeholder="https://api.science.kmitl.ac.th/iam/oidc2/userinfo" class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring" />
+											<input id="oa-userinfo" type="text" bind:value={userInfoUrl} placeholder={editingProvider.name === 'scikmitl' ? 'https://api.science.kmitl.ac.th/iam/oidc2/userinfo' : 'https://accounts.example.com/userinfo'} class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring" />
 										</div>
-										<div>
-											<label for="oa-profile-url" class="mb-1 block text-xs font-medium">Profile Enrichment API URL <span class="font-normal text-muted-foreground">(optional — supports {'{email}'}, {'{user_id}'}, {'{student_id}'})</span></label>
-											<input id="oa-profile-url" type="text" bind:value={profileApiUrl} placeholder={'https://api.science.kmitl.ac.th/iam/o/v2/users/email/{email}'} class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring" />
-										</div>
-										<div>
-											<label for="oa-profile-key" class="mb-1 block text-xs font-medium">Profile / UserInfo API Key <span class="font-normal text-muted-foreground">(Bearer Token, optional)</span></label>
-											<input id="oa-profile-key" type="password" bind:value={profileApiKey} placeholder={editingProvider.has_api_key ? '•••••••• (saved — leave blank to keep)' : 'Paste static Bearer API key...'} class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring" />
-										</div>
+										{#if editingProvider.name === 'scikmitl'}
+											<div>
+												<label for="oa-profile-url" class="mb-1 block text-xs font-medium">Profile Enrichment API URL <span class="font-normal text-muted-foreground">(supports {'{email}'}, {'{user_id}'}, {'{student_id}'})</span></label>
+												<input id="oa-profile-url" type="text" bind:value={profileApiUrl} placeholder={'https://api.science.kmitl.ac.th/iam/o/v2/users/email/{email}'} class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring" />
+											</div>
+											<div>
+												<label for="oa-profile-key" class="mb-1 block text-xs font-medium">KMITL IAM API Key <span class="font-normal text-muted-foreground">(Bearer Token)</span></label>
+												<input id="oa-profile-key" type="password" bind:value={profileApiKey} placeholder={editingProvider.has_api_key ? '•••••••• (saved — leave blank to keep)' : 'Paste KMITL IAM Bearer API key...'} class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring" />
+											</div>
+										{/if}
 									</div>
 
 									<!-- IAM Claim -> users Column Mapping -->

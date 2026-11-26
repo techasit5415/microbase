@@ -136,6 +136,17 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 			('discord', 'Discord'),
 			('oidc', 'OpenID Connect (OIDC)')
 		ON CONFLICT (name) DO NOTHING;`,
+		`INSERT INTO _oauth_providers (name, display_name, auth_url, token_url, userinfo_url, profile_api_url, scopes)
+		 VALUES (
+			'scikmitl',
+			'KMITL Science IAM (OIDC)',
+			'https://iam.science.kmitl.ac.th/o/oauth2/auth',
+			'https://api.science.kmitl.ac.th/iam/oidc2/token',
+			'https://api.science.kmitl.ac.th/iam/oidc2/userinfo',
+			'https://api.science.kmitl.ac.th/iam/o/v2/users/email/{email}',
+			'openid email profile'
+		 )
+		 ON CONFLICT (name) DO NOTHING;`,
 		`CREATE TABLE IF NOT EXISTS _crons (
 			id          TEXT PRIMARY KEY,
 			expression  TEXT NOT NULL,

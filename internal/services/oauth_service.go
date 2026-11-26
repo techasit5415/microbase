@@ -403,7 +403,7 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, ext *oauth.External
 	_, err = tx.Exec(ctx, `
 		INSERT INTO _oauth_accounts (user_id, provider, provider_user_id)
 		VALUES ($1, $2, $3)
-		ON CONFLICT (provider, provider_user_id) DO NOTHING`,
+		ON CONFLICT (provider, provider_user_id) DO UPDATE SET user_id = EXCLUDED.user_id`,
 		user.ID, ext.Provider, ext.ProviderUserID,
 	)
 	if err != nil {

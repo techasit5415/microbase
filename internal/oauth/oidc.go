@@ -21,6 +21,7 @@ var urlTemplateRe = regexp.MustCompile(`\{([a-zA-Z0-9_.-]+)\}`)
 
 // OIDCProvider supports both standard OIDC discovery and custom OAuth2/IAM endpoints with JSON claim mapping.
 type OIDCProvider struct {
+	providerName  string
 	cfg          *oauth2.Config
 	verifier     *gooidc.IDTokenVerifier
 	userInfoURL   string
@@ -38,12 +39,29 @@ func NewOIDCProvider(ctx context.Context, pc ProviderConfig, redirectURL string)
 
 	var endpoint oauth2.Endpoint
 	var verifier *gooidc.IDTokenVerifier
+	providerName := strings.TrimSpace(pc.Name)
+	if providerName == "" {
+		providerName = "oidc"
+	}
+	authURL := strings.TrimSpace(pc.AuthURL)
+	tokenURL := strings.TrimSpace(pc.TokenURL)
 	userInfoURL := strings.TrimSpace(pc.UserInfoURL)
+	if providerName == "scikmitl" {
+		if authURL == "" {
+			authURL = "https://iam.science.kmitl.ac.th/o/oauth2/auth"
+		}
+		if tokenURL == "" {
+			tokenURL = "https://api.science.kmitl.ac.th/iam/oidc2/token"
+		}
+		if userInfoURL == "" {
+			userInfoURL = "https://api.science.kmitl.ac.th/iam/oidc2/userinfo"
+		}
+	}
 
-	if strings.TrimSpace(pc.AuthURL) != "" && strings.TrimSpace(pc.TokenURL) != "" {
+	if authURL != "" && tokenURL != "" {
 		endpoint = oauth2.Endpoint{
-			AuthURL:  strings.TrimSpace(pc.AuthURL),
-			TokenURL: strings.TrimSpace(pc.TokenURL),
+			AuthURL:  authURL,
+			TokenURL: tokenURL,
 		}
 	} else if strings.TrimSpace(pc.IssuerURL) != "" {
 		provider, err := gooidc.NewProvider(ctx, strings.TrimSpace(pc.IssuerURL))
@@ -65,6 +83,7 @@ func NewOIDCProvider(ctx context.Context, pc ProviderConfig, redirectURL string)
 	}
 
 	return &OIDCProvider{
+		providerName:  providerName,
 		cfg: &oauth2.Config{
 			ClientID:     pc.ClientID,
 			ClientSecret: pc.ClientSecret,
@@ -196,7 +215,7 @@ func (o *OIDCProvider) ExchangeUser(ctx context.Context, code string) (*External
 	}
 
 	return &ExternalUser{
-		Provider:       "oidc",
+		Provider:       o.providerName,
 		ProviderUserID: sub,
 		Email:          email,
 		ExtraFields:    extra,

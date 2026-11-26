@@ -54,7 +54,7 @@ func BuildProvider(ctx context.Context, cfg ProviderConfig, redirectURL string) 
 		return NewGoogleProvider(cfg.ClientID, cfg.ClientSecret, redirectURL), nil
 	case "discord":
 		return NewDiscordProvider(cfg.ClientID, cfg.ClientSecret, redirectURL), nil
-	case "oidc":
+	case "oidc", "scikmitl":
 		return NewOIDCProvider(ctx, cfg, redirectURL)
 	default:
 		return nil, fmt.Errorf("unsupported oauth provider %q", cfg.Name)
