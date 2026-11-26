@@ -146,7 +146,6 @@
 	}
 
 	function openEditCollection() {
-		if (activeCol.type === 'system') return;
 		editingCol = activeCol;
 		showColDrawer = true;
 	}
@@ -264,7 +263,13 @@
 			refreshRecords();
 		}}
 		onSelect={(row) => {
-			if (activeCol.type === 'base' || activeCol.type === 'auth' || activeCol.name === '_superusers') {
+			if (
+				activeCol.type === 'base' ||
+				activeCol.type === 'auth' ||
+				activeCol.name === '_superusers' ||
+				activeCol.name === '_authOrigins' ||
+				activeCol.name === '_oauth_accounts'
+			) {
 				editingRec = row;
 				showCreateRec = true;
 			}

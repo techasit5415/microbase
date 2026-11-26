@@ -104,6 +104,7 @@
 	let showIndexModal = $state(false);
 	let editingIndexPos = $state<number | null>(null);
 
+	let isSystem = $derived(editing?.type === 'system');
 	let isAuth = $derived(colType === 'auth');
 	let isView = $derived(colType === 'view');
 
@@ -124,7 +125,26 @@
 
 	const baseSystemFields = [{ name: 'id', icon: 'text', badges: ['Required'] }];
 
-	let systemFieldsList = $derived(isAuth ? authSystemFields : baseSystemFields);
+	let systemFieldsList = $derived.by(() => {
+		if (editing?.name === '_superusers') {
+			return [
+				{ name: 'id', icon: 'text', badges: ['Required'] },
+				{ name: 'email', icon: 'mail', badges: ['Required', 'Unique'] },
+				{ name: 'password', icon: 'lock', badges: ['Required', 'Hidden'] }
+			];
+		}
+		if (isSystem) {
+			return [
+				...baseSystemFields,
+				...(editing?.fields ?? []).map((f) => ({
+					name: f.name,
+					icon: f.type === 'email' ? 'mail' : f.type === 'boolean' ? 'bool' : 'text',
+					badges: f.required ? ['Required'] : []
+				}))
+			];
+		}
+		return isAuth ? authSystemFields : baseSystemFields;
+	});
 
 	let availableIndexCols = $derived.by(() => {
 		const userCols = fields.map((f) => f.name.trim()).filter((n) => n !== '');
@@ -161,7 +181,9 @@
 				viewQuery = editing.view_query ?? '';
 				idType = editing.id_type === 'text' ? 'text' : 'serial';
 				idAutogen = editing.id_autogenerate_pattern || '[a-z0-9]{15}';
-				fields = (editing.fields ?? [])
+				fields = editing.type === 'system'
+					? []
+					: (editing.fields ?? [])
 					.filter((f) => !(editing.name === 'users' && ['email', 'password', 'tokenKey', 'token_key', 'emailVisibility', 'email_visibility', 'verified'].includes(f.name)))
 					.map((f) => ({
 						...f,
@@ -297,6 +319,7 @@
 
 	async function handleSubmit(e: SubmitEvent) {
 		e.preventDefault();
+		if (isSystem) return;
 		errorMsg = '';
 
 		if (isView) {
@@ -405,7 +428,7 @@
 			{editing ? 'Edit ' : 'Create '}<strong class="font-semibold">{editing ? editing.name : 'collection'}</strong>{editing ? ' collection' : ''}
 		</h2>
 		<div class="flex items-center gap-1">
-			{#if editing && !isView}
+			{#if editing && !isView && !isSystem}
 				<button
 					type="button"
 					onclick={handleDuplicate}
@@ -461,7 +484,7 @@
 					onclick={() => (typeMenuOpen = !typeMenuOpen)}
 					class="inline-flex items-center gap-1.5 rounded-md border border-foreground/70 bg-card px-3 py-1.5 text-xs font-semibold text-foreground transition hover:bg-muted disabled:cursor-default disabled:border-border disabled:bg-transparent disabled:text-muted-foreground"
 				>
-					<span>Type: {typeChoices.find((t) => t.value === colType)?.short}</span>
+					<span>Type: {isSystem ? 'System' : typeChoices.find((t) => t.value === colType)?.short}</span>
 					{#if !editing}
 						<ChevronDown class="h-3.5 w-3.5" />
 					{/if}
@@ -715,8 +738,15 @@
 					</div>
 				</div>
 
+				{#if isSystem}
+					<div class="mt-4 rounded-md border border-border bg-muted/40 px-3.5 py-2.5 text-xs text-muted-foreground">
+						System collection — schema and access rules are managed internally by Microbase (Superusers only).
+					</div>
+				{:else}
 				<NewFieldPicker onPick={addField} />
+				{/if}
 
+				{#if !isSystem}
 				<!-- Unique constraints and indexes -->
 				<div class="mt-6 border-t border-border pt-5">
 					<div class="mb-2.5 text-xs font-semibold text-foreground">
@@ -758,6 +788,7 @@
 						</button>
 					</div>
 				</div>
+				{/if}
 			{:else if activeTab === 'rules'}
 				<div in:fade={{ duration: 140 }} class="space-y-3">
 					<div class="flex items-center justify-between gap-2 text-xs text-muted-foreground">
@@ -812,11 +843,12 @@
 								{:else}
 									<button
 										type="button"
-										title="Unlock rule"
+										disabled={isSystem}
+										title={isSystem ? 'Locked for system collection' : 'Unlock rule'}
 										onclick={() => {
-											apiRules = { ...apiRules, [r.key]: '' };
+											if (!isSystem) apiRules = { ...apiRules, [r.key]: '' };
 										}}
-										class="cursor-pointer rounded-md p-1.5 text-emerald-600 transition hover:bg-emerald-500/10 dark:text-emerald-400"
+										class="rounded-md p-1.5 text-emerald-600 transition hover:bg-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-40 dark:text-emerald-400"
 									>
 										<Lock class="h-4 w-4" />
 									</button>
@@ -865,6 +897,7 @@
 				</span>
 			{/if}
 			</div>
+			{#if !isSystem}
 			<button
 				type="submit"
 				disabled={saving}
@@ -872,6 +905,7 @@
 			>
 				{saving ? 'Saving...' : editing ? 'Save changes' : 'Create'}
 			</button>
+			{/if}
 		</div>
 	</form>
 </Drawer>
