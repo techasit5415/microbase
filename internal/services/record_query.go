@@ -88,6 +88,10 @@ func buildOrderBy(sort string, allowed map[string]models.FieldDef) (string, erro
 		if item == "" {
 			continue
 		}
+		if strings.EqualFold(item, "@random") {
+			clauses = append(clauses, "RANDOM()")
+			continue
+		}
 		dir := "ASC"
 		field := item
 		if strings.HasPrefix(item, "-") {

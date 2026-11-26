@@ -38,7 +38,7 @@
 	let { open, collection, onClose }: Props = $props();
 
 	let activeTab = $state<TabKey>('list');
-	let lang = $state<'js' | 'ts' | 'curl' | 'go'>('js');
+	let lang = $state<'sdk' | 'js' | 'ts' | 'curl' | 'go'>('sdk');
 	let respCode = $state<'200' | '400' | '403'>('200');
 	let copied = $state(false);
 
@@ -219,13 +219,14 @@
 					authNote: ruleBadge('list'),
 					paramTitle: '?query params',
 					params: [
-						{ name: 'page', type: 'Number', desc: 'Page number of the paginated list (default: 1).' },
-						{ name: 'per_page', type: 'Number', desc: 'Max returned records per page (default: 20, max: 100).' },
-						{ name: 'sort', type: 'String', desc: 'Sort field(s). Prefix with - for DESC, e.g. ?sort=-created_at,id.' },
+						{ name: 'page', type: 'Number', desc: 'Page number (offset) of the paginated list (default: 1).' },
+						{ name: 'perPage / per_page', type: 'Number', desc: 'Max returned records per page (default: 20, max: 100).' },
+						{ name: 'sort', type: 'String', desc: 'Comma-separated sort fields (- DESC / + ASC), e.g. ?sort=-created,id. Also supports @random.' },
+						{ name: 'filter', type: 'String', desc: "PocketBase filter expression, e.g. ?filter=(status='published' && start_at<=@now)." },
 						{ name: 'search', type: 'String', desc: 'Full-text (English FTS) + Thai ILIKE search across all text columns.' },
-						{ name: 'filter', type: 'String', desc: "PocketBase filter expression, e.g. ?filter=(views>10 && published=true) || title~'hello'." },
-						{ name: 'expand', type: 'String', desc: 'Auto-expand relation fields into record.expand, e.g. ?expand=author,category.' },
-						{ name: 'fields', type: 'String', desc: 'Comma-separated projection of fields to return, e.g. ?fields=id,title,created_at.' }
+						{ name: 'expand', type: 'String', desc: 'Auto-expand relation fields into record.expand (supports nested paths), e.g. ?expand=author,user_type.' },
+						{ name: 'fields', type: 'String', desc: 'Comma-separated fields to return in JSON response, e.g. ?fields=id,title,created_at.' },
+						{ name: 'skipTotal', type: 'Boolean', desc: 'If 1/true, skips the COUNT(*) query and returns total_items: -1 for faster list/search queries.' }
 					] as ParamRow[],
 					js: `const res = await fetch('${origin}${baseEndpoint}?page=1&per_page=30&sort=-created_at', {\n  headers: { Authorization: 'Bearer YOUR_TOKEN' }\n});\nconst data = await res.json();\nconsole.log(data.data.items);`,
 					curl: `curl "${origin}${baseEndpoint}?page=1&per_page=30&sort=-created_at" \\\n  -H "Authorization: Bearer YOUR_TOKEN"`,
@@ -453,7 +454,36 @@
 		}
 	});
 
-	let activeSnippet = $derived(lang === 'js' ? doc.js : lang === 'ts' ? buildTsSnippet(doc.js) : lang === 'curl' ? doc.curl : doc.go);
+	function buildSdkSnippet(): string {
+		const col = collection.name;
+		const idSample = collection.id_type === 'text' ? 'a950ka0mdi16u6s' : '1';
+		const body = sampleBody();
+		const header = `import Microbase from '@techasit5415/microbase-sdk';\n\nconst mb = new Microbase('${origin}');\n// Auth token in mb.authStore is attached automatically as Authorization: Bearer ...\n`;
+		switch (activeTab) {
+			case 'list':
+				return header + `\n// fetch a paginated records list\nconst resultList = await mb.collection('${col}').getList(1, 30, {\n  filter: 'id != ""',\n  sort: '-created_at',\n});\n\n// or fetch all records at once via getFullList\nconst records = await mb.collection('${col}').getFullList({\n  sort: '-created_at',\n});\n\n// or fetch only the first matching record\nconst record = await mb.collection('${col}').getFirstListItem('id != ""', {\n  expand: 'relField',\n});`;
+			case 'view':
+				return header + `\nconst record = await mb.collection('${col}').getOne('${idSample}', {\n  expand: 'relField',\n});`;
+			case 'create':
+				return header + `\nconst record = await mb.collection('${col}').create(${JSON.stringify(body, null, 2)});`;
+			case 'update':
+				return header + `\nconst record = await mb.collection('${col}').update('${idSample}', ${JSON.stringify(body, null, 2)});`;
+			case 'delete':
+				return header + `\nawait mb.collection('${col}').delete('${idSample}');`;
+			case 'realtime':
+				return header + `\n// subscribe to all changes in '${col}'\nconst unsubscribe = await mb.collection('${col}').subscribe('*', (e) => {\n  console.log(e.action, e.record);\n});\n\n// later: unsubscribe();`;
+			case 'auth-password':
+				return header + `\nconst authData = await mb.collection('${col}').authWithPassword(\n  'user@example.com',\n  'password123',\n);\n// mb.authStore.token & mb.authStore.record are now populated automatically`;
+			case 'auth-oauth2':
+				return header + `\n// redirect user to OAuth2/OIDC provider (e.g. 'scikmitl', 'oidc', 'google')\nconst url = mb.getOAuth2Url('scikmitl', window.location.origin + '/auth/callback');\nwindow.location.assign(url);\n\n// on /auth/callback?code=...\nconst authData = await mb.exchangeOAuth2Code(code);`;
+			case 'auth-refresh':
+				return header + `\nconst authData = await mb.collection('${col}').authRefresh();`;
+			default:
+				return doc.js;
+		}
+	}
+
+	let activeSnippet = $derived(lang === 'sdk' ? buildSdkSnippet() : lang === 'js' ? doc.js : lang === 'ts' ? buildTsSnippet(doc.js) : lang === 'curl' ? doc.curl : doc.go);
 
 	let activeResponseJSON = $derived(
 		respCode === '200'
@@ -528,6 +558,7 @@
 					<div class="flex items-center justify-between">
 						<div class="flex items-center gap-1">
 							{#each [
+								{ id: 'sdk', label: 'JS SDK' },
 								{ id: 'js', label: 'JS (fetch)' },
 								{ id: 'ts', label: 'TypeScript' },
 								{ id: 'curl', label: 'curl' },
@@ -535,7 +566,7 @@
 							] as l (l.id)}
 								<button
 									type="button"
-									onclick={() => (lang = l.id as 'js' | 'ts' | 'curl' | 'go')}
+									onclick={() => (lang = l.id as 'sdk' | 'js' | 'ts' | 'curl' | 'go')}
 									class="cursor-pointer rounded-t-md px-3.5 py-2 text-xs font-medium transition {lang === l.id
 										? 'bg-muted text-foreground'
 										: 'text-muted-foreground hover:text-foreground'}"
@@ -556,7 +587,7 @@
 							{/if}
 						</button>
 					</div>
-					{#key lang + activeTab}<pre in:fade={{ duration: 120 }} class="overflow-x-auto rounded-b-md rounded-tr-md bg-muted/85 p-4 font-mono text-xs leading-relaxed text-foreground">{@html highlightCode(activeSnippet, lang as HighlightLang)}</pre>{/key}
+					{#key lang + activeTab}<pre in:fade={{ duration: 120 }} class="overflow-x-auto rounded-b-md rounded-tr-md bg-muted/85 p-4 font-mono text-xs leading-relaxed text-foreground">{@html highlightCode(activeSnippet, (lang === 'sdk' ? 'js' : lang) as HighlightLang)}</pre>{/key}
 				</div>
 
 				<!-- API Details Bar -->

@@ -28,7 +28,16 @@ func NewRecordController(svc *services.RecordService, colSvc *services.Collectio
 // List handles GET /api/collections/:name/records.
 func (h *RecordController) List(c echo.Context) error {
 	page, _ := strconv.Atoi(c.QueryParam("page"))
-	perPage, _ := strconv.Atoi(c.QueryParam("per_page"))
+	perPageStr := c.QueryParam("per_page")
+	if perPageStr == "" {
+		perPageStr = c.QueryParam("perPage")
+	}
+	perPage, _ := strconv.Atoi(perPageStr)
+	skipTotalRaw := strings.ToLower(strings.TrimSpace(c.QueryParam("skipTotal")))
+	if skipTotalRaw == "" {
+		skipTotalRaw = strings.ToLower(strings.TrimSpace(c.QueryParam("skip_total")))
+	}
+	skipTotal := skipTotalRaw == "1" || skipTotalRaw == "true"
 
 	filters := make(map[string]string)
 	for key, vals := range c.QueryParams() {
@@ -44,6 +53,7 @@ func (h *RecordController) List(c echo.Context) error {
 		Search:     c.QueryParam("search"),
 		Filters:    filters,
 		FilterExpr: c.QueryParam("filter"),
+		SkipTotal:  skipTotal,
 		AuthClaims: middlewares.GetAuthClaims(c),
 	}
 

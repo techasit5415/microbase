@@ -11,6 +11,7 @@ type ListOptions struct {
 	Search  string            // Full-text search term across text columns
 	Filters    map[string]string
 	FilterExpr string
+	SkipTotal  bool
 	AuthClaims any // Exact-match filters, e.g. ?filter_published=true
 }
 

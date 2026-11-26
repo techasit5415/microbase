@@ -43,10 +43,12 @@ func (s *RecordService) List(ctx context.Context, colName string, opts models.Li
 		return nil, err
 	}
 
-	var total int64
-	countSQL := fmt.Sprintf(`SELECT COUNT(*) FROM "%s"%s`, col.Name, whereSQL)
-	if err := s.pool.QueryRow(ctx, countSQL, args...).Scan(&total); err != nil {
-		return nil, fmt.Errorf("count records: %w", err)
+	var total int64 = -1
+	if !opts.SkipTotal {
+		countSQL := fmt.Sprintf(`SELECT COUNT(*) FROM "%s"%s`, col.Name, whereSQL)
+		if err := s.pool.QueryRow(ctx, countSQL, args...).Scan(&total); err != nil {
+			return nil, fmt.Errorf("count records: %w", err)
+		}
 	}
 
 	orderSQL, err := buildOrderBy(opts.Sort, allowed)
