@@ -39,12 +39,21 @@ func buildWhereClause(
 		idx++
 	}
 
-	// Full-text + substring search across all "text" fields (supports English FTS and Thai).
+	// Full-text + substring search across id, auth email, and all text-like fields (supports English FTS and Thai).
 	if q := strings.TrimSpace(opts.Search); q != "" {
-		textCols := make([]string, 0)
+		textCols := []string{`coalesce(CAST("id" AS TEXT), '')`}
+		seen := map[string]bool{"id": true}
+		if col.Name == "users" || col.Type == "auth" {
+			textCols = append(textCols, `coalesce("email", '')`)
+			seen["email"] = true
+		}
 		for _, f := range col.Fields {
-			if f.Type == "text" {
+			if seen[f.Name] {
+				continue
+			}
+			if f.Type == "text" || f.Type == "email" || f.Type == "url" || f.Type == "editor" || (f.Type == "select" && f.MaxSelect <= 1) {
 				textCols = append(textCols, fmt.Sprintf(`coalesce("%s", '')`, f.Name))
+				seen[f.Name] = true
 			}
 		}
 		if len(textCols) > 0 {
