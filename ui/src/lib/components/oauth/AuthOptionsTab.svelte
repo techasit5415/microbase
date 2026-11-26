@@ -94,8 +94,9 @@
 		setTimeout(() => (copied = false), 1500);
 	}
 
-	async function saveProvider() {
+	async function saveProvider(nextEnabled?: boolean) {
 		if (!editingProvider) return;
+		if (typeof nextEnabled === 'boolean') enabled = nextEnabled;
 		saving = true;
 		errorMsg = '';
 		try {
@@ -196,6 +197,7 @@
 					<div class="grid grid-cols-3 gap-2.5">
 						{#each providers as p (p.name)}
 							{@const active = p.enabled && Boolean(p.client_id) && p.has_secret}
+							{@const incomplete = p.enabled && (!p.client_id || !p.has_secret)}
 							<button
 								type="button"
 								onclick={() => selectProvider(p)}
@@ -208,9 +210,11 @@
 								<span
 									class="rounded px-1.5 py-0.5 text-xs font-medium {active
 										? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-										: 'bg-muted text-muted-foreground'}"
+										: incomplete
+											? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+											: 'bg-muted text-muted-foreground'}"
 								>
-									{active ? 'Enabled' : 'Off'}
+									{active ? 'Enabled' : incomplete ? 'Missing keys' : 'Off'}
 								</span>
 							</button>
 						{/each}
@@ -220,7 +224,7 @@
 						<div transition:slide={{ duration: 180, easing: cubicOut }} class="space-y-3.5 rounded-md border border-border bg-background p-4">
 							<div class="flex items-center justify-between">
 								<span class="text-sm font-semibold">{editingProvider.display_name} settings</span>
-								<Switch bind:checked={enabled} disabled={saving} label={enabled ? 'Enabled' : 'Disabled'} onChange={() => saveProvider()} />
+								<Switch checked={enabled} disabled={saving} label={enabled ? 'Enabled' : 'Disabled'} onChange={(next) => saveProvider(next)} />
 							</div>
 
 							<div>
@@ -279,16 +283,16 @@
 										</div>
 									</div>
 									<div>
-										<label for="oa-issuer" class="mb-1 block text-xs font-medium">OIDC Issuer URL (auto-discovery, optional if manual URLs set)</label>
+										<label for="oa-issuer" class="mb-1 block text-xs font-medium">OIDC Issuer URL</label>
 										<input id="oa-issuer" type="url" bind:value={issuerUrl} placeholder={editingProvider.name === 'scikmitl' ? 'Leave empty (KMITL IAM uses manual URLs)' : 'https://accounts.example.com'} class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring" />
 									</div>
 									<div class="grid grid-cols-1 gap-2.5">
 										<div>
-											<label for="oa-auth" class="mb-1 block text-xs font-medium">Auth URL (manual override)</label>
+											<label for="oa-auth" class="mb-1 block text-xs font-medium">Auth URL</label>
 											<input id="oa-auth" type="url" bind:value={authUrl} placeholder={editingProvider.name === 'scikmitl' ? 'https://iam.science.kmitl.ac.th/o/oauth2/auth' : 'https://accounts.example.com/oauth/authorize'} class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring" />
 										</div>
 										<div>
-											<label for="oa-token" class="mb-1 block text-xs font-medium">Token URL (manual override)</label>
+											<label for="oa-token" class="mb-1 block text-xs font-medium">Token URL</label>
 											<input id="oa-token" type="url" bind:value={tokenUrl} placeholder={editingProvider.name === 'scikmitl' ? 'https://api.science.kmitl.ac.th/iam/oidc2/token' : 'https://accounts.example.com/oauth/token'} class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring" />
 										</div>
 										<div>
@@ -297,11 +301,11 @@
 										</div>
 										{#if editingProvider.name === 'scikmitl'}
 											<div>
-												<label for="oa-profile-url" class="mb-1 block text-xs font-medium">Profile Enrichment API URL <span class="font-normal text-muted-foreground">(supports {'{email}'}, {'{user_id}'}, {'{student_id}'})</span></label>
+												<label for="oa-profile-url" class="mb-1 block text-xs font-medium">Profile API URL</label>
 												<input id="oa-profile-url" type="text" bind:value={profileApiUrl} placeholder={'https://api.science.kmitl.ac.th/iam/o/v2/users/email/{email}'} class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring" />
 											</div>
 											<div>
-												<label for="oa-profile-key" class="mb-1 block text-xs font-medium">KMITL IAM API Key <span class="font-normal text-muted-foreground">(Bearer Token)</span></label>
+												<label for="oa-profile-key" class="mb-1 block text-xs font-medium">API Key</label>
 												<input id="oa-profile-key" type="password" bind:value={profileApiKey} placeholder={editingProvider.has_api_key ? '•••••••• (saved — leave blank to keep)' : 'Paste KMITL IAM Bearer API key...'} class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-ring" />
 											</div>
 										{/if}
@@ -386,7 +390,7 @@
 								<button
 									type="button"
 									disabled={saving}
-									onclick={saveProvider}
+									onclick={() => saveProvider()}
 									class="cursor-pointer rounded-md bg-foreground px-3.5 py-1.5 text-xs font-medium text-background transition hover:opacity-90 disabled:opacity-50"
 								>
 									{saving ? 'Saving...' : 'Save provider'}
