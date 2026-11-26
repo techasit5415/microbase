@@ -307,6 +307,7 @@
 										{/if}
 									</div>
 
+									{#if editingProvider.name === 'scikmitl'}
 									<!-- IAM Claim -> users Column Mapping -->
 									<div class="border-t border-border pt-3">
 										<div class="mb-2 flex items-center justify-between">
@@ -358,6 +359,7 @@
 											</div>
 										{/if}
 									</div>
+									{/if}
 								</div>
 							{/if}
 
