@@ -381,6 +381,63 @@
 						</div>
 					</div>
 
+					<!-- Live Preview (Sidebar + Table Data + Density + Radius) -->
+					<div class="space-y-1.5">
+						<span class="block text-xs font-medium text-muted-foreground">Live preview</span>
+						<div class="flex overflow-hidden rounded-[var(--radius)] border border-border bg-background">
+							<!-- Mini Sidebar -->
+							<div class="w-36 shrink-0 space-y-1 border-r border-border bg-card p-2">
+								<div
+									class="truncate rounded-[var(--radius)] bg-accent px-2.5 py-1.5 font-medium text-foreground"
+									style="font-size: var(--ui-sidebar-size);"
+								>
+									users
+								</div>
+								<div
+									class="truncate rounded-[var(--radius)] px-2.5 py-1.5 text-muted-foreground"
+									style="font-size: var(--ui-sidebar-size);"
+								>
+									announcements
+								</div>
+							</div>
+							<!-- Mini Table -->
+							<div class="min-w-0 flex-1 overflow-x-auto bg-card">
+								<table class="w-full border-collapse text-left" style="font-size: var(--ui-table-size);">
+									<thead class="border-b border-border bg-muted/40 text-muted-foreground" style="font-size: calc(var(--ui-table-size) * 0.92);">
+										<tr>
+											<th class="px-3 py-1.5 font-semibold">id</th>
+											<th class="px-3 py-1.5 font-semibold">email</th>
+											<th class="px-3 py-1.5 font-semibold">verified</th>
+											<th class="px-3 py-1.5 font-semibold">name</th>
+										</tr>
+									</thead>
+									<tbody class="divide-y divide-border">
+										<tr>
+											<td class="px-3 py-[var(--row-py)] whitespace-nowrap">
+												<span class="rounded-[var(--radius)] bg-secondary px-1.5 py-0.5 font-mono text-xs">zvxpzeryp55umz4</span>
+											</td>
+											<td class="px-3 py-[var(--row-py)] whitespace-nowrap">67050200@kmitl.ac.th</td>
+											<td class="px-3 py-[var(--row-py)] whitespace-nowrap">
+												<span class="rounded-[var(--radius)] bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">True</span>
+											</td>
+											<td class="px-3 py-[var(--row-py)] whitespace-nowrap">นาย เตชสิทธิ์</td>
+										</tr>
+										<tr>
+											<td class="px-3 py-[var(--row-py)] whitespace-nowrap">
+												<span class="rounded-[var(--radius)] bg-secondary px-1.5 py-0.5 font-mono text-xs">ztq33z0yf1gu50m</span>
+											</td>
+											<td class="px-3 py-[var(--row-py)] whitespace-nowrap">66050762@kmitl.ac.th</td>
+											<td class="px-3 py-[var(--row-py)] whitespace-nowrap">
+												<span class="rounded-[var(--radius)] bg-secondary px-2 py-0.5 text-xs font-medium text-muted-foreground">False</span>
+											</td>
+											<td class="px-3 py-[var(--row-py)] whitespace-nowrap">สมชาย ใจดี</td>
+										</tr>
+									</tbody>
+								</table>
+							</div>
+						</div>
+					</div>
+
 					<div class="flex items-center justify-between pt-1 text-xs text-muted-foreground">
 						<span>Saved automatically in this browser (applied live).</span>
 						<button
