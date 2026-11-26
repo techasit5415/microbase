@@ -19,6 +19,7 @@ func NewSystemController(pool *pgxpool.Pool) *SystemController {
 }
 
 var allowedSystemQueries = map[string]string{
+	"_authOrigins":     `SELECT id, collection_ref, record_ref, fingerprint, ip, created_at, updated_at FROM _auth_origins ORDER BY updated_at DESC LIMIT 200`,
 	"_superusers":      `SELECT id, email, created_at, updated_at FROM _superusers ORDER BY id DESC LIMIT 100`,
 	"_oauth_accounts":  `SELECT id, user_id, provider, provider_user_id, created_at FROM _oauth_accounts ORDER BY id DESC LIMIT 100`,
 	"_oauth_providers": `SELECT name, display_name, enabled, client_id, (client_secret <> '') AS has_secret, issuer_url, updated_at FROM _oauth_providers ORDER BY name ASC`,

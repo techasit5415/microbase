@@ -108,6 +108,7 @@ func (h *SuperuserController) Login(c echo.Context) error {
 	if err != nil {
 		return response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 	}
+	services.RecordAuthOrigin("_superusers", res.User.ID, c.RealIP(), c.Request().UserAgent())
 	return response.OK(c, res)
 }
 

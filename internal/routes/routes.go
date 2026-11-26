@@ -34,6 +34,7 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStor
 
 	if pool != nil {
 		middlewares.SetLogPool(pool)
+		services.SetAuthOriginPool(pool)
 		services.LoadAppSettingsFromDB(context.Background(), pool)
 		middlewares.LoadRateLimitConfigFromDB(context.Background(), pool)
 		middlewares.LoadLogSettingsFromDB(context.Background(), pool)

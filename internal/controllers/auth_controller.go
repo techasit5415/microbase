@@ -91,6 +91,7 @@ func (h *AuthController) Login(c echo.Context) error {
 	if err != nil {
 		return response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 	}
+	services.RecordAuthOrigin("users", res.User.ID, c.RealIP(), c.Request().UserAgent())
 	return response.OK(c, res)
 }
 

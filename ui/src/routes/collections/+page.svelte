@@ -33,10 +33,10 @@
 
 	const systemTables: Collection[] = [
 		{ id: -1, name: '_superusers', type: 'system', fields: [], created_at: '', updated_at: '' },
-		{ id: -2, name: '_oauth_accounts', type: 'system', fields: [], created_at: '', updated_at: '' },
-		{ id: -3, name: '_oauth_providers', type: 'system', fields: [], created_at: '', updated_at: '' },
-		{ id: -4, name: '_webhooks', type: 'system', fields: [], created_at: '', updated_at: '' },
-		{ id: -5, name: '_collections', type: 'system', fields: [], created_at: '', updated_at: '' }
+		{ id: -2, name: '_authOrigins', type: 'system', fields: [], created_at: '', updated_at: '' },
+		{ id: -3, name: '_oauth_accounts', type: 'system', fields: [], created_at: '', updated_at: '' },
+		{ id: -4, name: '_oauth_providers', type: 'system', fields: [], created_at: '', updated_at: '' },
+		{ id: -5, name: '_webhooks', type: 'system', fields: [], created_at: '', updated_at: '' }
 	];
 
 	let userCollections = $state<Collection[]>([]);

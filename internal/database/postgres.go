@@ -178,6 +178,17 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 				ALTER TABLE _oauth_accounts ALTER COLUMN user_id TYPE TEXT USING user_id::text;
 			END IF;
 		END $$;`,
+		`CREATE TABLE IF NOT EXISTS _auth_origins (
+			id             BIGSERIAL PRIMARY KEY,
+			collection_ref TEXT NOT NULL,
+			record_ref     TEXT NOT NULL,
+			fingerprint    TEXT NOT NULL,
+			ip             TEXT NOT NULL DEFAULT '',
+			user_agent     TEXT NOT NULL DEFAULT '',
+			created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			UNIQUE (collection_ref, record_ref, fingerprint)
+		);`,
 	}
 
 	migrations = append(migrations,
