@@ -375,7 +375,7 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, ext *oauth.External
 		_ = tx.QueryRow(ctx, `
 			SELECT data_type, column_default
 			FROM information_schema.columns
-			WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'id'`).Scan(&idDataType, &idDefault)
+			WHERE table_schema = current_schema() AND table_name = 'users' AND column_name = 'id'`).Scan(&idDataType, &idDefault)
 
 		if idDataType == "text" && (idDefault == nil || *idDefault == "") {
 			newID := generateRandomHex(8)[:15]

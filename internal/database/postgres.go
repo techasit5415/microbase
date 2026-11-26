@@ -172,7 +172,7 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		BEGIN
 			IF EXISTS (
 				SELECT 1 FROM information_schema.columns
-				WHERE table_schema = 'public' AND table_name = '_oauth_accounts' AND column_name = 'user_id' AND data_type <> 'text'
+				WHERE table_schema = current_schema() AND table_name = '_oauth_accounts' AND column_name = 'user_id' AND data_type <> 'text'
 			) THEN
 				ALTER TABLE _oauth_accounts DROP CONSTRAINT IF EXISTS _oauth_accounts_user_id_fkey;
 				ALTER TABLE _oauth_accounts ALTER COLUMN user_id TYPE TEXT USING user_id::text;

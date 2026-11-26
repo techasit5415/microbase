@@ -339,6 +339,7 @@ func (s *AuthService) DeleteUser(ctx context.Context, id string, ruleSQL string,
 		}
 		return ErrRecordNotFound
 	}
+	_, _ = s.pool.Exec(ctx, `DELETE FROM _oauth_accounts WHERE user_id = $1`, id)
 	return nil
 }
 
