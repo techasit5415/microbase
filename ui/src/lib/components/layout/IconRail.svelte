@@ -9,7 +9,7 @@
 		{ href: '/_/collections', label: 'Collections', icon: Database, match: '/_/collections' },
 		{ href: '/_/logs', label: 'Logs', icon: ScrollText, match: '/_/logs' },
 		{ href: '/_/sql', label: 'SQL Console & ERD', icon: Terminal, match: '/_/sql' },
-		{ href: '/_/settings', label: 'Settings', icon: Settings, match: '/_/settings' }
+		{ href: '/_/settings/application', label: 'Settings', icon: Settings, match: '/_/settings' }
 	];
 
 	let version = $state('');

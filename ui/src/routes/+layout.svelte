@@ -27,7 +27,7 @@
 	<div class="flex h-screen w-screen overflow-hidden bg-background text-foreground">
 		<IconRail />
 		<div class="flex min-w-0 flex-1 overflow-hidden">
-			{#key page.url.pathname}
+			{#key page.url.pathname.split('/').slice(0, 3).join('/')}
 				<div
 					in:fly={{ y: 8, duration: 200, easing: cubicOut }}
 					class="flex min-w-0 flex-1 overflow-hidden"
