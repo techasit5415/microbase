@@ -9,18 +9,11 @@
 		children: Snippet;
 	}
 
-	interface OAuthMethod {
-		name: string;
-		display_name: string;
-		auth_url: string;
-	}
-
 	let { children }: Props = $props();
 
 	let checking = $state(true);
 	let hasSuperuser = $state(true);
 	let authenticated = $state(false);
-	let oauthProviders = $state<OAuthMethod[]>([]);
 
 	let email = $state('');
 	let password = $state('');
@@ -39,14 +32,8 @@
 
 		(async () => {
 			try {
-				const [status, methods] = await Promise.all([
-					apiRequest<{ has_superuser: boolean }>('/api/superusers/status'),
-					apiRequest<{ oauth2?: { providers?: OAuthMethod[] } }>('/api/auth/methods').catch(() => ({
-						oauth2: { providers: [] }
-					}))
-				]);
+				const status = await apiRequest<{ has_superuser: boolean }>('/api/superusers/status');
 				hasSuperuser = status.has_superuser;
-				oauthProviders = methods?.oauth2?.providers ?? [];
 				const token = localStorage.getItem(ADMIN_TOKEN_KEY);
 				if (hasSuperuser && token) {
 					const verify = await fetch('/api/settings/app', {
@@ -150,25 +137,6 @@
 							: 'Create your first Superuser account using the 8-digit OTP from the server log.'}
 					</p>
 				</div>
-
-				{#if hasSuperuser && oauthProviders.length > 0}
-					<div class="mb-5 flex flex-col gap-2">
-						{#each oauthProviders as p (p.name)}
-							<a
-								href={p.auth_url}
-								class="flex w-full items-center justify-center gap-2 rounded-md border border-border bg-background px-4 py-2.5 text-xs font-medium text-foreground transition hover:bg-accent"
-							>
-								<KeyRound class="h-3.5 w-3.5 text-muted-foreground" />
-								Login with {p.display_name}
-							</a>
-						{/each}
-					</div>
-
-					<div class="relative my-5 flex items-center justify-center">
-						<div class="w-full border-t border-border"></div>
-						<span class="absolute bg-card px-3 text-xs text-muted-foreground">or</span>
-					</div>
-				{/if}
 
 				<form onsubmit={handleSubmit} class="space-y-4">
 					<div>
