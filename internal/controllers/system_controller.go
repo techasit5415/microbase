@@ -1,7 +1,9 @@
 package controllers
 
 import (
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
@@ -82,4 +84,92 @@ func (h *SystemController) Delete(c echo.Context) error {
 		return response.Error(c, http.StatusNotFound, "NOT_FOUND", "record not found")
 	}
 	return response.OK(c, map[string]any{"deleted": id})
+}
+
+var mutableSystemColumns = map[string]map[string]bool{
+	"_authOrigins":    {"collection_ref": true, "record_ref": true, "fingerprint": true, "ip": true, "user_agent": true},
+	"_oauth_accounts": {"user_id": true, "provider": true, "provider_user_id": true},
+}
+
+// Create handles POST /api/system/:table for mutable system tables (_authOrigins, _oauth_accounts).
+func (h *SystemController) Create(c echo.Context) error {
+	table := c.Param("table")
+	physTable, ok := deletableSystemTables[table]
+	allowedCols := mutableSystemColumns[table]
+	if !ok || len(allowedCols) == 0 {
+		return response.Error(c, http.StatusForbidden, "FORBIDDEN", "records cannot be created directly in this system table")
+	}
+	var body map[string]any
+	if err := c.Bind(&body); err != nil {
+		return response.Error(c, http.StatusBadRequest, "INVALID_JSON", "invalid request body")
+	}
+	cols := make([]string, 0, len(allowedCols))
+	placeholders := make([]string, 0, len(allowedCols))
+	args := make([]any, 0, len(allowedCols))
+	idx := 1
+	for k, v := range body {
+		if !allowedCols[k] {
+			continue
+		}
+		cols = append(cols, k)
+		placeholders = append(placeholders, fmt.Sprintf("$%d", idx))
+		args = append(args, v)
+		idx++
+	}
+	if len(cols) == 0 {
+		return response.Error(c, http.StatusBadRequest, "INVALID_INPUT", "no valid fields provided")
+	}
+	var newID int64
+	err := h.pool.QueryRow(
+		c.Request().Context(),
+		fmt.Sprintf(`INSERT INTO %s (%s) VALUES (%s) RETURNING id`, physTable, strings.Join(cols, ", "), strings.Join(placeholders, ", ")),
+		args...,
+	).Scan(&newID)
+	if err != nil {
+		return response.Error(c, http.StatusBadRequest, "DB_ERROR", err.Error())
+	}
+	return response.Created(c, map[string]any{"id": newID})
+}
+
+// Update handles PATCH /api/system/:table/:id for mutable system tables (_authOrigins, _oauth_accounts).
+func (h *SystemController) Update(c echo.Context) error {
+	table := c.Param("table")
+	physTable, ok := deletableSystemTables[table]
+	allowedCols := mutableSystemColumns[table]
+	if !ok || len(allowedCols) == 0 {
+		return response.Error(c, http.StatusForbidden, "FORBIDDEN", "records in this system table cannot be edited directly")
+	}
+	var body map[string]any
+	if err := c.Bind(&body); err != nil {
+		return response.Error(c, http.StatusBadRequest, "INVALID_JSON", "invalid request body")
+	}
+	sets := make([]string, 0, len(allowedCols))
+	args := []any{c.Param("id")}
+	idx := 2
+	for k, v := range body {
+		if !allowedCols[k] {
+			continue
+		}
+		sets = append(sets, fmt.Sprintf(`%s = $%d`, k, idx))
+		args = append(args, v)
+		idx++
+	}
+	if len(sets) == 0 {
+		return response.Error(c, http.StatusBadRequest, "INVALID_INPUT", "no valid fields provided")
+	}
+	if physTable == "_auth_origins" {
+		sets = append(sets, "updated_at = NOW()")
+	}
+	tag, err := h.pool.Exec(
+		c.Request().Context(),
+		fmt.Sprintf(`UPDATE %s SET %s WHERE id::text = $1`, physTable, strings.Join(sets, ", ")),
+		args...,
+	)
+	if err != nil {
+		return response.Error(c, http.StatusBadRequest, "DB_ERROR", err.Error())
+	}
+	if tag.RowsAffected() == 0 {
+		return response.Error(c, http.StatusNotFound, "NOT_FOUND", "record not found")
+	}
+	return response.OK(c, map[string]any{"id": c.Param("id"), "updated": true})
 }

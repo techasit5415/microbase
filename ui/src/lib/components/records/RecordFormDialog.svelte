@@ -4,6 +4,9 @@
 	import { slide } from 'svelte/transition';
 	import {
 		Braces,
+		Copy,
+		MoreHorizontal,
+		Trash2,
 		Calendar,
 		CloudUpload,
 		Eye,
@@ -25,6 +28,7 @@
 	} from '@lucide/svelte';
 	import { ADMIN_TOKEN_KEY, apiRequest } from '#lib/api/client.ts';
 	import { createRecord, listRecords, updateRecord } from '#lib/api/records.ts';
+	import { createSystemRecord, updateSystemRecord } from '#lib/api/system.ts';
 	import type { Collection, FieldDef, RecordRow } from '#lib/api/types.ts';
 	import { createSuperuser, createUser, listUsers, updateSuperuser, updateUser } from '#lib/api/users.ts';
 	import RelationPickerModal, { type RelationOption } from '#lib/components/records/RelationPickerModal.svelte';
@@ -41,9 +45,10 @@
 		editingRecord?: RecordRow | null;
 		onClose: () => void;
 		onSaved: () => void;
+		onDelete?: (id: number | string) => Promise<void> | void;
 	}
 
-	let { open, collection, editingRecord = null, onClose, onSaved }: Props = $props();
+	let { open, collection, editingRecord = null, onClose, onSaved, onDelete }: Props = $props();
 
 	let recordId = $state('');
 	let values = $state<Record<string, string>>({});
@@ -74,12 +79,15 @@
 	let password = $state('');
 	let confirmPassword = $state('');
 	let showPassword = $state(false);
+	let changePassword = $state(false);
+	let menuOpen = $state(false);
 	let errorMsg = $state('');
 	let saving = $state(false);
 	let impersonateToken = $state('');
 	let initialSnapshot = $state('');
 
 	let isSuperuser = $derived(collection.name === '_superusers');
+	let isEditableSystem = $derived(collection.name === '_authOrigins' || collection.name === '_oauth_accounts');
 	let isAuth = $derived(collection.type === 'auth' || isSuperuser);
 	let customFields = $derived(
 		(collection.fields ?? []).filter(
@@ -333,7 +341,7 @@
 					saving = false;
 					return;
 				}
-				if (editingRecord && typeof editingRecord.id === 'number') {
+				if (editingRecord && (typeof editingRecord.id === 'number' || typeof editingRecord.id === 'string')) {
 					await updateUser(editingRecord.id, {
 						...(customPayload ?? {}),
 						email: email.trim(),
@@ -365,7 +373,13 @@
 				if (!editingRecord && collection.id_type === 'text' && recordId.trim()) {
 					payload.id = recordId.trim();
 				}
-				if (
+				if (isEditableSystem) {
+					if (editingRecord && (typeof editingRecord.id === 'number' || typeof editingRecord.id === 'string')) {
+						await updateSystemRecord(collection.name, editingRecord.id, payload);
+					} else {
+						await createSystemRecord(collection.name, payload);
+					}
+				} else if (
 					editingRecord &&
 					(typeof editingRecord.id === 'number' || typeof editingRecord.id === 'string')
 				) {
@@ -396,15 +410,61 @@
 		<h2 class="text-base font-normal text-foreground">
 			{editingRecord ? 'Edit ' : 'Create '}<strong class="font-semibold">{collection.name}</strong> record
 		</h2>
-		<div class="flex items-center gap-2">
-			{#if editingRecord && isAuth && !isSuperuser}
+		<div class="relative flex items-center gap-1.5">
+			{#if editingRecord}
 				<button
 					type="button"
-					onclick={handleImpersonate}
-					class="cursor-pointer rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground transition hover:bg-accent"
+					onclick={() => (menuOpen = !menuOpen)}
+					title="Record actions"
+					class="cursor-pointer rounded-full bg-secondary/80 p-1.5 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
 				>
-					Impersonate
+					<MoreHorizontal class="h-4 w-4" />
 				</button>
+				{#if menuOpen}
+					<div
+						class="absolute top-10 right-8 z-30 w-52 overflow-hidden rounded-lg border border-border bg-card py-1 text-xs shadow-lg"
+					>
+						{#if isAuth && !isSuperuser}
+							<button
+								type="button"
+								onclick={() => {
+									menuOpen = false;
+									handleImpersonate();
+								}}
+								class="flex w-full cursor-pointer items-center gap-2.5 px-3.5 py-2 text-left text-foreground hover:bg-muted"
+							>
+								<KeyRound class="h-3.5 w-3.5 text-muted-foreground" />
+								<span>Impersonate</span>
+							</button>
+						{/if}
+						<button
+							type="button"
+							onclick={async () => {
+								menuOpen = false;
+								await navigator.clipboard?.writeText(JSON.stringify(editingRecord, null, 2)).catch(() => {});
+								toast.success('Copied record JSON');
+							}}
+							class="flex w-full cursor-pointer items-center gap-2.5 px-3.5 py-2 text-left text-foreground hover:bg-muted"
+						>
+							<Copy class="h-3.5 w-3.5 text-muted-foreground" />
+							<span>Copy JSON</span>
+						</button>
+						{#if onDelete && editingRecord.id !== undefined}
+							<div class="my-1 border-t border-border"></div>
+							<button
+								type="button"
+								onclick={() => {
+									menuOpen = false;
+									if (typeof editingRecord?.id === 'string' || typeof editingRecord?.id === 'number') onDelete?.(editingRecord.id);
+								}}
+								class="flex w-full cursor-pointer items-center gap-2.5 px-3.5 py-2 text-left text-destructive hover:bg-destructive/10"
+							>
+								<Trash2 class="h-3.5 w-3.5" />
+								<span>Delete</span>
+							</button>
+						{/if}
+					</div>
+				{/if}
 			{/if}
 			<button
 				type="button"
@@ -478,8 +538,25 @@
 					/>
 				</div>
 
+				{#if editingRecord}
+					<div class="pt-1">
+						<Switch
+							checked={changePassword}
+							label="change password"
+							onChange={(next) => {
+								changePassword = next;
+								if (!next) {
+									password = '';
+									confirmPassword = '';
+								}
+							}}
+						/>
+					</div>
+				{/if}
+
+				{#if !editingRecord || changePassword}
 				<!-- Unified Split Password + Confirm box (PocketBase style) -->
-				<div>
+				<div transition:slide={{ duration: 160, easing: cubicOut }}>
 					<div class="grid grid-cols-1 divide-y divide-border/60 rounded-[5px] bg-secondary/75 transition focus-within:bg-secondary focus-within:ring-2 focus-within:ring-foreground/15 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
 						<div class="px-3.5 py-2.5">
 							<label for="u-pass" class="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
@@ -561,6 +638,8 @@
 				</div>
 
 				<!-- Clean standalone verified toggle + divider (PocketBase style) -->
+				{/if}
+
 				{#if !isSuperuser}
 					<div class="flex items-center gap-3 pt-1 pb-2">
 						<Switch checked={verified} onChange={(v) => (verified = v)} />

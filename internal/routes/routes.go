@@ -157,6 +157,8 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStor
 		api.POST("/files", fileCtrl.Upload)
 		api.GET("/files/:filename", fileCtrl.Serve)
 		api.GET("/system/:table", systemCtrl.List, adminOnly)
+		api.POST("/system/:table", systemCtrl.Create, adminOnly)
+		api.PATCH("/system/:table/:id", systemCtrl.Update, adminOnly)
 		api.DELETE("/system/:table/:id", systemCtrl.Delete, adminOnly)
 		api.GET("/logs", func(c echo.Context) error {
 			page, _ := strconv.Atoi(c.QueryParam("page"))
