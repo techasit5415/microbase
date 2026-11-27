@@ -183,7 +183,7 @@ cd ..
 
 # 2. Compile a static Go binary with embedded UI (atomic swap avoids "text file busy")
 CGO_ENABLED=0 go build -trimpath \
-  -ldflags="-s -w -X github.com/techasit5415/microbase/internal/config.Version=v0.12.8" \
+  -ldflags="-s -w -X github.com/techasit5415/microbase/internal/config.Version=v0.12.9" \
   -o microbase.new ./cmd/server && mv -f microbase.new microbase
 
 # 3. Start Microbase

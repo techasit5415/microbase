@@ -801,20 +801,50 @@
 							onclick={() => (showRulesInfo = !showRulesInfo)}
 							class="cursor-pointer font-semibold text-foreground underline-offset-2 hover:underline"
 						>
-							{showRulesInfo ? 'Hide available fields' : 'Show available fields'}
+							{showRulesInfo ? 'Hide syntax guide & fields' : 'Show syntax guide & fields'}
 						</button>
 					</div>
 
 					{#if showRulesInfo}
-						<div class="animate-fade-in space-y-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs">
-							<div class="font-medium text-foreground">Available fields:</div>
-							<div class="flex flex-wrap gap-1.5">
-								{#each availableIndexCols as col (col)}
-									<code class="rounded bg-card px-1.5 py-0.5 font-mono text-xs">{col}</code>
-								{/each}
+						<div class="animate-fade-in space-y-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-3.5 text-xs">
+							<div>
+								<div class="mb-1.5 font-semibold text-foreground">Available fields</div>
+								<div class="flex flex-wrap gap-1.5">
+									{#each availableIndexCols as col (col)}
+										<code class="rounded bg-card px-1.5 py-0.5 font-mono text-[11px]">{col}</code>
+									{/each}
+								</div>
 							</div>
-							<div class="pt-1 text-muted-foreground">
-								Request variables: <code class="rounded bg-card px-1">@request.auth.id</code>, <code class="rounded bg-card px-1">@request.auth.role</code>, <code class="rounded bg-card px-1">auth</code>, <code class="rounded bg-card px-1">admin</code>
+
+							<div class="grid gap-2 border-t border-amber-500/20 pt-2.5 sm:grid-cols-2">
+								<div class="space-y-1">
+									<div class="font-semibold text-foreground">Operators</div>
+									<div class="space-y-0.5 font-mono text-[11px] text-muted-foreground">
+										<div><span class="font-semibold text-amber-600 dark:text-amber-400">=</span> / <span class="font-semibold text-amber-600 dark:text-amber-400">==</span> equals, <span class="font-semibold text-amber-600 dark:text-amber-400">!=</span> not equals</div>
+										<div><span class="font-semibold text-amber-600 dark:text-amber-400">~</span> contains (ILIKE), <span class="font-semibold text-amber-600 dark:text-amber-400">!~</span> not contains</div>
+										<div><span class="font-semibold text-amber-600 dark:text-amber-400">&gt; &gt;= &lt; &lt;=</span> compare, <span class="font-semibold text-amber-600 dark:text-amber-400">?=</span> any relation/array</div>
+										<div><span class="font-semibold text-amber-600 dark:text-amber-400">&amp;&amp;</span> AND, <span class="font-semibold text-amber-600 dark:text-amber-400">||</span> OR, <span class="text-foreground">( ... )</span> group</div>
+									</div>
+								</div>
+								<div class="space-y-1">
+									<div class="font-semibold text-foreground">Macros & Relations</div>
+									<div class="space-y-0.5 font-mono text-[11px] text-muted-foreground">
+										<div><span class="text-purple-600 dark:text-purple-400">@request.auth.id</span> — current user ID</div>
+										<div><span class="text-purple-600 dark:text-purple-400">@request.auth.email</span> / <span class="text-purple-600 dark:text-purple-400">.role</span></div>
+										<div><span class="text-purple-600 dark:text-purple-400">@now</span> — current UTC timestamp</div>
+										<div><span class="text-foreground">rel.field</span> — e.g. <code>email.email = "a@b.com"</code></div>
+									</div>
+								</div>
+							</div>
+
+							<div class="space-y-1 border-t border-amber-500/20 pt-2.5">
+								<div class="font-semibold text-foreground">Common recipes</div>
+								<div class="grid gap-1 font-mono text-[11px] text-muted-foreground">
+									<div><strong class="font-sans text-foreground">Public:</strong> leave unlocked rule empty</div>
+									<div><strong class="font-sans text-foreground">Logged-in only:</strong> <code class="rounded bg-card px-1">@request.auth.id != ""</code></div>
+									<div><strong class="font-sans text-foreground">Owner only:</strong> <code class="rounded bg-card px-1">user = @request.auth.id</code></div>
+									<div><strong class="font-sans text-foreground">Admin or owner:</strong> <code class="rounded bg-card px-1">user = @request.auth.id || @request.auth.role = "admin"</code></div>
+								</div>
 							</div>
 						</div>
 					{/if}

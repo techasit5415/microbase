@@ -35,10 +35,54 @@
 	}: Props = $props();
 
 	let inputEl = $state<HTMLInputElement | HTMLTextAreaElement | null>(null);
+	let backdropEl = $state<HTMLDivElement | null>(null);
 	let focused = $state(false);
 	let activeIndex = $state(0);
 	let cursorPos = $state(0);
 	let dismissed = $state(false);
+
+	type HighlightKind = 'string' | 'macro' | 'operator' | 'number' | 'keyword' | 'punct' | 'plain';
+	interface HighlightToken {
+		text: string;
+		kind: HighlightKind;
+	}
+
+	function tokenizeForHighlight(src: string): HighlightToken[] {
+		if (!src) return [];
+		const out: HighlightToken[] = [];
+		const re =
+			/("(?:[^"\\]|\\.)*"?|'(?:[^'\\]|\\.)*'?|@[a-zA-Z0-9_.]+|\?!=|\?!~|\?>=|\?<=|==|!=|>=|<=|!~|\?=|\?~|\?>|\?<|&&|\|\||[=<>~]|\b(?:true|false|null)\b|\b\d+(?:\.\d+)?\b|[()])/gi;
+		let last = 0;
+		let m: RegExpExecArray | null;
+		while ((m = re.exec(src)) !== null) {
+			if (m.index > last) {
+				out.push({ text: src.slice(last, m.index), kind: 'plain' });
+			}
+			const tok = m[0];
+			let kind: HighlightKind = 'plain';
+			if (tok.startsWith('"') || tok.startsWith("'")) kind = 'string';
+			else if (tok.startsWith('@')) kind = 'macro';
+			else if (tok === '(' || tok === ')') kind = 'punct';
+			else if (/^(?:true|false|null)$/i.test(tok)) kind = 'keyword';
+			else if (/^\d/.test(tok)) kind = 'number';
+			else kind = 'operator';
+			out.push({ text: tok, kind });
+			last = m.index + tok.length;
+		}
+		if (last < src.length) {
+			out.push({ text: src.slice(last), kind: 'plain' });
+		}
+		return out;
+	}
+
+	let highlightedTokens = $derived(tokenizeForHighlight(value ?? ''));
+
+	function syncScroll() {
+		if (inputEl && backdropEl) {
+			backdropEl.scrollLeft = inputEl.scrollLeft;
+			backdropEl.scrollTop = inputEl.scrollTop;
+		}
+	}
 
 	const operators: Suggestion[] = [
 		{ value: '= ', label: '=', hint: 'equals', kind: 'operator' },
@@ -256,14 +300,47 @@
 </script>
 
 <div class="relative w-full">
+	<!-- Syntax-highlighted overlay layer (sits above input with pointer-events-none so input bg never washes out colors) -->
+	{#if value}
+		<div
+			bind:this={backdropEl}
+			aria-hidden="true"
+			class="pointer-events-none absolute inset-0 z-2 overflow-hidden border-transparent! bg-transparent! leading-relaxed {multiline
+				? 'break-words whitespace-pre-wrap'
+				: 'whitespace-pre'} {inputClass}"
+		>
+			{#each highlightedTokens as tok, i (i)}
+				{#if tok.kind === 'string'}
+					<span class="text-emerald-600 dark:text-emerald-400">{tok.text}</span>
+				{:else if tok.kind === 'operator'}
+					<span class="font-semibold text-amber-600 dark:text-amber-400">{tok.text}</span>
+				{:else if tok.kind === 'macro'}
+					<span class="text-purple-600 dark:text-purple-400">{tok.text}</span>
+				{:else if tok.kind === 'number' || tok.kind === 'keyword'}
+					<span class="text-sky-600 dark:text-sky-400">{tok.text}</span>
+				{:else if tok.kind === 'punct'}
+					<span class="text-muted-foreground">{tok.text}</span>
+				{:else}
+					<span class="text-foreground">{tok.text}</span>
+				{/if}
+			{/each}
+			{#if multiline && value.endsWith('\n')}<br />{/if}
+		</div>
+	{/if}
+
 	{#if multiline}
 		<textarea
 			bind:this={inputEl}
 			{id}
-			rows={2}
+			rows={Math.max(2, Math.min(8, (value ?? '').split('\n').length))}
 			{value}
 			{placeholder}
-			oninput={handleInput}
+			spellcheck="false"
+			oninput={(e) => {
+				handleInput(e);
+				syncScroll();
+			}}
+			onscroll={syncScroll}
 			onkeydown={handleKeydown}
 			onclick={updateCursor}
 			onkeyup={updateCursor}
@@ -275,7 +352,7 @@
 			onblur={() => {
 				setTimeout(() => (focused = false), 150);
 			}}
-			class={inputClass}
+			class="relative z-1 block resize-none leading-relaxed {value ? 'text-transparent! caret-foreground selection:bg-primary/25' : ''} {inputClass}"
 		></textarea>
 	{:else}
 		<input
@@ -284,7 +361,12 @@
 			type="text"
 			{value}
 			{placeholder}
-			oninput={handleInput}
+			spellcheck="false"
+			oninput={(e) => {
+				handleInput(e);
+				syncScroll();
+			}}
+			onscroll={syncScroll}
 			onkeydown={handleKeydown}
 			onclick={updateCursor}
 			onkeyup={updateCursor}
@@ -296,7 +378,7 @@
 			onblur={() => {
 				setTimeout(() => (focused = false), 150);
 			}}
-			class={inputClass}
+			class="relative z-1 block leading-relaxed {value ? 'text-transparent! caret-foreground selection:bg-primary/25' : ''} {inputClass}"
 		/>
 	{/if}
 
