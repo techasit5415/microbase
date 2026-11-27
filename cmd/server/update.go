@@ -152,9 +152,23 @@ func runUpdateCommand(checkOnly bool, targetTag string) error {
 	if err := os.WriteFile(tmpPath, binBytes, 0o755); err != nil {
 		return fmt.Errorf("write temp binary: %w", err)
 	}
-	if err := os.Rename(tmpPath, exePath); err != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("atomic replace failed: %w", err)
+	if runtime.GOOS == "windows" {
+		oldPath := exePath + ".old"
+		_ = os.Remove(oldPath)
+		if err := os.Rename(exePath, oldPath); err != nil {
+			_ = os.Remove(tmpPath)
+			return fmt.Errorf("move running windows binary aside: %w", err)
+		}
+		if err := os.Rename(tmpPath, exePath); err != nil {
+			_ = os.Rename(oldPath, exePath)
+			_ = os.Remove(tmpPath)
+			return fmt.Errorf("replace windows binary failed: %w", err)
+		}
+	} else {
+		if err := os.Rename(tmpPath, exePath); err != nil {
+			_ = os.Remove(tmpPath)
+			return fmt.Errorf("atomic replace failed: %w", err)
+		}
 	}
 	fmt.Printf("Successfully updated Microbase to %s! Restart the server to apply.\n", rel.TagName)
 	return nil

@@ -58,6 +58,10 @@ Update Flags:
 }
 
 func main() {
+	// Clean up leftover Windows self-update .old binary if present.
+	if exe, err := os.Executable(); err == nil {
+		_ = os.Remove(exe + ".old")
+	}
 	args := os.Args[1:]
 
 	// Quick top-level shorthands: -v / --version / version / --update / -h / --help
