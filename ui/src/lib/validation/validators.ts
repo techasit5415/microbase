@@ -122,7 +122,7 @@ export function buildAndValidateRecordPayload(
 		}
 		const raw = (values[field.name] ?? '').trim();
 		if (raw === '') {
-			if (field.required) {
+			if (field.required && field.type !== 'autodate') {
 				return { error: `Field "${field.name}" is required.` };
 			}
 			continue;
@@ -173,7 +173,9 @@ export function buildAndValidateRecordPayload(
 			}
 			payload[field.name] = raw;
 		} else if (field.type === 'relation' && (field.max_select ?? 1) <= 1) {
-			payload[field.name] = /^\d+$/.test(raw) ? Number(raw) : raw;
+			// Preserve relation IDs as strings so zero-padded numeric text IDs (e.g. "000000000000006")
+			// are never coerced into numbers; PostgreSQL/pgx also accepts numeric strings for BIGINT FKs.
+			payload[field.name] = raw;
 		} else if (field.type === 'integer') {
 			const n = Number(raw);
 			if (!Number.isInteger(n)) {

@@ -11,9 +11,13 @@ test('parses multi-select arrays and validates all choices',()=>{
  expect(build(fields,{tags:'["a","b"]'},{}).payload).toEqual({tags:['a','b']});
  expect(build(fields,{tags:'["invalid"]'},{}).error).toBeDefined();
 });
-test('validates required, JSON, vectors and booleans',()=>{
+ test('validates required, JSON, vectors and booleans',()=>{
  expect(build([{name:'x',type:'text',required:true}],{},{}).error).toBeDefined();
  expect(build([{name:'x',type:'json'}],{x:'{'},{}).error).toBeDefined();
  expect(build([{name:'x',type:'vector',dimension:2}],{x:'[1]'},{}).error).toBeDefined();
  expect(build([{name:'enabled',type:'boolean'}],{}, {enabled:false}).payload).toEqual({enabled:false});
+});
+test('preserves zero-padded relation IDs as strings and allows empty autodate',()=>{
+ expect(build([{name:'passion_group',type:'relation',collection_name:'groups',max_select:1}],{passion_group:'000000000000006'},{}).payload).toEqual({passion_group:'000000000000006'});
+ expect(build([{name:'created',type:'autodate',required:true,on_create:true}],{},{}).payload).toEqual({});
 });

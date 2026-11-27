@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/techasit5415/microbase/internal/hooks"
@@ -154,12 +155,19 @@ func (s *RecordService) Create(ctx context.Context, colName string, data models.
 			data["id"] = GenerateFromPattern(pattern)
 		}
 	}
-	// Apply PocketBase-style AutogeneratePattern on missing text fields before required checks.
+	// Apply PocketBase-style AutogeneratePattern on missing text fields and autodate (on_create) before required checks.
+	now := time.Now().UTC()
 	for _, f := range col.Fields {
 		if f.Type == "text" && f.AutogeneratePattern != "" {
 			val, exists := data[f.Name]
 			if !exists || val == nil || strings.TrimSpace(fmt.Sprint(val)) == "" {
 				data[f.Name] = GenerateFromPattern(f.AutogeneratePattern)
+			}
+		}
+		if f.Type == "autodate" && (f.OnCreate || !f.OnUpdate) {
+			val, exists := data[f.Name]
+			if !exists || val == nil || strings.TrimSpace(fmt.Sprint(val)) == "" {
+				data[f.Name] = now
 			}
 		}
 	}
@@ -225,6 +233,18 @@ func (s *RecordService) Update(ctx context.Context, colName string, rawID string
 		return nil, err
 	}
 	allowed := allowedFieldMap(col)
+	if data == nil {
+		data = models.Record{}
+	}
+	// Populate custom autodate fields configured with on_update when not explicitly supplied.
+	now := time.Now().UTC()
+	for _, f := range col.Fields {
+		if f.Type == "autodate" && f.OnUpdate {
+			if val, exists := data[f.Name]; !exists || val == nil || strings.TrimSpace(fmt.Sprint(val)) == "" {
+				data[f.Name] = now
+			}
+		}
+	}
 
 	setClauses, args := make([]string, 0, len(data)+1), make([]any, 0, len(data)+1)
 	idx := 1
