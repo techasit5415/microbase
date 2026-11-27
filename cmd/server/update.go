@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -62,17 +63,18 @@ func runUpdateCommand(checkOnly bool, targetTag string) error {
 	fmt.Printf("Current version : %s\n", config.Version)
 	fmt.Printf("Target release  : %s\n", rel.TagName)
 
+	cmp := compareSemver(rel.TagName, config.Version)
 	if checkOnly {
-		if rel.TagName == config.Version {
-			fmt.Println("You are already on the latest version.")
+		if cmp <= 0 {
+			fmt.Printf("You are already up to date (current %s >= latest %s).\n", config.Version, rel.TagName)
 		} else {
 			fmt.Printf("Update available! Run 'microbase update --to %s' to install.\n", rel.TagName)
 		}
 		return nil
 	}
 
-	if rel.TagName == config.Version && targetTag == "" {
-		fmt.Println("Already up to date.")
+	if targetTag == "" && cmp <= 0 {
+		fmt.Printf("Already up to date (current %s >= latest %s). Use '--to %s' to downgrade.\n", config.Version, rel.TagName, rel.TagName)
 		return nil
 	}
 
@@ -230,4 +232,30 @@ func looksLikeExecutable(b []byte) bool {
 		return true
 	}
 	return false
+}
+
+// compareSemver compares two vX.Y.Z tags: returns 1 if a > b, -1 if a < b, 0 if equal.
+func compareSemver(a, b string) int {
+	parse := func(s string) [3]int {
+		s = strings.TrimPrefix(strings.TrimSpace(s), "v")
+		if idx := strings.IndexAny(s, "-+"); idx >= 0 {
+			s = s[:idx]
+		}
+		parts := strings.Split(s, ".")
+		var out [3]int
+		for i := 0; i < 3 && i < len(parts); i++ {
+			out[i], _ = strconv.Atoi(parts[i])
+		}
+		return out
+	}
+	va, vb := parse(a), parse(b)
+	for i := 0; i < 3; i++ {
+		if va[i] > vb[i] {
+			return 1
+		}
+		if va[i] < vb[i] {
+			return -1
+		}
+	}
+	return 0
 }
