@@ -66,7 +66,7 @@ func buildWhereClause(
 	}
 
 	if strings.TrimSpace(opts.FilterExpr) != "" {
-		fSQL, fArgs, nextIdx, err := ParseFilterToSQL(opts.FilterExpr, allowed, claims, idx)
+		fSQL, fArgs, nextIdx, err := ParseFilterToSQLForTable(col.Name, opts.FilterExpr, allowed, claims, nil, idx)
 		if err != nil {
 			return "", nil, 0, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 		}

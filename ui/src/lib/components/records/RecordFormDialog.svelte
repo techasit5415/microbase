@@ -963,6 +963,20 @@
 									oninput={(e) => (values[field.name] = e.currentTarget.value)}
 									class="w-full bg-transparent text-sm text-foreground outline-none"
 								/>
+							{:else if field.type === 'autodate'}
+								<input
+									id="f-{field.name}"
+									type="text"
+									readonly
+									disabled
+									value={values[field.name] || ''}
+									placeholder={field.on_create && field.on_update
+										? 'Auto-set on create & update'
+										: field.on_update
+											? 'Auto-set on update'
+											: 'Auto-set on create'}
+									class="w-full cursor-not-allowed bg-transparent font-mono text-xs text-muted-foreground outline-none"
+								/>
 							{:else}
 								<input
 									id="f-{field.name}"

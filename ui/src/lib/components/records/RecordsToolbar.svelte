@@ -1,10 +1,15 @@
 <script lang="ts">
-	import { Code2, Plus, RefreshCw, Search, Settings } from '@lucide/svelte';
+	import { Code2, Plus, RefreshCw, Search, Settings, X } from '@lucide/svelte';
+	import type { Collection } from '#lib/api/types.ts';
+	import FilterAutocomplete from '#lib/components/ui/FilterAutocomplete.svelte';
 
 	interface Props {
 		collectionName: string;
+		collection?: Collection | null;
+		allCollections?: Collection[];
 		search: string;
 		onSearchChange: (value: string) => void;
+		onSearchSubmit?: (value: string) => void;
 		onRefresh: () => void;
 		onOpenEditCollection: () => void;
 		onOpenApiPreview: () => void;
@@ -13,8 +18,11 @@
 
 	let {
 		collectionName,
+		collection = null,
+		allCollections = [],
 		search,
 		onSearchChange,
+		onSearchSubmit,
 		onRefresh,
 		onOpenEditCollection,
 		onOpenApiPreview,
@@ -75,14 +83,41 @@
 		</div>
 	</div>
 
-	<div class="relative">
-		<Search class="pointer-events-none absolute top-2.5 left-3.5 h-4 w-4 text-muted-foreground" />
-		<input
-			type="text"
-			value={search}
-			oninput={(e) => onSearchChange(e.currentTarget.value)}
-			placeholder="Search term or filter..."
-			class="w-full rounded-full border border-transparent bg-muted/80 py-2 pr-4 pl-10 text-xs outline-none placeholder:text-muted-foreground focus:border-border focus:bg-accent/70"
-		/>
+	<div class="relative flex items-center gap-2">
+		<div class="relative min-w-0 flex-1">
+			<Search class="pointer-events-none absolute top-2.5 left-3.5 z-10 h-4 w-4 text-muted-foreground" />
+			<FilterAutocomplete
+				value={search}
+				{collection}
+				{allCollections}
+				includeMacros={false}
+				placeholder='Search term or filter, e.g. email.name = "alice@example.com" && status != "draft"'
+				onInput={(v) => onSearchChange(v)}
+				onSubmit={(v) => (onSearchSubmit ? onSearchSubmit(v) : onSearchChange(v))}
+				inputClass="w-full rounded-full border border-transparent bg-muted/80 py-2 pr-9 pl-10 font-mono text-xs outline-none placeholder:font-sans placeholder:text-muted-foreground focus:border-border focus:bg-accent/70"
+			/>
+			{#if search.trim() !== ''}
+				<button
+					type="button"
+					title="Clear search"
+					onclick={() => {
+						onSearchChange('');
+						onSearchSubmit?.('');
+					}}
+					class="absolute top-1.5 right-2.5 z-10 cursor-pointer rounded-full p-1 text-muted-foreground transition hover:bg-accent hover:text-foreground"
+				>
+					<X class="h-3.5 w-3.5" />
+				</button>
+			{/if}
+		</div>
+		{#if onSearchSubmit && search.trim() !== ''}
+			<button
+				type="button"
+				onclick={() => onSearchSubmit(search)}
+				class="shrink-0 cursor-pointer rounded-full border border-border bg-card px-3.5 py-1.5 text-xs font-medium text-foreground transition hover:bg-accent"
+			>
+				Search
+			</button>
+		{/if}
 	</div>
 </header>

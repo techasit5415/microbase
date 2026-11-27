@@ -116,13 +116,17 @@ export function buildAndValidateRecordPayload(
 	const payload: Record<string, unknown> = {};
 
 	for (const field of fields) {
+		if (field.type === 'autodate') {
+			// Autodate fields are strictly server-managed (read-only on UI).
+			continue;
+		}
 		if (field.type === 'boolean') {
 			payload[field.name] = Boolean(boolValues[field.name]);
 			continue;
 		}
 		const raw = (values[field.name] ?? '').trim();
 		if (raw === '') {
-			if (field.required && field.type !== 'autodate') {
+			if (field.required) {
 				return { error: `Field "${field.name}" is required.` };
 			}
 			continue;

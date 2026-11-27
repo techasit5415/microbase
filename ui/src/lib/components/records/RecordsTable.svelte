@@ -135,10 +135,11 @@
 
 	function getFieldType(col: string): string {
 		if (col === 'id') return 'id';
+		if (fieldMap[col]?.type) return fieldMap[col].type;
 		if (col === 'email') return 'email';
 		if (col === 'verified' || col === 'email_visibility') return 'boolean';
 		if (col === 'created_at' || col === 'updated_at') return 'date';
-		return fieldMap[col]?.type ?? 'text';
+		return 'text';
 	}
 
 	function copyText(e: MouseEvent, text: string) {

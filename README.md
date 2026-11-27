@@ -39,7 +39,7 @@ cp .env.example .env
 # 3. Build Frontend & Single Go Binary
 cd ui && npm install && npm run build && cd ..
 CGO_ENABLED=0 go build -trimpath \
-  -ldflags="-s -w -X github.com/techasit5415/microbase/internal/config.Version=v0.12.7" \
+  -ldflags="-s -w -X github.com/techasit5415/microbase/internal/config.Version=v0.12.8" \
   -o microbase ./cmd/server
 
 # 4. Run Microbase

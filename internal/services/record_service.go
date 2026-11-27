@@ -164,9 +164,10 @@ func (s *RecordService) Create(ctx context.Context, colName string, data models.
 				data[f.Name] = GenerateFromPattern(f.AutogeneratePattern)
 			}
 		}
-		if f.Type == "autodate" && (f.OnCreate || !f.OnUpdate) {
-			val, exists := data[f.Name]
-			if !exists || val == nil || strings.TrimSpace(fmt.Sprint(val)) == "" {
+		if f.Type == "autodate" {
+			// Autodate fields are server-managed (read-only): never allow client override or clearing.
+			delete(data, f.Name)
+			if f.OnCreate || !f.OnUpdate {
 				data[f.Name] = now
 			}
 		}
@@ -236,11 +237,13 @@ func (s *RecordService) Update(ctx context.Context, colName string, rawID string
 	if data == nil {
 		data = models.Record{}
 	}
-	// Populate custom autodate fields configured with on_update when not explicitly supplied.
+	// Autodate fields are strictly server-managed: strip any client-supplied value,
+	// preserve create-only autodate fields, and refresh on_update fields automatically.
 	now := time.Now().UTC()
 	for _, f := range col.Fields {
-		if f.Type == "autodate" && f.OnUpdate {
-			if val, exists := data[f.Name]; !exists || val == nil || strings.TrimSpace(fmt.Sprint(val)) == "" {
+		if f.Type == "autodate" {
+			delete(data, f.Name)
+			if f.OnUpdate {
 				data[f.Name] = now
 			}
 		}

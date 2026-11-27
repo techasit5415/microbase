@@ -72,6 +72,10 @@ func tokenizeFilter(input string) ([]fToken, error) {
 				toks = append(toks, fToken{fTokOr, "||"})
 				i += 2
 				continue
+			case "==":
+				toks = append(toks, fToken{fTokOp, "="})
+				i += 2
+				continue
 			case "!=", ">=", "<=", "!~", "?=", "?~", "?>", "?<":
 				toks = append(toks, fToken{fTokOp, two})
 				i += 2
@@ -128,6 +132,7 @@ func tokenizeFilter(input string) ([]fToken, error) {
 type filterParser struct {
 	toks       []fToken
 	pos        int
+	tableName  string
 	allowed    map[string]models.FieldDef
 	createMode bool
 	claims  *AuthClaims
@@ -138,23 +143,31 @@ type filterParser struct {
 
 // ParseFilterToSQL compiles a PocketBase filter string into a safe parameterized PostgreSQL WHERE snippet.
 func ParseFilterToSQL(expr string, allowed map[string]models.FieldDef, claims *AuthClaims, startArgIdx int) (string, []any, int, error) {
-	return ParseFilterToSQLWithBody(expr, allowed, claims, nil, startArgIdx)
+	return ParseFilterToSQLForTable("", expr, allowed, claims, nil, startArgIdx)
 }
 
 // ParseFilterToSQLWithBody compiles a PocketBase filter or API rule expression into parameterized PostgreSQL SQL.
 // Supports column identifiers, relation traversal (rel.field, rel1.rel2.id), @request.auth.*, @request.body.* (:isset/:changed),
 // @now, &&, ||, (), and =, !=, >, >=, <, <=, ~, !~, ?=, ?!=, ?~, ?!~, ?>, ?>=, ?<, ?<=.
 func ParseFilterToSQLWithBody(expr string, allowed map[string]models.FieldDef, claims *AuthClaims, body map[string]any, startArgIdx int) (string, []any, int, error) {
+	return ParseFilterToSQLForTable("", expr, allowed, claims, body, startArgIdx)
+}
+
+// ParseFilterToSQLForTable compiles a PocketBase filter expression with an explicit outer table name
+// so relation subqueries (EXISTS) qualify outer columns (e.g. "instances"."email") and never collide
+// with identically named columns on the target table (e.g. "users"."email").
+func ParseFilterToSQLForTable(tableName, expr string, allowed map[string]models.FieldDef, claims *AuthClaims, body map[string]any, startArgIdx int) (string, []any, int, error) {
 	toks, err := tokenizeFilter(expr)
 	if err != nil {
 		return "", nil, startArgIdx, err
 	}
 	p := &filterParser{
-		toks:    toks,
-		allowed: allowed,
-		claims:  claims,
-		body:    body,
-		nextArg: startArgIdx,
+		toks:      toks,
+		tableName: tableName,
+		allowed:   allowed,
+		claims:    claims,
+		body:      body,
+		nextArg:   startArgIdx,
 	}
 	sql, err := p.parseOr()
 	if err != nil {
@@ -504,12 +517,19 @@ func (p *filterParser) compileRelationPathSQL(relTok fToken, op string, valTok f
 		neg = true
 	}
 
-	// 1-level: rel.subField (e.g. user_type.type ?= "teachers", instance.email = @request.auth.id)
+	// Qualify outer relation column with outer table name when available so identically named columns
+	// on the target table (e.g. instances.email -> users.email) never shadow the outer column.
+	outerCol := fmt.Sprintf(`"%s"`, relField)
+	if models.IsValidIdentifier(p.tableName) {
+		outerCol = fmt.Sprintf(`"%s"."%s"`, p.tableName, relField)
+	}
+
+	// 1-level: rel.subField (e.g. user_type.type ?= "teachers", email.email = "alice@example.com")
 	if len(parts) == 2 {
 		subCond := buildScalarCompSQL(fmt.Sprintf(`_r1."%s"`, parts[1]), matchOp, valIdx)
 		expr := fmt.Sprintf(
-			`EXISTS (SELECT 1 FROM "%s" _r1 WHERE ((jsonb_typeof(to_jsonb("%s")) = 'array' AND to_jsonb("%s") ? CAST(_r1."id" AS TEXT)) OR CAST("%s" AS TEXT) = CAST(_r1."id" AS TEXT)) AND %s)`,
-			target1, relField, relField, relField, subCond,
+			`EXISTS (SELECT 1 FROM "%s" _r1 WHERE ((jsonb_typeof(to_jsonb(%s)) = 'array' AND to_jsonb(%s) ? CAST(_r1."id" AS TEXT)) OR CAST(%s AS TEXT) = CAST(_r1."id" AS TEXT)) AND %s)`,
+			target1, outerCol, outerCol, outerCol, subCond,
 		)
 		if neg {
 			return "NOT " + expr, nil
@@ -521,8 +541,8 @@ func (p *filterParser) compileRelationPathSQL(relTok fToken, op string, valTok f
 	if len(parts) == 3 && strings.EqualFold(parts[2], "id") {
 		subCond := buildJSONBMatchSQL(fmt.Sprintf(`_r1."%s"`, parts[1]), matchOp, valIdx)
 		expr := fmt.Sprintf(
-			`EXISTS (SELECT 1 FROM "%s" _r1 WHERE ((jsonb_typeof(to_jsonb("%s")) = 'array' AND to_jsonb("%s") ? CAST(_r1."id" AS TEXT)) OR CAST("%s" AS TEXT) = CAST(_r1."id" AS TEXT)) AND %s)`,
-			target1, relField, relField, relField, subCond,
+			`EXISTS (SELECT 1 FROM "%s" _r1 WHERE ((jsonb_typeof(to_jsonb(%s)) = 'array' AND to_jsonb(%s) ? CAST(_r1."id" AS TEXT)) OR CAST(%s AS TEXT) = CAST(_r1."id" AS TEXT)) AND %s)`,
+			target1, outerCol, outerCol, outerCol, subCond,
 		)
 		if neg {
 			return "NOT " + expr, nil

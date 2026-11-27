@@ -108,6 +108,12 @@
 		}
 	}
 
+	function isFilterExpression(raw: string): boolean {
+		const q = raw.trim();
+		if (q === '') return false;
+		return /(?:==|!=|>=|<=|!~|\?=|\?!=|\?~|\?!~|\?>|\?<|&&|\|\||(?<![<>!=?~])=(?!=)|(?<![!?])~|(?<![<>?])[><](?!=))/.test(q);
+	}
+
 	async function refreshRecords(col: Collection = activeCol) {
 		loading = true;
 		try {
@@ -115,10 +121,19 @@
 				.filter((f) => f.type === 'relation' && f.collection_name)
 				.map((f) => f.name)
 				.join(',');
+			const trimmed = search.trim();
+			const useFilter = isFilterExpression(trimmed);
 			const res =
 				col.type === 'system'
 					? await listSystemTable(col.name)
-					: await listRecords(col.name, { page: currentPage, perPage, search, sort, expand });
+					: await listRecords(col.name, {
+							page: currentPage,
+							perPage,
+							search: useFilter ? undefined : trimmed || undefined,
+							filter: useFilter ? trimmed : undefined,
+							sort,
+							expand
+						});
 			items = res.items ?? [];
 			totalItems = res.total_items ?? items.length;
 		} catch (err) {
@@ -242,8 +257,17 @@
 		<div in:fade={{ duration: 150 }} class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
 	<RecordsToolbar
 		collectionName={activeCol.name}
+		collection={activeCol}
+		allCollections={mainCollections}
 		{search}
 		onSearchChange={(v) => {
+			search = v;
+			currentPage = 1;
+			if (!isFilterExpression(v)) {
+				refreshRecords();
+			}
+		}}
+		onSearchSubmit={(v) => {
 			search = v;
 			currentPage = 1;
 			refreshRecords();
@@ -310,6 +334,7 @@
 	editing={editingCol}
 	initialTab={editingColTab}
 	availableCollections={mainCollections.map((c) => c.name)}
+	allCollections={mainCollections}
 	onClose={() => (showColDrawer = false)}
 	onSaved={(col, isEdit) => {
 		const typed: Collection = { ...col, type: col.name === 'users' ? 'auth' : (col.type || 'base') };

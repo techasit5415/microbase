@@ -18,6 +18,7 @@ export async function listRecords(
 	if (params?.page) qs.set('page', String(params.page));
 	if (params?.perPage) qs.set('per_page', String(params.perPage));
 	if (params?.search) qs.set('search', params.search);
+	if (params?.filter) qs.set('filter', params.filter);
 	if (params?.sort) qs.set('sort', params.sort);
 	if (params?.expand) qs.set('expand', params.expand);
 

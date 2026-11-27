@@ -23,6 +23,7 @@
 	import type { Collection, FieldDef, FieldType, IndexDef } from '#lib/api/types.ts';
 	import AuthOptionsTab from '#lib/components/oauth/AuthOptionsTab.svelte';
 	import Drawer from '#lib/components/ui/Drawer.svelte';
+	import FilterAutocomplete from '#lib/components/ui/FilterAutocomplete.svelte';
 	import { confirmAction } from '#lib/stores/confirm.svelte.ts';
 	import { toast } from '#lib/stores/toast.svelte.ts';
 	import { validateCollectionForm } from '#lib/validation/validators.ts';
@@ -35,11 +36,12 @@
 		editing?: Collection | null;
 		initialTab?: 'fields' | 'query' | 'rules' | 'options';
 		availableCollections?: string[];
+		allCollections?: Collection[];
 		onClose: () => void;
 		onSaved: (col: Collection, isEdit: boolean) => void;
 	}
 
-	let { open, editing = null, initialTab, availableCollections = [], onClose, onSaved }: Props = $props();
+	let { open, editing = null, initialTab, availableCollections = [], allCollections = [], onClose, onSaved }: Props = $props();
 
 	let colType = $state<'base' | 'view' | 'auth'>('base');
 	let idType = $state<'text' | 'serial'>('text');
@@ -857,16 +859,28 @@
 							</div>
 
 							{#if unlocked}
-								<input
-									id="rule-{r.key}"
-									type="text"
-									value={apiRules[r.key] ?? ''}
-									oninput={(e) => {
-										apiRules = { ...apiRules, [r.key]: e.currentTarget.value };
-									}}
-									placeholder="Leave empty to grant everyone access, or e.g. @request.auth.id != ''"
-									class="mt-2 w-full rounded-md bg-muted/65 px-3 py-2 font-mono text-xs outline-none focus:bg-accent/70"
-								/>
+								<div class="mt-2">
+									<FilterAutocomplete
+										id="rule-{r.key}"
+										value={apiRules[r.key] ?? ''}
+										collection={{
+											id: editing?.id ?? 0,
+											name: name || editing?.name || '',
+											type: colType,
+											fields,
+											created_at: '',
+											updated_at: ''
+										}}
+										{allCollections}
+										includeMacros={true}
+										multiline={true}
+										onInput={(next) => {
+											apiRules = { ...apiRules, [r.key]: next };
+										}}
+										placeholder="Leave empty to grant everyone access, or e.g. @request.auth.id != ''"
+										inputClass="w-full rounded-md bg-muted/65 px-3 py-2 font-mono text-xs outline-none focus:bg-accent/70"
+									/>
+								</div>
 							{/if}
 						</div>
 					{/each}
