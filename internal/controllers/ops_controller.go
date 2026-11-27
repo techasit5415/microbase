@@ -170,7 +170,7 @@ func (h *OpsController) CreateBackup(c echo.Context) error {
 	if findErr != nil {
 		return response.Error(c, http.StatusInternalServerError, "BACKUP_FAILED", findErr.Error())
 	}
-	cmd := exec.CommandContext(c.Request().Context(), pgDumpBin, dbURL, "-f", outPath)
+	cmd := exec.CommandContext(c.Request().Context(), pgDumpBin, "--clean", "--if-exists", "--no-owner", "--no-privileges", dbURL, "-f", outPath)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return response.Error(c, http.StatusInternalServerError, "BACKUP_FAILED", fmt.Sprintf("pg_dump failed: %v (%s)", err, strings.TrimSpace(string(out))))
 	}
@@ -386,7 +386,14 @@ func (h *OpsController) RestoreBackup(c echo.Context) error {
 	if findErr != nil {
 		return response.Error(c, http.StatusInternalServerError, "RESTORE_FAILED", findErr.Error())
 	}
-	cmd := exec.CommandContext(c.Request().Context(), psqlBin, h.databaseURL, "-f", full)
+	// Reset public schema before restore so pre-created tables (e.g. users BIGINT vs TEXT, _collections UNIQUE)
+	// never collide with the backup dump, even for dumps created without --clean.
+	if _, resetErr := h.pool.Exec(c.Request().Context(), `DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO PUBLIC;`); resetErr != nil {
+		return response.Error(c, http.StatusInternalServerError, "RESTORE_FAILED", fmt.Sprintf("failed to reset schema before restore: %v", resetErr))
+	}
+	_, _ = h.pool.Exec(c.Request().Context(), `CREATE EXTENSION IF NOT EXISTS vector;`)
+
+	cmd := exec.CommandContext(c.Request().Context(), psqlBin, "-v", "ON_ERROR_STOP=1", h.databaseURL, "-f", full)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return response.Error(c, http.StatusInternalServerError, "RESTORE_FAILED", fmt.Sprintf("psql restore failed: %v (%s)", err, strings.TrimSpace(string(out))))
 	}
