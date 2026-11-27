@@ -10,6 +10,96 @@
 
 ---
 
+## PostgreSQL Setup (From Scratch: Install, User, Database & Tables)
+
+Microbase uses **PostgreSQL 15+** (with `pgvector` recommended for vector/AI fields). You do **not** need to create any tables manually — Microbase automatically creates and migrates all core system tables on startup.
+
+### Step 1: Install PostgreSQL (+ `pgvector`)
+
+**Ubuntu / Debian Linux:**
+```bash
+sudo apt update
+sudo apt install -y postgresql postgresql-contrib postgresql-16-pgvector
+sudo systemctl enable --now postgresql
+```
+
+**macOS (Homebrew):**
+```bash
+brew install postgresql@16 pgvector
+brew services start postgresql@16
+```
+
+**Windows:**
+- Download and run the official installer from [postgresql.org/download/windows](https://www.postgresql.org/download/windows/) (or run PostgreSQL in Docker/WSL2).
+
+**Docker (Fastest — includes `pgvector` pre-installed):**
+```bash
+docker run -d --name microbase-pg \
+  -e POSTGRES_USER=microbase \
+  -e POSTGRES_PASSWORD=strong_password_here \
+  -e POSTGRES_DB=microbase \
+  -p 5432:5432 \
+  -v microbase_pgdata:/var/lib/postgresql/data \
+  pgvector/pgvector:pg16
+```
+*(If using Docker above, skip Step 2 — the user and database are already created.)*
+
+### Step 2: Create the Database User & Database
+
+Open `psql` as the `postgres` superuser:
+```bash
+sudo -u postgres psql
+```
+
+Run the following SQL to create a dedicated user (`microbase`), database (`microbase`), grant permissions, and enable `pgvector`:
+```sql
+-- 1. Create a dedicated PostgreSQL role/user for Microbase
+CREATE USER microbase WITH PASSWORD 'strong_password_here';
+
+-- 2. Create the database owned by that user
+CREATE DATABASE microbase OWNER microbase;
+
+-- 3. Connect to the new database
+\c microbase
+
+-- 4. Grant schema privileges (required on PostgreSQL 15+)
+GRANT ALL PRIVILEGES ON SCHEMA public TO microbase;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO microbase;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO microbase;
+
+-- 5. Enable pgvector extension (optional, required only for vector fields)
+CREATE EXTENSION IF NOT EXISTS vector;
+
+\q
+```
+
+### Step 3: Verify Connection & Tables Auto-Creation
+
+Put the connection string in `.env` (or pass `--db`):
+```env
+DATABASE_URL=postgres://microbase:strong_password_here@localhost:5432/microbase?sslmode=disable
+JWT_SECRET=replace-with-openssl-rand-base64-32
+```
+
+Start Microbase:
+```bash
+./microbase
+```
+
+On first boot, Microbase automatically creates all required core tables:
+- `_collections` — collection schemas, fields, indexes, and API rules
+- `_superusers` — admin dashboard accounts
+- `users` — built-in end-user auth collection
+- `_settings` — app, mail, storage, Redis, and logs settings
+- `_oauth_providers`, `_oauth_accounts`, `_auth_origins` — OAuth2/OIDC & login fingerprints
+- `_webhooks`, `_cron_jobs`, `_logs`, `_migrations` — automation, logs, and migration history
+
+User-defined collections can then be created via **Admin UI (`/_/`)**, **REST API**, **Schema Import**, or **`./microbase migrate up`**.
+
+*(Tip: If you start `./microbase` without `DATABASE_URL`, the Admin UI displays a **PostgreSQL Not Connected** setup guide instead of a generic fetch error, and `/api/*` returns `503 DATABASE_NOT_CONFIGURED`.)*
+
+---
+
 ## Environment Configuration (`.env`)
 
 Create a `.env` file in the working directory next to the `microbase` binary (or copy `.env.example` included in every release). Any variable can also be overridden via CLI flags (see [CLI, Migrations & JS Hooks](cli-hooks-migrations.md)).

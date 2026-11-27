@@ -14,6 +14,8 @@
 	let checking = $state(true);
 	let hasSuperuser = $state(true);
 	let authenticated = $state(false);
+	let dbMissing = $state(false);
+	let dbMessage = $state('');
 
 	let email = $state('');
 	let password = $state('');
@@ -23,6 +25,44 @@
 	let submitting = $state(false);
 	let errorMsg = $state('');
 
+		async function checkStatus() {
+		checking = true;
+		dbMissing = false;
+		dbMessage = '';
+		try {
+			const status = await apiRequest<{ has_superuser: boolean; database_connected?: boolean; message?: string }>('/api/superusers/status');
+			if (status.database_connected === false) {
+				dbMissing = true;
+				dbMessage = status.message || 'PostgreSQL is not connected. Set DATABASE_URL in .env or pass --db and restart Microbase.';
+				authenticated = false;
+				toast.error('PostgreSQL is not connected — please configure DATABASE_URL');
+				return;
+			}
+			hasSuperuser = status.has_superuser;
+			const token = localStorage.getItem(ADMIN_TOKEN_KEY);
+			if (hasSuperuser && token) {
+				const verify = await fetch('/api/settings/app', {
+					headers: { Authorization: `Bearer ${token}` }
+				});
+				if (verify.status === 401) {
+					localStorage.removeItem(ADMIN_TOKEN_KEY);
+					authenticated = false;
+				} else {
+					authenticated = true;
+				}
+			} else {
+				authenticated = false;
+			}
+		} catch (err) {
+			dbMissing = true;
+			dbMessage = err instanceof Error ? err.message : 'Unable to reach Microbase server or PostgreSQL.';
+			authenticated = false;
+			toast.error('Database / Server connection failed');
+		} finally {
+			checking = false;
+		}
+	}
+
 	onMount(() => {
 		const handleAuthExpired = () => {
 			authenticated = false;
@@ -30,30 +70,7 @@
 		};
 		window.addEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
 
-		(async () => {
-			try {
-				const status = await apiRequest<{ has_superuser: boolean }>('/api/superusers/status');
-				hasSuperuser = status.has_superuser;
-				const token = localStorage.getItem(ADMIN_TOKEN_KEY);
-				if (hasSuperuser && token) {
-					const verify = await fetch('/api/settings/app', {
-						headers: { Authorization: `Bearer ${token}` }
-					});
-					if (verify.status === 401) {
-						localStorage.removeItem(ADMIN_TOKEN_KEY);
-						authenticated = false;
-					} else {
-						authenticated = true;
-					}
-				} else {
-					authenticated = false;
-				}
-			} catch {
-				authenticated = true;
-			} finally {
-				checking = false;
-			}
-		})();
+		checkStatus();
 
 		return () => {
 			window.removeEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
@@ -105,6 +122,43 @@
 {#if checking}
 	<div class="flex h-screen w-screen items-center justify-center bg-background text-sm text-muted-foreground">
 		Loading Microbase...
+	</div>
+{:else if dbMissing}
+	<div class="flex min-h-screen items-center justify-center bg-background p-4">
+		<div class="w-full max-w-lg rounded-xl border border-amber-500/40 bg-card p-6 shadow-xl">
+			<div class="flex items-center gap-3">
+				<div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 text-amber-600 dark:text-amber-400">
+					<Database class="h-5 w-5" />
+				</div>
+				<div>
+					<h1 class="text-base font-semibold text-foreground">PostgreSQL Not Connected</h1>
+					<p class="text-xs text-muted-foreground">Microbase requires a PostgreSQL database to run.</p>
+				</div>
+			</div>
+
+			<p class="mt-4 rounded-md bg-amber-500/10 px-3.5 py-2.5 text-xs text-amber-800 dark:text-amber-300">
+				{dbMessage}
+			</p>
+
+			<div class="mt-4 space-y-2 text-xs text-muted-foreground">
+				<p class="font-medium text-foreground">Quick setup:</p>
+				<p>1. Create a <code class="rounded bg-muted px-1 py-0.5 font-mono text-foreground">.env</code> file next to the binary:</p>
+				<pre class="overflow-x-auto rounded-md bg-muted p-3 font-mono text-[11px] text-foreground">DATABASE_URL=postgres://microbase:microbase@localhost:5432/microbase?sslmode=disable
+JWT_SECRET=replace-with-a-random-32-char-secret</pre>
+				<p>2. Or pass it directly via CLI flag and restart:</p>
+				<pre class="overflow-x-auto rounded-md bg-muted p-3 font-mono text-[11px] text-foreground">./microbase serve --db "postgres://microbase:microbase@localhost:5432/microbase?sslmode=disable"</pre>
+			</div>
+
+			<div class="mt-5 flex items-center justify-end gap-2">
+				<button
+					type="button"
+					onclick={checkStatus}
+					class="cursor-pointer rounded-md bg-foreground px-4 py-2 text-xs font-semibold text-background transition hover:opacity-90"
+				>
+					Retry connection
+				</button>
+			</div>
+		</div>
 	</div>
 {:else if !authenticated}
 	<div class="flex min-h-screen w-screen items-center justify-center bg-muted/25 p-6">

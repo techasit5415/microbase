@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"encoding/json"
 	"log/slog"
+	"net/http"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/techasit5415/microbase/internal/hooks"
 	"github.com/techasit5415/microbase/internal/middlewares"
 	"github.com/techasit5415/microbase/internal/realtime"
+	"github.com/techasit5415/microbase/internal/response"
 	"github.com/techasit5415/microbase/internal/services"
 	"github.com/techasit5415/microbase/internal/storage"
 	"github.com/techasit5415/microbase/ui"
@@ -248,5 +250,17 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStor
 		recGroup.POST("/register", colAuthCtrl.Register)
 		recGroup.POST("/auth-with-password", colAuthCtrl.AuthWithPassword)
 		recGroup.POST("/auth-refresh", colAuthCtrl.AuthRefresh)
+	} else {
+		e.GET("/api/superusers/status", func(c echo.Context) error {
+			return response.OK(c, map[string]any{
+				"has_superuser":      false,
+				"database_connected": false,
+				"message":            "PostgreSQL is not connected. Set DATABASE_URL in .env or pass --db and restart Microbase.",
+			})
+		})
+		e.Any("/api/*", func(c echo.Context) error {
+			return response.Error(c, http.StatusServiceUnavailable, "DATABASE_NOT_CONFIGURED",
+				"PostgreSQL is not connected. Set DATABASE_URL in .env or pass --db and restart Microbase.")
+		})
 	}
 }
