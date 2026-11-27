@@ -99,7 +99,7 @@ func IsValidIdentifier(name string) bool {
 // ToPostgresType maps a Microbase/PocketBase field definition to its PostgreSQL column type.
 func (f FieldDef) ToPostgresType() (string, error) {
 	switch f.Type {
-	case "text", "editor", "email", "url", "file", "select":
+	case "text", "editor", "email", "url", "file", "select", "password":
 		if (f.Type == "select" || f.Type == "file") && f.MaxSelect > 1 {
 			return "JSONB", nil
 		}
@@ -116,11 +116,11 @@ func (f FieldDef) ToPostgresType() (string, error) {
 			return "BIGINT", nil
 		}
 		return "DOUBLE PRECISION", nil
-	case "boolean":
+	case "boolean", "bool":
 		return "BOOLEAN", nil
-	case "json", "geopoint":
+	case "json", "geopoint", "geoPoint":
 		return "JSONB", nil
-	case "datetime", "timestamptz":
+	case "date", "datetime", "timestamptz":
 		return "TIMESTAMPTZ", nil
 	case "autodate":
 		return "TIMESTAMPTZ DEFAULT NOW()", nil

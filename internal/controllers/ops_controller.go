@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -165,7 +166,11 @@ func (h *OpsController) CreateBackup(c echo.Context) error {
 	if dbURL == "" {
 		return response.Error(c, http.StatusBadRequest, "NO_DATABASE", "DATABASE_URL is not configured")
 	}
-	cmd := exec.CommandContext(c.Request().Context(), "pg_dump", dbURL, "-f", outPath)
+	pgDumpBin, findErr := findPostgresTool("pg_dump")
+	if findErr != nil {
+		return response.Error(c, http.StatusInternalServerError, "BACKUP_FAILED", findErr.Error())
+	}
+	cmd := exec.CommandContext(c.Request().Context(), pgDumpBin, dbURL, "-f", outPath)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return response.Error(c, http.StatusInternalServerError, "BACKUP_FAILED", fmt.Sprintf("pg_dump failed: %v (%s)", err, strings.TrimSpace(string(out))))
 	}
@@ -377,7 +382,11 @@ func (h *OpsController) RestoreBackup(c echo.Context) error {
 	if h.databaseURL == "" {
 		return response.Error(c, http.StatusBadRequest, "NO_DATABASE", "DATABASE_URL is not configured")
 	}
-	cmd := exec.CommandContext(c.Request().Context(), "psql", h.databaseURL, "-f", full)
+	psqlBin, findErr := findPostgresTool("psql")
+	if findErr != nil {
+		return response.Error(c, http.StatusInternalServerError, "RESTORE_FAILED", findErr.Error())
+	}
+	cmd := exec.CommandContext(c.Request().Context(), psqlBin, h.databaseURL, "-f", full)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return response.Error(c, http.StatusInternalServerError, "RESTORE_FAILED", fmt.Sprintf("psql restore failed: %v (%s)", err, strings.TrimSpace(string(out))))
 	}
@@ -679,4 +688,37 @@ func (h *OpsController) UpdateAppSettings(c echo.Context) error {
 		return response.Error(c, http.StatusInternalServerError, "DB_ERROR", err.Error())
 	}
 	return response.OK(c, saved)
+}
+
+// findPostgresTool locates pg_dump or psql on PATH, with automatic fallback to standard
+// Windows ("C:\Program Files\PostgreSQL\*\bin"), macOS Homebrew, and Linux locations.
+func findPostgresTool(name string) (string, error) {
+	if p, err := exec.LookPath(name); err == nil {
+		return p, nil
+	}
+	var patterns []string
+	if runtime.GOOS == "windows" {
+		exe := name + ".exe"
+		patterns = []string{
+			`C:\Program Files\PostgreSQL\*in\` + exe,
+			`C:\Program Files (x86)\PostgreSQL\*in\` + exe,
+		}
+	} else {
+		patterns = []string{
+			"/opt/homebrew/opt/postgresql@*/bin/" + name,
+			"/usr/local/opt/postgresql@*/bin/" + name,
+			"/usr/lib/postgresql/*/bin/" + name,
+		}
+	}
+	var matches []string
+	for _, pat := range patterns {
+		if found, err := filepath.Glob(pat); err == nil {
+			matches = append(matches, found...)
+		}
+	}
+	if len(matches) > 0 {
+		sort.Sort(sort.Reverse(sort.StringSlice(matches)))
+		return matches[0], nil
+	}
+	return "", fmt.Errorf("%q executable not found in PATH (install PostgreSQL client tools or add PostgreSQL bin folder to PATH)", name)
 }
