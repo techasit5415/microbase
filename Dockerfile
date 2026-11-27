@@ -34,7 +34,11 @@ LABEL org.opencontainers.image.title="Microbase" \
 WORKDIR /app
 COPY --from=go-builder /out/microbase /app/microbase
 
-RUN mkdir -p /app/storage
+RUN addgroup -S microbase && adduser -S -D -H -G microbase microbase \
+    && mkdir -p /app/storage /app/backups \
+    && chown -R microbase:microbase /app
+
+USER microbase
 VOLUME ["/app/storage"]
 
 EXPOSE 3000

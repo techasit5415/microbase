@@ -8,7 +8,7 @@ microbase [command] [flags]
 
 ### Commands
 - `microbase serve` *(default)* — Start the Microbase HTTP server.
-- `microbase update [--check] [--to <tag>]` *(or `--update`)* — Check or self-update the binary from GitHub Releases with SHA-256 verification and atomic swap.
+- `microbase update [--check] [--to <tag>]` *(or `--update`)* — Check or self-update the binary from GitHub Releases with **mandatory fail-closed SHA-256 verification** (`checksums.txt`), 256 MB archive/binary cap, and atomic swap.
 - `microbase superuser upsert <email> <password>` — Create or reset a superuser account directly from the CLI.
 - `microbase migrate <up|down|status|create <name>|snapshot>` — File-based PostgreSQL & schema migrations.
 - `microbase version` *(or `-v` / `--version`)* — Print current version and exit.
@@ -92,11 +92,11 @@ routerAdd("GET", "/api/custom/stats", (c) => {
 
 ## 4. Thumbnails, Protected File Tokens & Advanced Query Modifiers
 
-- **On-the-fly Image Thumbnails** (`GET /api/files/:filename?thumb=...`, bilinear resampling + cached):
+- **On-the-fly Image Thumbnails** (`GET /api/files/:filename?thumb=...`, bilinear resampling + cached, restricted to preset dimensions `32..1024`):
   - `100x100` (center crop), `100x100t` (top crop), `100x100b` (bottom crop), `100x100f` (fit without crop), `0x200` / `200x0` (proportional).
 - **Protected File Tokens**:
   - `POST /api/files/token` (requires auth) → returns a 2-minute signed `{ "token": "..." }`.
-  - Pass `?token=<token>` on `GET /api/files/:filename?token=...`.
+  - Pass `?protected=1&token=<token>` (or Bearer auth) on `GET /api/files/:filename`.
 - **Field Modifiers (`?fields=`)**:
   - `*` wildcard, nested `expand.<rel>.<field>` projection, and `:excerpt(maxLen, withEllipsis)` (e.g. `?fields=*,body:excerpt(200,true)`).
 - **Filter Modifiers**:

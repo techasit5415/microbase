@@ -46,11 +46,39 @@ func TestRequireSuperuserGuard(t *testing.T) {
 		t.Fatalf("expected 200 for superuser, got %d", rec.Code)
 	}
 
-	// 4. Superuser via ?token= query param (for backup downloads) -> 200
+	// 4. Superuser via ?token= query param on non-SSE routes -> 401 (blocked to prevent token leakage in logs/history)
 	req = httptest.NewRequest(http.MethodGet, "/admin?token="+superTok, nil)
 	rec = httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for query token on /admin, got %d", rec.Code)
+	}
+
+	// 5. Query param ?token= is allowed only on /api/realtime SSE endpoint -> 200
+	e.GET("/api/realtime", func(c echo.Context) error {
+		return c.String(http.StatusOK, "ok")
+	}, RequireAuth(authSvc))
+	req = httptest.NewRequest(http.MethodGet, "/api/realtime?token="+userTok, nil)
+	rec = httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200 for superuser query token, got %d", rec.Code)
+		t.Fatalf("expected 200 for query token on /api/realtime, got %d", rec.Code)
+	}
+}
+
+func TestFileTokenCannotAuthenticateAdmin(t *testing.T) {
+	authSvc := services.NewAuthService(nil, "test-secret-key-12345")
+	token, err := authSvc.GenerateFileToken(&services.AuthClaims{UserID: "1", Role: "superuser"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := echo.New()
+	e.GET("/admin", func(c echo.Context) error { return c.NoContent(http.StatusNoContent) }, RequireSuperuser(authSvc))
+	req := httptest.NewRequest(http.MethodGet, "/admin", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("file token accepted: %d", rec.Code)
 	}
 }

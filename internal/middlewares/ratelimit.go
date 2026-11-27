@@ -33,7 +33,10 @@ var (
 	rlEnabled = true
 	rlRules   = []RateLimitRule{
 		{Label: "/api/auth/login", MaxRequests: 20, DurationSec: 60},
+		{Label: "/api/auth/auth-with-otp", MaxRequests: 10, DurationSec: 60},
+		{Label: "/api/auth/request-otp", MaxRequests: 10, DurationSec: 60},
 		{Label: "/api/superusers/login", MaxRequests: 15, DurationSec: 60},
+		{Label: "/api/superusers/setup", MaxRequests: 5, DurationSec: 60},
 		{Label: "/api/", MaxRequests: 120, DurationSec: 60},
 	}
 )
@@ -157,6 +160,14 @@ func RateLimit(store cache.CacheStore, defaultLimit int, defaultWindow time.Dura
 				}
 			}
 			rlMu.RUnlock()
+
+			// Also enforce strict login rate limiting on custom auth collection password login endpoints.
+			if strings.HasPrefix(path, "/api/collections/") && strings.HasSuffix(path, "/auth-with-password") {
+				limit = 20
+				window = 60 * time.Second
+				matchedLabel = "/api/collections/*/auth-with-password"
+				bestLen = len(path)
+			}
 
 			// If no rule matches the request path, do not enforce a hidden fallback limit.
 			if bestLen == -1 || limit <= 0 || window <= 0 {

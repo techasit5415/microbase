@@ -16,8 +16,11 @@ func extractBearerToken(c echo.Context) string {
 	if strings.HasPrefix(header, "Bearer ") {
 		return strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
 	}
-	if q := strings.TrimSpace(c.QueryParam("token")); q != "" {
-		return q
+	// Only allow ?token= query parameter on SSE realtime stream (EventSource cannot set custom headers).
+	if c.Request().URL.Path == "/api/realtime" {
+		if q := strings.TrimSpace(c.QueryParam("token")); q != "" {
+			return q
+		}
 	}
 	return ""
 }

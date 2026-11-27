@@ -37,15 +37,10 @@ func (h *AuthController) usersCollection(c echo.Context) *models.Collection {
 }
 
 func (h *AuthController) maskHiddenUserFields(col *models.Collection, claims *services.AuthClaims, rec models.Record) models.Record {
-	if col == nil || (claims != nil && claims.Role == "superuser") {
-		return rec
+	if col == nil {
+		col = &models.Collection{Name: "users", Type: "auth"}
 	}
-	for _, f := range col.Fields {
-		if f.Hidden {
-			delete(rec, f.Name)
-		}
-	}
-	return rec
+	return services.VisibleRecord(col, claims, rec)
 }
 
 // Register handles POST /api/auth/register (enforces users "create" API rule).
@@ -101,6 +96,16 @@ func (h *AuthController) Me(c echo.Context) error {
 	if claims == nil {
 		return response.Error(c, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
 	}
+	if claims.Role == "superuser" {
+		return response.OK(c, map[string]any{
+			"id":    claims.UserID,
+			"email": claims.Email,
+			"role":  claims.Role,
+		})
+	}
+	if claims.Collection != "" && claims.Collection != "users" {
+		return response.Error(c, http.StatusUnauthorized, "UNAUTHORIZED", "invalid users session")
+	}
 
 	user, err := h.service.GetUserByID(c.Request().Context(), claims.UserID)
 	if err != nil {
@@ -118,6 +123,9 @@ func (h *AuthController) ListUsers(c echo.Context) error {
 	}
 	if perPage < 1 {
 		perPage = 20
+	}
+	if perPage > 500 {
+		perPage = 500
 	}
 
 	claims := middlewares.GetAuthClaims(c)

@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 	"github.com/techasit5415/microbase/internal/response"
@@ -118,8 +120,15 @@ func (h *OAuthController) Exchange(c echo.Context) error {
 }
 
 func buildCallbackURL(c echo.Context, provider string) string {
+	if appURL := strings.TrimRight(strings.TrimSpace(services.GetCachedAppSettings().AppURL), "/"); appURL != "" {
+		if u, err := url.Parse(appURL); err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" {
+			return fmt.Sprintf("%s/api/auth/oauth/%s/callback", appURL, provider)
+		}
+	}
 	scheme := "http"
-	if c.IsTLS() || c.Request().Header.Get("X-Forwarded-Proto") == "https" {
+	if c.IsTLS() {
+		scheme = "https"
+	} else if services.GetCachedAppSettings().TrustedProxy.Enabled && c.Request().Header.Get("X-Forwarded-Proto") == "https" {
 		scheme = "https"
 	}
 	return fmt.Sprintf("%s://%s/api/auth/oauth/%s/callback", scheme, c.Request().Host, provider)

@@ -25,8 +25,9 @@ var (
 
 // AuthClaims holds the JWT payload for authenticated users.
 type AuthClaims struct {
-	UserID string `json:"user_id"`
-	Email  string `json:"email"`
+	Scope      string `json:"scope,omitempty"`
+	UserID     string `json:"user_id"`
+	Email      string `json:"email"`
 	Role       string `json:"role"`
 	RecordID   string `json:"record_id,omitempty"`
 	Collection string `json:"collection,omitempty"`
@@ -197,7 +198,7 @@ func (s *AuthService) ParseToken(tokenString string) (*AuthClaims, error) {
 	}
 
 	claims, ok := token.Claims.(*AuthClaims)
-	if !ok {
+	if !ok || claims.Scope != "" || claims.ExpiresAt == nil {
 		return nil, ErrInvalidToken
 	}
 	return claims, nil
@@ -349,19 +350,24 @@ func (s *AuthService) UpdateUser(ctx context.Context, id string, email, role, ne
 	args := []any{id}
 	argIdx := 2
 
+	isPrivileged := claims != nil && (claims.Role == "superuser" || claims.Role == "admin")
+
 	if strings.TrimSpace(email) != "" {
 		email = strings.ToLower(strings.TrimSpace(email))
-		if !strings.Contains(email, "@") {
+		if !strings.Contains(email, "@") || strings.ContainsAny(email, "\r\n") {
 			return nil, fmt.Errorf("%w: valid email is required", ErrInvalidInput)
 		}
 		setClauses = append(setClauses, fmt.Sprintf("email = $%d", argIdx))
 		args = append(args, email)
 		argIdx++
+		if !isPrivileged {
+			setClauses = append(setClauses, "verified = FALSE")
+		}
 	}
 
 	if strings.TrimSpace(role) != "" {
 		// Prevent non-admin/non-superuser from escalating their own role.
-		if claims == nil || (claims.Role != "superuser" && claims.Role != "admin") {
+		if !isPrivileged {
 			role = ""
 		}
 	}
@@ -392,6 +398,9 @@ func (s *AuthService) UpdateUser(ctx context.Context, id string, email, role, ne
 	}
 	for k, v := range custom {
 		if !models.IsValidIdentifier(k) || k == "id" || k == "email" || k == "role" || k == "password" || k == "password_hash" || k == "token_key" || k == "created_at" || k == "updated_at" {
+			continue
+		}
+		if k == "verified" && !isPrivileged {
 			continue
 		}
 		if f, ok := fieldByName[k]; ok && (f.Type == "relation" || f.Type == "select" || f.Type == "file") && f.MaxSelect > 1 {
@@ -459,7 +468,6 @@ func (s *AuthService) UpdateUser(ctx context.Context, id string, email, role, ne
 	return rec, nil
 }
 
-
 // GenerateCollectionToken signs a JWT for a record in any Auth collection (e.g. "users", "staff", "students").
 func (s *AuthService) GenerateCollectionToken(collection, recordID, email, role string) (string, error) {
 	if len(s.jwtSecret) == 0 {
@@ -482,7 +490,6 @@ func (s *AuthService) GenerateCollectionToken(collection, recordID, email, role 
 	}
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(s.jwtSecret)
 }
-
 
 // GenerateFileToken mints a short-lived (2-minute) signed JWT scoped strictly for protected file access.
 func (s *AuthService) GenerateFileToken(claims *AuthClaims) (string, error) {

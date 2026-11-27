@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -38,7 +39,7 @@ func runUpdateCommand(checkOnly bool, targetTag string) error {
 		if !strings.HasPrefix(tag, "v") {
 			tag = "v" + tag
 		}
-		apiURL = fmt.Sprintf("https://api.github.com/repos/%s/releases/tags/%s", githubRepo, tag)
+		apiURL = fmt.Sprintf("https://api.github.com/repos/%s/releases/tags/%s", githubRepo, url.PathEscape(tag))
 	}
 
 	client := &http.Client{Timeout: 30 * time.Second}
@@ -87,17 +88,20 @@ func runUpdateCommand(checkOnly bool, targetTag string) error {
 			checksumURL = a.BrowserDownloadURL
 			continue
 		}
-		if strings.Contains(lower, goos) && strings.Contains(lower, goarch) && !strings.HasSuffix(lower, ".sha256") {
+		if assetURL == "" && strings.Contains(lower, goos) && strings.Contains(lower, goarch) && !strings.HasSuffix(lower, ".sha256") {
 			assetURL = a.BrowserDownloadURL
 			assetName = a.Name
-			break
 		}
 	}
 
 	if assetURL == "" {
 		return fmt.Errorf("no prebuilt asset found in release %s for %s/%s", rel.TagName, goos, goarch)
 	}
+	if checksumURL == "" {
+		return fmt.Errorf("release %s does not publish checksums.txt; refusing unverified binary update", rel.TagName)
+	}
 
+	const maxUpdateBytes = 256 << 20 // 256 MiB ceiling
 	fmt.Printf("Downloading %s ...\n", assetName)
 	dlResp, err := (&http.Client{Timeout: 5 * time.Minute}).Get(assetURL)
 	if err != nil {
@@ -108,29 +112,43 @@ func runUpdateCommand(checkOnly bool, targetTag string) error {
 		return fmt.Errorf("download returned HTTP %d", dlResp.StatusCode)
 	}
 
-	archiveBytes, err := io.ReadAll(dlResp.Body)
+	archiveBytes, err := io.ReadAll(io.LimitReader(dlResp.Body, maxUpdateBytes+1))
 	if err != nil {
 		return fmt.Errorf("read download: %w", err)
+	}
+	if int64(len(archiveBytes)) > maxUpdateBytes {
+		return fmt.Errorf("downloaded asset %s exceeds 256MB safety limit", assetName)
 	}
 	sum := sha256.Sum256(archiveBytes)
 	actualSHA := hex.EncodeToString(sum[:])
 
-	// Verify checksum against checksums.txt if published
-	if checksumURL != "" {
-		if csResp, csErr := client.Get(checksumURL); csErr == nil && csResp.StatusCode == http.StatusOK {
-			csBytes, _ := io.ReadAll(csResp.Body)
-			csResp.Body.Close()
-			for _, line := range strings.Split(string(csBytes), "\n") {
-				fields := strings.Fields(line)
-				if len(fields) >= 2 && strings.TrimPrefix(fields[1], "*") == assetName {
-					if !strings.EqualFold(fields[0], actualSHA) {
-						return fmt.Errorf("checksum mismatch for %s (want %s, got %s)", assetName, fields[0], actualSHA)
-					}
-					fmt.Printf("Checksum verified (SHA-256: %s...)\n", actualSHA[:16])
-					break
-				}
+	// Mandatory SHA-256 verification against checksums.txt (fail-closed).
+	csResp, csErr := client.Get(checksumURL)
+	if csErr != nil {
+		return fmt.Errorf("download checksums.txt failed: %w", csErr)
+	}
+	defer csResp.Body.Close()
+	if csResp.StatusCode != http.StatusOK {
+		return fmt.Errorf("checksums.txt returned HTTP %d", csResp.StatusCode)
+	}
+	csBytes, csReadErr := io.ReadAll(io.LimitReader(csResp.Body, 1<<20))
+	if csReadErr != nil {
+		return fmt.Errorf("read checksums.txt failed: %w", csReadErr)
+	}
+	verified := false
+	for _, line := range strings.Split(string(csBytes), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && strings.TrimPrefix(fields[1], "*") == assetName {
+			if !strings.EqualFold(fields[0], actualSHA) {
+				return fmt.Errorf("checksum mismatch for %s (want %s, got %s)", assetName, fields[0], actualSHA)
 			}
+			fmt.Printf("Checksum verified (SHA-256: %s...)\n", actualSHA[:16])
+			verified = true
+			break
 		}
+	}
+	if !verified {
+		return fmt.Errorf("asset %q not found in checksums.txt; refusing unverified binary update", assetName)
 	}
 
 	// Extract binary from .zip or .tar.gz, or use raw bytes directly
@@ -197,7 +215,15 @@ func extractBinary(assetName string, data []byte) ([]byte, error) {
 					return nil, err
 				}
 				defer rc.Close()
-				return io.ReadAll(rc)
+				const maxExtractedBinaryBytes = 256 << 20
+				out, rErr := io.ReadAll(io.LimitReader(rc, maxExtractedBinaryBytes+1))
+				if rErr != nil {
+					return nil, rErr
+				}
+				if int64(len(out)) > maxExtractedBinaryBytes {
+					return nil, fmt.Errorf("extracted binary %q exceeds 256MB safety limit", wantBase)
+				}
+				return out, nil
 			}
 		}
 		return nil, fmt.Errorf("binary %q not found inside %s", wantBase, assetName)
@@ -220,7 +246,15 @@ func extractBinary(assetName string, data []byte) ([]byte, error) {
 			}
 			base := strings.ToLower(filepath.Base(hdr.Name))
 			if base == wantBase || (runtime.GOOS != "windows" && (base == "microbase" || base == "server")) {
-				return io.ReadAll(tr)
+				const maxExtractedBinaryBytes = 256 << 20
+				out, rErr := io.ReadAll(io.LimitReader(tr, maxExtractedBinaryBytes+1))
+				if rErr != nil {
+					return nil, rErr
+				}
+				if int64(len(out)) > maxExtractedBinaryBytes {
+					return nil, fmt.Errorf("extracted binary %q exceeds 256MB safety limit", wantBase)
+				}
+				return out, nil
 			}
 		}
 		return nil, fmt.Errorf("binary %q not found inside %s", wantBase, assetName)

@@ -97,7 +97,11 @@ func (h *OpsController) UpdateMail(c echo.Context) error {
 	}
 	if strings.TrimSpace(req.Password) == "" {
 		prev := h.loadMailConfig(c.Request().Context())
-		req.Password = prev.Password
+		if strings.EqualFold(strings.TrimSpace(req.Host), strings.TrimSpace(prev.Host)) &&
+			req.Port == prev.Port &&
+			strings.TrimSpace(req.Username) == strings.TrimSpace(prev.Username) {
+			req.Password = prev.Password
+		}
 	}
 	encoded, _ := json.Marshal(req)
 	_, err := h.pool.Exec(c.Request().Context(), `
@@ -117,7 +121,7 @@ func (h *OpsController) TestMail(c echo.Context) error {
 	var req struct {
 		To string `json:"to"`
 	}
-	if err := c.Bind(&req); err != nil || !strings.Contains(req.To, "@") {
+	if err := c.Bind(&req); err != nil || !isValidEmailAddress(req.To) {
 		return response.Error(c, http.StatusBadRequest, "INVALID_EMAIL", "valid recipient email is required")
 	}
 	cfg := h.loadMailConfig(c.Request().Context())
@@ -134,7 +138,7 @@ func (h *OpsController) TestMail(c echo.Context) error {
 		auth = smtp.PlainAuth("", cfg.Username, cfg.Password, cfg.Host)
 	}
 	msg := fmt.Sprintf("From: %s <%s>\r\nTo: %s\r\nSubject: Microbase SMTP Test\r\n\r\nHello from Microbase! Your SMTP configuration is working.\r\n",
-		cfg.SenderName, from, req.To)
+		sanitizeSMTPHeader(cfg.SenderName), sanitizeSMTPHeader(from), sanitizeSMTPHeader(req.To))
 	if err := smtp.SendMail(addr, auth, from, []string{req.To}, []byte(msg)); err != nil {
 		return response.Error(c, http.StatusBadGateway, "SMTP_FAILED", err.Error())
 	}
@@ -374,7 +378,81 @@ var (
 	createVectorExtRe  = regexp.MustCompile(`(?i)\bCREATE\s+EXTENSION\b[^;]*\b"?vector"?\b`)
 	commentVectorExtRe = regexp.MustCompile(`(?i)\bCOMMENT\s+ON\s+EXTENSION\s+"?vector"?\b`)
 	vectorColumnTypeRe = regexp.MustCompile(`(?i)(?:\b(?:public\.)?vector\s*\(\s*\d+\s*\)|::(?:public\.)?vector\b)`)
+	copyProgramSQLRe   = regexp.MustCompile(`(?i)\bCOPY\b[^;]*\bPROGRAM\b`)
 )
+
+// validateSQLBackupForRestore blocks dangerous psql meta-commands (e.g. \!, \i, \copy, \o, \connect)
+// and SQL COPY ... PROGRAM statements to prevent OS command execution during backup restore.
+func validateSQLBackupForRestore(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open backup for validation: %w", err)
+	}
+	defer f.Close()
+
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	inCopyData := false
+	lineNum := 0
+	for sc.Scan() {
+		lineNum++
+		line := sc.Text()
+		trimmed := strings.TrimSpace(line)
+
+		if inCopyData {
+			if trimmed == `\.` {
+				inCopyData = false
+			}
+			continue
+		}
+		if trimmed == "" || strings.HasPrefix(trimmed, "--") {
+			continue
+		}
+		if strings.HasPrefix(trimmed, `\`) {
+			// Disallow all psql backslash meta-commands outside COPY data blocks (prevents \!, \i, \o, \g |cmd, \copy, \connect).
+			return fmt.Errorf("backup rejected at line %d: psql meta-commands (%q) are not allowed for security", lineNum, trimmed[:min(24, len(trimmed))])
+		}
+		if copyProgramSQLRe.MatchString(trimmed) {
+			return fmt.Errorf("backup rejected at line %d: SQL COPY ... PROGRAM is not allowed for security", lineNum)
+		}
+		upper := strings.ToUpper(trimmed)
+		if strings.HasPrefix(upper, "COPY ") && strings.Contains(upper, " FROM STDIN") {
+			inCopyData = true
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return fmt.Errorf("scan backup for validation: %w", err)
+	}
+	return nil
+}
+
+// buildPGToolCommand builds a pg_dump/psql exec.Cmd passing PostgreSQL credentials via environment variables
+// instead of CLI arguments so passwords are never exposed in process listings (ps aux / /proc/cmdline).
+func buildPGToolCommand(ctx context.Context, binPath, databaseURL string, args ...string) *exec.Cmd {
+	host, port, user, pass, dbName, sslmode := parseDBURL(databaseURL)
+	cmd := exec.CommandContext(ctx, binPath, args...)
+	env := os.Environ()
+	if host != "" {
+		env = append(env, "PGHOST="+host)
+	}
+	if port != "" {
+		env = append(env, "PGPORT="+port)
+	}
+	if user != "" {
+		env = append(env, "PGUSER="+user)
+	}
+	if pass != "" {
+		env = append(env, "PGPASSWORD="+pass)
+	}
+	if dbName != "" {
+		env = append(env, "PGDATABASE="+dbName)
+	}
+	if sslmode != "" {
+		env = append(env, "PGSSLMODE="+sslmode)
+	}
+	cmd.Env = env
+	return cmd
+}
 
 // inspectBackupVectorUsage checks whether a .sql backup references the pgvector extension
 // and whether any table/query actually uses a vector(N) column type.
@@ -464,6 +542,11 @@ func (h *OpsController) RestoreBackup(c echo.Context) error {
 	ctx := c.Request().Context()
 	restorePath := full
 
+	// Validate backup file against psql meta-command injection (\!, \i, \copy, etc.) and COPY PROGRAM before running psql.
+	if valErr := validateSQLBackupForRestore(full); valErr != nil {
+		return response.Error(c, http.StatusBadRequest, "RESTORE_REJECTED", valErr.Error())
+	}
+
 	// Pre-flight pgvector check:
 	// - If the backup uses real vector(N) columns and target Postgres lacks pgvector -> abort before touching schema.
 	// - If the backup only has an unused CREATE/COMMENT EXTENSION vector -> strip it automatically so restore succeeds.
@@ -492,7 +575,7 @@ func (h *OpsController) RestoreBackup(c echo.Context) error {
 			safetyPath = tmp.Name()
 			_ = tmp.Close()
 			defer os.Remove(safetyPath)
-			dumpCmd := exec.CommandContext(ctx, pgDumpBin, "--schema=public", "--clean", "--if-exists", "--no-owner", "--no-privileges", h.databaseURL, "-f", safetyPath)
+			dumpCmd := buildPGToolCommand(ctx, pgDumpBin, h.databaseURL, "--schema=public", "--clean", "--if-exists", "--no-owner", "--no-privileges", "-f", safetyPath)
 			if dumpErr := dumpCmd.Run(); dumpErr != nil {
 				_ = os.Remove(safetyPath)
 				safetyPath = ""
@@ -506,14 +589,14 @@ func (h *OpsController) RestoreBackup(c echo.Context) error {
 		return response.Error(c, http.StatusInternalServerError, "RESTORE_FAILED", fmt.Sprintf("failed to reset schema before restore: %v", resetErr))
 	}
 
-	cmd := exec.CommandContext(ctx, psqlBin, "-v", "ON_ERROR_STOP=1", h.databaseURL, "-f", restorePath)
+	cmd := buildPGToolCommand(ctx, psqlBin, h.databaseURL, "-X", "-v", "ON_ERROR_STOP=1", "-f", restorePath)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		rollbackNote := ""
 		if safetyPath != "" {
 			rbCtx, rbCancel := context.WithTimeout(context.Background(), 2*time.Minute)
 			defer rbCancel()
 			_, _ = h.pool.Exec(rbCtx, `DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO PUBLIC;`)
-			rbCmd := exec.CommandContext(rbCtx, psqlBin, "-v", "ON_ERROR_STOP=1", h.databaseURL, "-f", safetyPath)
+			rbCmd := buildPGToolCommand(rbCtx, psqlBin, h.databaseURL, "-X", "-v", "ON_ERROR_STOP=1", "-f", safetyPath)
 			if rbOut, rbErr := rbCmd.CombinedOutput(); rbErr != nil {
 				rollbackNote = fmt.Sprintf("; automatic rollback also failed: %v (%s)", rbErr, strings.TrimSpace(string(rbOut)))
 			} else {
@@ -726,6 +809,15 @@ func (h *OpsController) GetDatabase(c echo.Context) error {
 	})
 }
 
+func validateDBConnRequest(req dbConnRequest) error {
+	for _, v := range []string{req.Host, req.Port, req.User, req.Database, req.SSLMode} {
+		if strings.ContainsAny(v, "\r\n") {
+			return fmt.Errorf("database connection parameters must not contain newlines")
+		}
+	}
+	return nil
+}
+
 // TestDatabase handles POST /api/settings/database/test (tests connectivity via pgxpool.Ping).
 func (h *OpsController) TestDatabase(c echo.Context) error {
 	claims := middlewares.GetAuthClaims(c)
@@ -736,8 +828,19 @@ func (h *OpsController) TestDatabase(c echo.Context) error {
 	if err := c.Bind(&req); err != nil || strings.TrimSpace(req.Host) == "" || strings.TrimSpace(req.Database) == "" {
 		return response.Error(c, http.StatusBadRequest, "INVALID_INPUT", "host and database name are required")
 	}
-	_, _, _, prevPass, _, _ := parseDBURL(h.configuredDBURL)
-	dsn := buildDBURL(req, prevPass)
+	if err := validateDBConnRequest(req); err != nil {
+		return response.Error(c, http.StatusBadRequest, "INVALID_INPUT", err.Error())
+	}
+	prevHost, prevPort, prevUser, prevPass, _, _ := parseDBURL(h.configuredDBURL)
+	reqPort := strings.TrimSpace(req.Port)
+	if reqPort == "" {
+		reqPort = "5432"
+	}
+	fallbackPass := ""
+	if strings.EqualFold(strings.TrimSpace(req.Host), prevHost) && reqPort == prevPort && strings.TrimSpace(req.User) == prevUser {
+		fallbackPass = prevPass
+	}
+	dsn := buildDBURL(req, fallbackPass)
 
 	ctx, cancel := context.WithTimeout(c.Request().Context(), 5*time.Second)
 	defer cancel()
@@ -764,8 +867,19 @@ func (h *OpsController) UpdateDatabase(c echo.Context) error {
 	if err := c.Bind(&req); err != nil || strings.TrimSpace(req.Host) == "" || strings.TrimSpace(req.Database) == "" {
 		return response.Error(c, http.StatusBadRequest, "INVALID_INPUT", "host and database name are required")
 	}
-	_, _, _, prevPass, _, _ := parseDBURL(h.configuredDBURL)
-	dsn := buildDBURL(req, prevPass)
+	if err := validateDBConnRequest(req); err != nil {
+		return response.Error(c, http.StatusBadRequest, "INVALID_INPUT", err.Error())
+	}
+	prevHost, prevPort, prevUser, prevPass, _, _ := parseDBURL(h.configuredDBURL)
+	reqPort := strings.TrimSpace(req.Port)
+	if reqPort == "" {
+		reqPort = "5432"
+	}
+	fallbackPass := ""
+	if strings.EqualFold(strings.TrimSpace(req.Host), prevHost) && reqPort == prevPort && strings.TrimSpace(req.User) == prevUser {
+		fallbackPass = prevPass
+	}
+	dsn := buildDBURL(req, fallbackPass)
 
 	ctx, cancel := context.WithTimeout(c.Request().Context(), 5*time.Second)
 	defer cancel()
@@ -810,9 +924,15 @@ func (h *OpsController) UpdateDatabase(c echo.Context) error {
 }
 
 
-// GetAppSettings handles GET /api/settings/app (public-safe UI branding + settings).
+// GetAppSettings handles GET /api/settings/app (public-safe UI branding for guests, full config for superusers).
 func (h *OpsController) GetAppSettings(c echo.Context) error {
-	return response.OK(c, services.GetCachedAppSettings())
+	cfg := services.GetCachedAppSettings()
+	claims := middlewares.GetAuthClaims(c)
+	if claims == nil || claims.Role != "superuser" {
+		cfg.TrustedProxy = services.TrustedProxySettings{}
+		cfg.SuperuserIPs = services.SuperuserIPSettings{}
+	}
+	return response.OK(c, cfg)
 }
 
 // UpdateAppSettings handles PUT /api/settings/app (Superuser only — persisted to _settings and hot-reloaded).

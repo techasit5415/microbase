@@ -3,6 +3,7 @@ package controllers
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -23,13 +24,27 @@ func NewSettingsController(pool *pgxpool.Pool, c *cache.SwitchableStore, st *sto
 	return &SettingsController{pool: pool, cache: c, storage: st}
 }
 
-// GetRedis handles GET /api/settings/redis.
+func maskRedisURL(raw string) (string, bool) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.User == nil {
+		return raw, false
+	}
+	if _, hasPass := u.User.Password(); !hasPass {
+		return raw, false
+	}
+	u.User = url.UserPassword(u.User.Username(), "REDACTED")
+	return u.String(), true
+}
+
+// GetRedis handles GET /api/settings/redis (masks Redis password).
 func (h *SettingsController) GetRedis(c echo.Context) error {
 	var redisURL string
 	_ = h.pool.QueryRow(c.Request().Context(), `SELECT value FROM _settings WHERE key = 'redis_url'`).Scan(&redisURL)
+	masked, hasPass := maskRedisURL(redisURL)
 	return response.OK(c, map[string]any{
-		"redis_url": redisURL,
-		"backend":   h.cache.Backend(),
+		"redis_url":    masked,
+		"has_password": hasPass,
+		"backend":      h.cache.Backend(),
 	})
 }
 
@@ -41,9 +56,21 @@ func (h *SettingsController) UpdateRedis(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return response.Error(c, http.StatusBadRequest, "INVALID_JSON", "invalid request body")
 	}
-	url := strings.TrimSpace(req.RedisURL)
+	rawURL := strings.TrimSpace(req.RedisURL)
+	if parsed, err := url.Parse(rawURL); err == nil && parsed.User != nil {
+		if pw, ok := parsed.User.Password(); ok && (pw == "REDACTED" || pw == "********") {
+			var prevRaw string
+			_ = h.pool.QueryRow(c.Request().Context(), `SELECT value FROM _settings WHERE key = 'redis_url'`).Scan(&prevRaw)
+			if prevU, pErr := url.Parse(strings.TrimSpace(prevRaw)); pErr == nil && prevU.User != nil && strings.EqualFold(parsed.Host, prevU.Host) {
+				if prevPW, ok2 := prevU.User.Password(); ok2 {
+					parsed.User = url.UserPassword(parsed.User.Username(), prevPW)
+					rawURL = parsed.String()
+				}
+			}
+		}
+	}
 
-	backend, err := h.cache.Switch(c.Request().Context(), url)
+	backend, err := h.cache.Switch(c.Request().Context(), rawURL)
 	if err != nil {
 		return response.Error(c, http.StatusBadRequest, "REDIS_CONNECT_FAILED", "failed to connect to redis: "+err.Error())
 	}
@@ -52,15 +79,17 @@ func (h *SettingsController) UpdateRedis(c echo.Context) error {
 		INSERT INTO _settings (key, value, updated_at)
 		VALUES ('redis_url', $1, NOW())
 		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
-		url,
+		rawURL,
 	)
 	if err != nil {
 		return response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 	}
 
+	masked, hasPass := maskRedisURL(rawURL)
 	return response.OK(c, map[string]any{
-		"redis_url": url,
-		"backend":   backend,
+		"redis_url":    masked,
+		"has_password": hasPass,
+		"backend":      backend,
 	})
 }
 
@@ -91,13 +120,15 @@ func (h *SettingsController) UpdateS3(c echo.Context) error {
 		return response.Error(c, http.StatusBadRequest, "INVALID_JSON", "invalid request body")
 	}
 
-	// Preserve existing secret_key if omitted on update.
+	// Preserve existing secret_key only if endpoint and access_key did not change (prevents secret exfiltration to a new endpoint).
 	if strings.TrimSpace(req.SecretKey) == "" {
 		var raw string
 		_ = h.pool.QueryRow(c.Request().Context(), `SELECT value FROM _settings WHERE key = 's3_config'`).Scan(&raw)
 		if raw != "" {
 			var prev storage.S3Config
-			if json.Unmarshal([]byte(raw), &prev) == nil {
+			if json.Unmarshal([]byte(raw), &prev) == nil &&
+				strings.EqualFold(strings.TrimRight(strings.TrimSpace(req.Endpoint), "/"), strings.TrimRight(strings.TrimSpace(prev.Endpoint), "/")) &&
+				strings.TrimSpace(req.AccessKey) == strings.TrimSpace(prev.AccessKey) {
 				req.SecretKey = prev.SecretKey
 			}
 		}

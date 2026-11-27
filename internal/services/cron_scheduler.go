@@ -161,7 +161,7 @@ func ExecuteCustomCron(ctx context.Context, pool *pgxpool.Pool, job CronJob) (st
 				req.Header.Set("Content-Type", "application/json")
 			}
 			req.Header.Set("User-Agent", "Microbase-Cron/1.0")
-			resp, err := http.DefaultClient.Do(req)
+			resp, err := NewSafeHTTPClient(15 * time.Second).Do(req)
 			if err != nil {
 				runErr = err
 				statusMsg = "error: " + err.Error()

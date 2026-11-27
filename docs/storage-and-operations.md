@@ -2,9 +2,10 @@
 
 ## File Storage (Local Disk & Hot-Swappable S3)
 
-- **Upload**: `POST /api/files` (`multipart/form-data` with field `file`, max 20 MB).
-- **Download**: `GET /api/files/:filename`
-- **On-the-fly Image Thumbnails**: Append `?thumb=WxH` (e.g. `?thumb=100x100` or `?thumb=480x0`) for JPEG/PNG resizing.
+- **Upload**: `POST /api/files` (`multipart/form-data` with field `file`, max 20 MB, **requires `Authorization: Bearer <token>`**).
+- **File Token**: `POST /api/files/token` (**requires `Authorization: Bearer <token>`**) mints a 2-minute scoped `?token=` for protected downloads.
+- **Download**: `GET /api/files/:filename` (pass `?protected=1` with `?token=` or Bearer auth to enforce access control).
+- **On-the-fly Image Thumbnails**: Append `?thumb=WxH` (e.g. `?thumb=100x100` or `?thumb=480x0`) using preset dimensions (`32..1024`) for JPEG/PNG resizing.
 
 ### Connecting S3 / Cloudflare R2 / MinIO
 
@@ -18,7 +19,7 @@ Open **Settings → Files storage** (`/_/settings/storage`, `PUT /api/settings/s
 ## Hot-Swappable Redis Cache
 
 By default, Microbase uses an in-memory cache (`memory`) for schema caching, rate limiting, OAuth states, and OTPs.
-To scale horizontally, open **Settings → Database & Cache** (`/_/settings/database`, `PUT /api/settings/redis`) and set `redis://host:6379/0`. Microbase verifies `PING` and hot-swaps the cache live.
+To scale horizontally, open **Settings → Database & Cache** (`/_/settings/database`, `PUT /api/settings/redis`) and set `redis://host:6379/0`. Microbase verifies `PING` and hot-swaps the cache live. `GET /api/settings/redis` masks any embedded Redis password as `REDACTED` (and returns `has_password: true`); existing credentials for Redis, PostgreSQL, SMTP, and S3 are only reused when the target host/endpoint is unchanged.
 
 ---
 
@@ -72,6 +73,7 @@ Configure outbound event hooks in **Settings → Webhooks** (`/_/settings/webhoo
 - **Firebase FCM (HTTP v1)**: Sends push notification payloads with `Authorization: Bearer <token>`.
 - **Generic HTTP**: POSTs JSON `{ "collection", "event", "record", "timestamp" }` with optional custom headers, HMAC signing secret, and configurable retry count (`max_retries`).
 - Use **Test** (`POST /api/webhooks/:id/test`) to verify delivery immediately.
+- **SSRF Protection**: Outbound webhook and HTTP cron requests block loopback, private LAN, and link-local/metadata IP ranges (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.169.254`) and disable automatic redirects by default. For trusted self-hosted LAN targets, opt in with `ALLOW_PRIVATE_WEBHOOKS=true`.
 
 ---
 
@@ -87,7 +89,7 @@ Manage PostgreSQL SQL snapshots in **Settings → Backups** (`/_/settings/backup
 - `POST /api/backups` — Create a timestamped `.sql` dump via `pg_dump`.
 - `POST /api/backups/upload` — Upload an existing `.sql` backup file.
 - `GET /api/backups/:name` — Download backup file (requires `Authorization: Bearer <superuser_token>`).
-- `POST /api/backups/:name/restore` — Takes a temporary safety snapshot, resets the `public` schema, restores via `psql -v ON_ERROR_STOP=1`, and flushes schema cache + reloads in-memory settings on success. If `psql` fails, the original database is automatically rolled back.
+- `POST /api/backups/:name/restore` — Validates the `.sql` dump (rejecting `psql` backslash meta-commands such as `\!`, `\i`, `\copy`, `\o`, `\connect` and SQL `COPY ... PROGRAM` statements), takes a temporary safety snapshot, resets the `public` schema, restores via `psql -X -v ON_ERROR_STOP=1` (passing credentials via `PG*` environment variables instead of CLI arguments), and flushes schema cache + reloads in-memory settings on success. If `psql` fails, the original database is automatically rolled back.
 - `DELETE /api/backups/:name` — Remove backup file.
 
 > **Prerequisites & `pgvector` Portability**:

@@ -7,7 +7,7 @@ Superusers have full administrative access and automatically bypass all collecti
 | Endpoint | Auth | Description |
 |---|---|---|
 | `GET /api/superusers/status` | Public | Returns `{ "has_superuser": true/false }`. |
-| `POST /api/superusers/setup` | Setup OTP | Creates the first superuser (requires 8-digit 5m OTP). Permanently locked once created. |
+| `POST /api/superusers/setup` | Setup OTP | Creates the first superuser (requires 8-digit 5m OTP; invalidated after 5 failed attempts, rate-limited 5 req/min). Permanently locked once created. |
 | `POST /api/superusers/login` | Public | Returns a Superuser Bearer JWT (`role: "superuser"`). |
 | `POST /api/superusers` | Superuser | Creates an additional superuser account. |
 | `PATCH /api/superusers/:id` | Superuser | Updates a superuser's email or password. |
@@ -28,11 +28,11 @@ Superusers have full administrative access and automatically bypass all collecti
 | `POST /api/auth/confirm-password-reset` | Public | Resets password using `{ token, password }`. |
 | `POST /api/auth/request-email-change` | Bearer JWT | Sends a 15-minute token to `new_email`. |
 | `POST /api/auth/confirm-email-change` | Public | Confirms email change using `{ token }`. |
-| `POST /api/auth/request-otp` | Public | Sends a 6-digit login OTP (valid 5m) and returns `otp_id`. |
-| `POST /api/auth/auth-with-otp` | Public | Exchanges `{ otp_id, password }` for a JWT. |
+| `POST /api/auth/request-otp` | Public | Sends a 6-digit login OTP (valid 5m, rate-limited 10 req/min) and returns `otp_id`. |
+| `POST /api/auth/auth-with-otp` | Public | Exchanges `{ otp_id, password }` for a JWT (invalidated after 5 failed attempts, rate-limited 10 req/min). |
 | `POST /api/users/:id/impersonate` | Superuser | Mints a Bearer JWT impersonating user `:id` for API testing. |
 
-*(When SMTP Mail is disabled in Settings, verification/reset/OTP tokens are printed to the server log for easy local development.)*
+*(When SMTP Mail is disabled in Settings, verification/reset/OTP tokens are printed to the server log for easy local development. Bearer JWTs must be sent via the `Authorization: Bearer <token>` header; `?token=` query parameter is only accepted on `/api/realtime` SSE. On `users` and custom `auth` collections, `email` is hidden from non-owners/non-superusers unless `email_visibility = true`; non-privileged users cannot set `role` or `verified`, and changing `email` via `PATCH /api/users/:id` automatically resets `verified = false`.)*
 
 ### Login Fingerprints (`_authOrigins`)
 
@@ -50,6 +50,7 @@ Configure providers in `/_/` -> **Collections -> `users` -> ⚙️ -> Options ->
    ```text
    GET /api/auth/oauth/<provider>?redirect_to=https://your-app.com/auth/callback
    ```
+   *(For security, `redirect_to` must match the origin of `AppURL` in Application Settings or an origin listed in `CORS_ORIGINS`.)*
 2. After the user authenticates with the IdP, Microbase redirects back to:
    ```text
    https://your-app.com/auth/callback?code=<ONE_TIME_CODE>
@@ -66,6 +67,7 @@ Configure providers in `/_/` -> **Collections -> `users` -> ⚙️ -> Options ->
 For standard OIDC providers (Keycloak, Authentik, Auth0, Okta, Google):
 - Fill **Client ID**, **Client Secret**, and **OIDC Issuer URL**.
 - Leave **Auth URL**, **Token URL**, and **UserInfo URL** blank for automatic discovery via `<issuer_url>/.well-known/openid-configuration`, or set them explicitly if needed.
+- **Strict Verification**: When OIDC discovery is enabled, `id_token` signature, audience, issuer, and expiry verification is mandatory (fail-closed — invalid tokens are rejected immediately). For Google and Discord providers, the provider must report a verified email (`email_verified: true` / `verified: true`) before account linking is permitted.
 
 ### KMITL Science IAM (`scikmitl`) & Custom University IAM
 

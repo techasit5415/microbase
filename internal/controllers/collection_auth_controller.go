@@ -95,6 +95,9 @@ func (h *CollectionAuthController) Register(c echo.Context) error {
 	}
 
 	for k, v := range raw {
+		if (k == "role" || k == "verified") && (claims == nil || claims.Role != "superuser") {
+			continue
+		}
 		if !allowed[k] || k == "id" || k == "email" || k == "password" || k == "password_hash" || k == "token_key" || v == nil {
 			continue
 		}
@@ -218,6 +221,14 @@ func (h *CollectionAuthController) AuthRefresh(c echo.Context) error {
 	if err != nil {
 		return response.Error(c, http.StatusNotFound, "COLLECTION_NOT_FOUND", "collection not found")
 	}
+	if claims.Collection != col.Name || claims.RecordID == "" || (col.Type != "auth" && col.Name != "users") {
+		return response.Error(c, http.StatusUnauthorized, "UNAUTHORIZED", "invalid collection session")
+	}
+	var email, role string
+	if err := h.pool.QueryRow(c.Request().Context(), fmt.Sprintf(`SELECT email, role FROM "%s" WHERE id::text = $1`, authTableName(col)), claims.RecordID).Scan(&email, &role); err != nil {
+		return response.Error(c, http.StatusUnauthorized, "UNAUTHORIZED", "account not found")
+	}
+	claims.Email, claims.Role = email, role
 	idStr := claims.RecordID
 	if idStr == "" {
 		idStr = fmt.Sprint(claims.UserID)

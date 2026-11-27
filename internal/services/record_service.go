@@ -140,6 +140,14 @@ func (s *RecordService) Create(ctx context.Context, colName string, data models.
 		return nil, err
 	}
 	allowed := allowedFieldMap(col)
+	if (col.Type == "auth" || col.Name == "users") && (claims == nil || claims.Role != "superuser") {
+		if _, ok := data["role"]; ok {
+			return nil, ErrForbidden
+		}
+		if _, ok := data["verified"]; ok {
+			return nil, ErrForbidden
+		}
+	}
 
 	if data == nil {
 		data = models.Record{}
@@ -234,6 +242,14 @@ func (s *RecordService) Update(ctx context.Context, colName string, rawID string
 		return nil, err
 	}
 	allowed := allowedFieldMap(col)
+	if (col.Type == "auth" || col.Name == "users") && (claims == nil || claims.Role != "superuser") {
+		if _, ok := data["role"]; ok {
+			return nil, ErrForbidden
+		}
+		if _, ok := data["verified"]; ok {
+			return nil, ErrForbidden
+		}
+	}
 	if data == nil {
 		data = models.Record{}
 	}
@@ -246,6 +262,27 @@ func (s *RecordService) Update(ctx context.Context, colName string, rawID string
 			if f.OnUpdate {
 				data[f.Name] = now
 			}
+		}
+	}
+
+	idVal, idErr := parseRecordID(col, rawID)
+	if idErr != nil {
+		return nil, idErr
+	}
+
+	// Pre-check static/update API rule before running JS hooks so unauthorized callers cannot trigger beforeUpdate.
+	if _, _, _, preRuleErr := CompileAPIRule(col, "update", claims, data, 1); preRuleErr != nil {
+		return nil, preRuleErr
+	}
+
+	if s.hooks != nil {
+		if err := s.hooks.RunBefore("beforeUpdate", col.Name, map[string]any{"collection": col.Name, "id": rawID, "data": data}); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		}
+		// Re-enforce protected fields after hook mutations for non-superusers.
+		if (col.Type == "auth" || col.Name == "users") && (claims == nil || claims.Role != "superuser") {
+			delete(data, "role")
+			delete(data, "verified")
 		}
 	}
 
@@ -269,17 +306,8 @@ func (s *RecordService) Update(ctx context.Context, colName string, rawID string
 	}
 
 	setClauses = append(setClauses, `"updated_at" = NOW()`)
-	idVal, idErr := parseRecordID(col, rawID)
-	if idErr != nil {
-		return nil, idErr
-	}
 	args = append(args, idVal)
 
-	if s.hooks != nil {
-		if err := s.hooks.RunBefore("beforeUpdate", col.Name, map[string]any{"collection": col.Name, "id": rawID, "data": data}); err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
-		}
-	}
 	ruleSQL, ruleArgs, _, ruleErr := CompileAPIRule(col, "update", claims, data, idx+1)
 	if ruleErr != nil {
 		return nil, ruleErr
@@ -326,14 +354,14 @@ func (s *RecordService) Delete(ctx context.Context, colName string, rawID string
 		return idErr
 	}
 
+	ruleSQL, ruleArgs, _, ruleErr := CompileAPIRule(col, "delete", claims, nil, 2)
+	if ruleErr != nil {
+		return ruleErr
+	}
 	if s.hooks != nil {
 		if err := s.hooks.RunBefore("beforeDelete", col.Name, map[string]any{"collection": col.Name, "id": rawID}); err != nil {
 			return fmt.Errorf("%w: %v", ErrInvalidInput, err)
 		}
-	}
-	ruleSQL, ruleArgs, _, ruleErr := CompileAPIRule(col, "delete", claims, nil, 2)
-	if ruleErr != nil {
-		return ruleErr
 	}
 
 	query := fmt.Sprintf(`DELETE FROM "%s" WHERE "id" = $1`, col.Name)

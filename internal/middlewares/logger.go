@@ -388,7 +388,15 @@ func RequestLogger() echo.MiddlewareFunc {
 				}
 			}
 
-			fullURL := c.Request().URL.RequestURI()
+			logURL := *c.Request().URL
+			query := logURL.Query()
+			for _, key := range []string{"token", "code", "state"} {
+				if query.Has(key) {
+					query.Set(key, "[REDACTED]")
+				}
+			}
+			logURL.RawQuery = query.Encode()
+			fullURL := logURL.RequestURI()
 			if fullURL == "" {
 				fullURL = path
 			}

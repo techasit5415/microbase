@@ -55,14 +55,18 @@ func (g *GoogleProvider) ExchangeUser(ctx context.Context, code string) (*Extern
 	}
 
 	var profile struct {
-		Sub   string `json:"sub"`
-		Email string `json:"email"`
+		Sub           string `json:"sub"`
+		Email         string `json:"email"`
+		EmailVerified bool   `json:"email_verified"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&profile); err != nil {
 		return nil, fmt.Errorf("decode google profile: %w", err)
 	}
 	if profile.Sub == "" || profile.Email == "" {
 		return nil, fmt.Errorf("google profile missing sub or email")
+	}
+	if !profile.EmailVerified {
+		return nil, fmt.Errorf("google account email is not verified")
 	}
 
 	return &ExternalUser{

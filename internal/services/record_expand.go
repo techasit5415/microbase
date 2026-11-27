@@ -52,7 +52,7 @@ func (s *RecordService) expandRecordsDepth(ctx context.Context, col *models.Coll
 		if viaIdx := strings.Index(fname, "_via_"); viaIdx > 0 && viaIdx+5 < len(fname) {
 			childName := fname[:viaIdx]
 			relField := fname[viaIdx+5:]
-			expandedChildren, childCol := s.expandBackRelation(ctx, items, fname, childName, relField, claims)
+			expandedChildren, childCol := s.expandBackRelation(ctx, col.Name, items, fname, childName, relField, claims)
 			if childCol != nil && len(expandedChildren) > 0 && len(subExpands[fname]) > 0 {
 				s.expandRecordsDepth(ctx, childCol, expandedChildren, strings.Join(subExpands[fname], ","), claims, depth+1)
 			}
@@ -178,7 +178,7 @@ func (s *RecordService) expandRecordsDepth(ctx context.Context, col *models.Coll
 	}
 }
 
-func (s *RecordService) expandBackRelation(ctx context.Context, parents []models.Record, expandKey, childName, relField string, claims *AuthClaims) ([]models.Record, *models.Collection) {
+func (s *RecordService) expandBackRelation(ctx context.Context, parentColName string, parents []models.Record, expandKey, childName, relField string, claims *AuthClaims) ([]models.Record, *models.Collection) {
 	if !models.IsValidIdentifier(childName) || !models.IsValidIdentifier(relField) {
 		return nil, nil
 	}
@@ -189,6 +189,12 @@ func (s *RecordService) expandBackRelation(ctx context.Context, parents []models
 	var hasField bool
 	for _, f := range childCol.Fields {
 		if f.Name == relField && f.Type == "relation" {
+			if parentColName != "" && f.CollectionName != "" && f.CollectionName != parentColName {
+				return nil, nil
+			}
+			if f.Hidden && (claims == nil || claims.Role != "superuser") {
+				return nil, nil
+			}
 			hasField = true
 			break
 		}

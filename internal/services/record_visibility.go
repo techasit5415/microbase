@@ -10,14 +10,23 @@ import (
 func VisibleRecord(col *models.Collection, claims *AuthClaims, rec models.Record) models.Record {
 	out := make(models.Record, len(rec))
 	for k, v := range rec {
-		if k != "password_hash" {
+		if k != "password_hash" && k != "token_key" {
 			out[k] = v
 		}
 	}
-	if claims == nil || claims.Role != "superuser" {
+	isSuper := claims != nil && claims.Role == "superuser"
+	if !isSuper && col != nil {
 		for _, f := range col.Fields {
 			if f.Hidden {
 				delete(out, f.Name)
+			}
+		}
+		if col.Type == "auth" || col.Name == "users" {
+			emailVis, _ := out["email_visibility"].(bool)
+			recID := fmt.Sprint(out["id"])
+			isOwner := claims != nil && (claims.UserID == recID || claims.RecordID == recID)
+			if !emailVis && !isOwner {
+				delete(out, "email")
 			}
 		}
 	}

@@ -135,10 +135,10 @@ type filterParser struct {
 	tableName  string
 	allowed    map[string]models.FieldDef
 	createMode bool
-	claims  *AuthClaims
-	body    map[string]any
-	args    []any
-	nextArg int
+	claims     *AuthClaims
+	body       map[string]any
+	args       []any
+	nextArg    int
 }
 
 // ParseFilterToSQL compiles a PocketBase filter string into a safe parameterized PostgreSQL WHERE snippet.
@@ -387,6 +387,19 @@ func buildScalarCompSQL(colExpr string, baseOp string, argIdx int) string {
 	}
 }
 
+func isSensitiveFilterColumn(col string) bool {
+	switch strings.ToLower(strings.TrimSpace(col)) {
+	case "password_hash", "token_key", "password", "secret", "client_secret", "profile_api_key":
+		return true
+	default:
+		return false
+	}
+}
+
+func isInternalSystemTable(name string) bool {
+	return strings.HasPrefix(strings.TrimSpace(name), "_")
+}
+
 func (p *filterParser) compileDynamicAuthSQL(authTok fToken, op string, valTok fToken) (string, error) {
 	rest := authTok.val[len("@request.auth."):]
 	parts := strings.Split(rest, ".")
@@ -397,6 +410,12 @@ func (p *filterParser) compileDynamicAuthSQL(authTok fToken, op string, valTok f
 		if !models.IsValidIdentifier(seg) {
 			return "", fmt.Errorf("invalid identifier %q in %q", seg, authTok.val)
 		}
+		if isSensitiveFilterColumn(seg) {
+			return "", fmt.Errorf("access to sensitive field %q is not allowed in filters", seg)
+		}
+	}
+	if len(parts) == 2 && isInternalSystemTable(parts[0]) {
+		return "", fmt.Errorf("access to system table %q is not allowed in filters", parts[0])
 	}
 
 	val, isNull, err := p.resolveValue(valTok)
@@ -404,6 +423,9 @@ func (p *filterParser) compileDynamicAuthSQL(authTok fToken, op string, valTok f
 		return "", err
 	}
 	authID := authUserIDStr(p.claims)
+	if p.claims != nil && p.claims.Collection != "" && p.claims.Collection != "users" {
+		return "FALSE", nil
+	}
 	if authID == "" {
 		if isNegatedOp(op) {
 			return "TRUE", nil
@@ -471,11 +493,22 @@ func (p *filterParser) compileDynamicAuthSQL(authTok fToken, op string, valTok f
 
 func (p *filterParser) compileRelationPathSQL(relTok fToken, op string, valTok fToken) (string, error) {
 	parts := strings.Split(relTok.val, ".")
+	for _, seg := range parts[1:] {
+		if isSensitiveFilterColumn(seg) {
+			return "", fmt.Errorf("access to sensitive field %q is not allowed in filters", seg)
+		}
+	}
 	relField := parts[0]
 	fDef := p.allowed[relField]
 	target1 := fDef.CollectionName
 	if !models.IsValidIdentifier(target1) {
 		target1 = relField
+	}
+	if isInternalSystemTable(target1) {
+		return "", fmt.Errorf("access to system table %q is not allowed in filters", target1)
+	}
+	if len(parts) == 3 && isInternalSystemTable(parts[1]) {
+		return "", fmt.Errorf("access to system table %q is not allowed in filters", parts[1])
 	}
 
 	val, isNull, err := p.resolveValue(valTok)
@@ -866,6 +899,9 @@ func (p *filterParser) resolveValue(tok fToken) (any, bool, error) {
 			if p.claims.Role == "superuser" {
 				return "_superusers", false, nil
 			}
+			if p.claims.Collection != "" {
+				return p.claims.Collection, false, nil
+			}
 			return "users", false, nil
 		case strings.HasPrefix(lower, "@request.body.") && strings.HasSuffix(lower, ":isset"):
 			field := tok.val[len("@request.body.") : len(tok.val)-len(":isset")]
@@ -1044,6 +1080,9 @@ func (e *dataRuleEval) resolve(tok fToken) (any, bool) {
 			}
 			if e.claims.Role == "superuser" {
 				return "_superusers", false
+			}
+			if e.claims.Collection != "" {
+				return e.claims.Collection, false
 			}
 			return "users", false
 		case strings.HasPrefix(lower, "@request.body.") && strings.HasSuffix(lower, ":isset"):

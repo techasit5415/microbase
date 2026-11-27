@@ -3,12 +3,14 @@ package controllers
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math/big"
 	"net/http"
+	"net/mail"
 	"net/smtp"
 	"strings"
 	"time"
@@ -34,7 +36,27 @@ func NewAuthExtraController(pool *pgxpool.Pool, authSvc *services.AuthService, c
 	return &AuthExtraController{pool: pool, auth: authSvc, cache: c}
 }
 
+func isValidEmailAddress(raw string) bool {
+	if strings.ContainsAny(raw, "\r\n") {
+		return false
+	}
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || !strings.Contains(trimmed, "@") {
+		return false
+	}
+	addr, err := mail.ParseAddress(trimmed)
+	return err == nil && addr.Address == trimmed
+}
+
+func sanitizeSMTPHeader(v string) string {
+	return strings.NewReplacer("\r", "", "\n", "").Replace(strings.TrimSpace(v))
+}
+
 func (h *AuthExtraController) sendEmailOrLog(ctx context.Context, to, subject, body string) {
+	if !isValidEmailAddress(to) {
+		slog.Warn("refused to send email to invalid address", "to", sanitizeSMTPHeader(to))
+		return
+	}
 	var raw string
 	_ = h.pool.QueryRow(ctx, `SELECT value FROM _settings WHERE key = 'mail_config'`).Scan(&raw)
 	var cfg MailConfig
@@ -56,7 +78,7 @@ func (h *AuthExtraController) sendEmailOrLog(ctx context.Context, to, subject, b
 	if cfg.Username != "" {
 		auth = smtp.PlainAuth("", cfg.Username, cfg.Password, cfg.Host)
 	}
-	msg := fmt.Sprintf("From: %s <%s>\r\nTo: %s\r\nSubject: %s\r\n\r\n%s\r\n", cfg.SenderName, from, to, subject, body)
+	msg := fmt.Sprintf("From: %s <%s>\r\nTo: %s\r\nSubject: %s\r\n\r\n%s\r\n", sanitizeSMTPHeader(cfg.SenderName), sanitizeSMTPHeader(from), sanitizeSMTPHeader(to), sanitizeSMTPHeader(subject), body)
 	if err := smtp.SendMail(fmt.Sprintf("%s:%d", cfg.Host, cfg.Port), auth, from, []string{to}, []byte(msg)); err != nil {
 		slog.Warn("smtp send failed", "to", to, "error", err)
 	}
@@ -79,7 +101,17 @@ func (h *AuthExtraController) Refresh(c echo.Context) error {
 	if claims == nil {
 		return response.Error(c, http.StatusUnauthorized, "UNAUTHORIZED", "authentication required")
 	}
-	u := models.User{ID: claims.UserID, Email: claims.Email, Role: claims.Role}
+	if claims.UserID == "" || claims.Collection != "" || h.pool == nil {
+		return response.Error(c, http.StatusUnauthorized, "UNAUTHORIZED", "invalid session")
+	}
+	var u models.User
+	query := `SELECT id::text, email, role FROM users WHERE id::text = $1`
+	if claims.Role == "superuser" {
+		query = `SELECT id::text, email, 'superuser' FROM _superusers WHERE id::text = $1`
+	}
+	if err := h.pool.QueryRow(c.Request().Context(), query, claims.UserID).Scan(&u.ID, &u.Email, &u.Role); err != nil {
+		return response.Error(c, http.StatusUnauthorized, "UNAUTHORIZED", "account not found")
+	}
 	tok, err := h.auth.GenerateToken(u)
 	if err != nil {
 		return response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
@@ -89,8 +121,10 @@ func (h *AuthExtraController) Refresh(c echo.Context) error {
 
 // RequestVerification handles POST /api/auth/request-verification.
 func (h *AuthExtraController) RequestVerification(c echo.Context) error {
-	var req struct{ Email string `json:"email"` }
-	if err := c.Bind(&req); err != nil || !strings.Contains(req.Email, "@") {
+	var req struct {
+		Email string `json:"email"`
+	}
+	if err := c.Bind(&req); err != nil || !isValidEmailAddress(req.Email) {
 		return response.Error(c, http.StatusBadRequest, "INVALID_EMAIL", "valid email required")
 	}
 	email := strings.ToLower(strings.TrimSpace(req.Email))
@@ -102,7 +136,9 @@ func (h *AuthExtraController) RequestVerification(c echo.Context) error {
 
 // ConfirmVerification handles POST /api/auth/confirm-verification.
 func (h *AuthExtraController) ConfirmVerification(c echo.Context) error {
-	var req struct{ Token string `json:"token"` }
+	var req struct {
+		Token string `json:"token"`
+	}
 	if err := c.Bind(&req); err != nil || req.Token == "" {
 		return response.Error(c, http.StatusBadRequest, "INVALID_TOKEN", "token required")
 	}
@@ -120,8 +156,10 @@ func (h *AuthExtraController) ConfirmVerification(c echo.Context) error {
 
 // RequestPasswordReset handles POST /api/auth/request-password-reset.
 func (h *AuthExtraController) RequestPasswordReset(c echo.Context) error {
-	var req struct{ Email string `json:"email"` }
-	if err := c.Bind(&req); err != nil || !strings.Contains(req.Email, "@") {
+	var req struct {
+		Email string `json:"email"`
+	}
+	if err := c.Bind(&req); err != nil || !isValidEmailAddress(req.Email) {
 		return response.Error(c, http.StatusBadRequest, "INVALID_EMAIL", "valid email required")
 	}
 	email := strings.ToLower(strings.TrimSpace(req.Email))
@@ -162,8 +200,10 @@ func (h *AuthExtraController) RequestEmailChange(c echo.Context) error {
 	if claims == nil {
 		return response.Error(c, http.StatusUnauthorized, "UNAUTHORIZED", "authentication required")
 	}
-	var req struct{ NewEmail string `json:"new_email"` }
-	if err := c.Bind(&req); err != nil || !strings.Contains(req.NewEmail, "@") {
+	var req struct {
+		NewEmail string `json:"new_email"`
+	}
+	if err := c.Bind(&req); err != nil || !isValidEmailAddress(req.NewEmail) {
 		return response.Error(c, http.StatusBadRequest, "INVALID_EMAIL", "valid new_email required")
 	}
 	newEmail := strings.ToLower(strings.TrimSpace(req.NewEmail))
@@ -176,7 +216,9 @@ func (h *AuthExtraController) RequestEmailChange(c echo.Context) error {
 
 // ConfirmEmailChange handles POST /api/auth/confirm-email-change.
 func (h *AuthExtraController) ConfirmEmailChange(c echo.Context) error {
-	var req struct{ Token string `json:"token"` }
+	var req struct {
+		Token string `json:"token"`
+	}
 	if err := c.Bind(&req); err != nil || req.Token == "" {
 		return response.Error(c, http.StatusBadRequest, "INVALID_TOKEN", "token required")
 	}
@@ -199,8 +241,10 @@ func (h *AuthExtraController) ConfirmEmailChange(c echo.Context) error {
 
 // RequestOTP handles POST /api/auth/request-otp (6-digit email OTP valid 5m).
 func (h *AuthExtraController) RequestOTP(c echo.Context) error {
-	var req struct{ Email string `json:"email"` }
-	if err := c.Bind(&req); err != nil || !strings.Contains(req.Email, "@") {
+	var req struct {
+		Email string `json:"email"`
+	}
+	if err := c.Bind(&req); err != nil || !isValidEmailAddress(req.Email) {
 		return response.Error(c, http.StatusBadRequest, "INVALID_EMAIL", "valid email required")
 	}
 	email := strings.ToLower(strings.TrimSpace(req.Email))
@@ -235,10 +279,16 @@ func (h *AuthExtraController) AuthWithOTP(c echo.Context) error {
 		Code   string `json:"code"`
 	}
 	_ = json.Unmarshal([]byte(raw), &data)
-	if strings.TrimSpace(req.Password) != data.Code {
+	if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(req.Password)), []byte(data.Code)) != 1 {
+		const maxOTPAttempts = 5
+		if attempts, err := h.cache.Incr(c.Request().Context(), "userotp_fail:"+req.OTPID, 5*time.Minute); err == nil && attempts >= maxOTPAttempts {
+			_ = h.cache.Delete(c.Request().Context(), "userotp:"+req.OTPID)
+			_ = h.cache.Delete(c.Request().Context(), "userotp_fail:"+req.OTPID)
+		}
 		return response.Error(c, http.StatusUnauthorized, "INVALID_OTP", "incorrect OTP code")
 	}
 	_ = h.cache.Delete(c.Request().Context(), "userotp:"+req.OTPID)
+	_ = h.cache.Delete(c.Request().Context(), "userotp_fail:"+req.OTPID)
 
 	var u models.User
 	err = h.pool.QueryRow(c.Request().Context(), `SELECT id::text, email, role, created_at, updated_at FROM users WHERE id::text = $1`, data.UserID).

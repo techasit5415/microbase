@@ -34,9 +34,13 @@ func (h *SchemaController) Export(c echo.Context) error {
 // Import handles POST /api/schema/import.
 // Accepts both Microbase SchemaExport objects ({"collections":[...]}) and PocketBase pb_schema.json arrays ([...]).
 func (h *SchemaController) Import(c echo.Context) error {
-	raw, err := io.ReadAll(c.Request().Body)
+	const maxSchemaImportBytes = 10 << 20 // 10 MiB ceiling
+	raw, err := io.ReadAll(io.LimitReader(c.Request().Body, maxSchemaImportBytes+1))
 	if err != nil {
 		return response.Error(c, http.StatusBadRequest, "INVALID_JSON", "failed to read request body")
+	}
+	if int64(len(raw)) > maxSchemaImportBytes {
+		return response.Error(c, http.StatusRequestEntityTooLarge, "PAYLOAD_TOO_LARGE", "schema payload exceeds 10MB limit")
 	}
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 {

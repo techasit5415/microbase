@@ -33,8 +33,8 @@ Complete HTTP endpoint reference for **Microbase** (`v0.10.x`).
 | Method | Path | Auth | Description |
 |---|---|---|---|
 | `GET` | `/health` | `Public` | Server health, version, and cache backend (`memory` or `redis`) |
-| `GET` | `/api/openapi.json` | `Public` | Dynamic OpenAPI 3.0 specification |
-| `GET` | `/api/settings/app` | `Public` | Public application metadata (app name, URL, batch/UI config) |
+| `GET` | `/api/openapi.json` | `Public` | Dynamic OpenAPI 3.0 specification (hides locked collections from non-superusers) |
+| `GET` | `/api/settings/app` | `Public` | Public UI/branding metadata (`superuser_ips` and `trusted_proxy` are only returned to superusers) |
 | `PUT` | `/api/settings/app` | `Admin` | Update application settings |
 
 ---
@@ -78,9 +78,9 @@ Supports both `BIGSERIAL` integer IDs and PocketBase-compatible 15-char `TEXT` I
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| `GET` | `/api/users` | `Rule` | List users (supports `?page`, `?per_page`, `?sort`, `?filter`) |
-| `GET` | `/api/users/:id` | `Rule` | Fetch a user by ID |
-| `PATCH` | `/api/users/:id` | `Rule` | Update user fields (`email`, `password`, `verified`, `role`, custom fields) |
+| `GET` | `/api/users` | `Rule` | List users (supports `?page`, `?per_page` max 500, `?sort`, `?search`; respects `email_visibility`) |
+| `GET` | `/api/users/:id` | `Rule` | Fetch a user by ID (hides `email` unless `email_visibility=true`, owner, or superuser) |
+| `PATCH` | `/api/users/:id` | `Rule` | Update user fields (`email`, `password`, custom fields; `role`/`verified` require admin/superuser; changing `email` resets `verified=false` for regular users) |
 | `DELETE` | `/api/users/:id` | `Rule` | Delete a user by ID |
 | `POST` | `/api/users/:id/impersonate` | `Admin` | Generate a short-lived impersonation JWT (`{ "duration": 3600 }`) for any user ID |
 
@@ -108,7 +108,7 @@ Supports both `BIGSERIAL` integer IDs and PocketBase-compatible 15-char `TEXT` I
 | `POST` | `/api/collections/:name/truncate` | `Admin` | Truncate all records from a collection |
 | `POST` | `/api/collections/:name/duplicate` | `Admin` | Clone a collection schema under a new name |
 | `GET` | `/api/schema/export` | `Admin` | Export all collections, fields, indexes, and rules as JSON |
-| `POST` | `/api/schema/import` | `Admin` | Import Microbase schema JSON **or** PocketBase `pb_schema.json` array |
+| `POST` | `/api/schema/import` | `Admin` | Import Microbase schema JSON **or** PocketBase `pb_schema.json` array (max 10 MB) |
 
 ---
 
@@ -158,10 +158,11 @@ Supports both `BIGSERIAL` integer IDs and PocketBase-compatible 15-char `TEXT` I
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| `GET` | `/api/realtime` | `OptionalAuth` | Server-Sent Events (SSE) stream (`?collections=posts,comments`) |
-| `POST` | `/api/files` | `Public` / `Auth` | Upload file to local disk or S3/R2/MinIO |
-| `GET` | `/api/files/:filename` | `Public` | Serve uploaded file (supports `?thumb=WxH` where enabled) |
-| `POST` | `/api/batch` | `OptionalAuth` | Execute multiple sub-requests in a single HTTP round-trip |
+| `GET` | `/api/realtime` | `OptionalAuth` | Server-Sent Events (SSE) stream (`?collection=posts`; only endpoint accepting `?token=` query param) |
+| `POST` | `/api/files` | `Auth` | Upload file to local disk or S3/R2/MinIO (max 20 MB) |
+| `POST` | `/api/files/token` | `Auth` | Mint a short-lived (2-minute) signed token for protected file downloads |
+| `GET` | `/api/files/:filename` | `Public` / `Token` | Serve uploaded file (pass `?protected=1` with `?token=` or Bearer auth; preset `?thumb=WxH` sizes) |
+| `POST` | `/api/batch` | `OptionalAuth` | Execute up to 50 sub-requests in a single HTTP round-trip (preserves client IP, blocks recursive `/api/batch`) |
 
 ---
 
@@ -232,7 +233,7 @@ Static Admin UI paths (`/_`, `/_/*`, `/favicon.ico`, `/api/logs`) are automatica
 |---|---|---|---|
 | `GET` / `PUT` | `/api/settings/database` | `Admin` | Inspect or update PostgreSQL connection config |
 | `POST` | `/api/settings/database/test` | `Admin` | Test a PostgreSQL connection string |
-| `GET` / `PUT` | `/api/settings/redis` | `Admin` | Get or update Redis cache URL |
+| `GET` / `PUT` | `/api/settings/redis` | `Admin` | Get (password masked as `REDACTED`) or update Redis cache URL |
 | `GET` / `PUT` | `/api/settings/s3` | `Admin` | Get or update S3 / R2 / MinIO object storage settings |
 | `GET` / `PUT` | `/api/settings/mail` | `Admin` | Get or update SMTP mail server settings |
 | `POST` | `/api/settings/mail/test` | `Admin` | Send a test email (`{ "to": "you@example.com" }`) |

@@ -36,6 +36,7 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStor
 		}
 		e.Use(middleware.CORSWithConfig(middleware.CORSConfig{AllowOrigins: allowed}))
 	} else {
+		slog.Warn("CORS_ORIGINS is not set; defaulting to wildcard (*) CORS — set CORS_ORIGINS in production")
 		e.Use(middleware.CORS())
 	}
 	e.Use(middlewares.RequestLogger())
@@ -195,8 +196,8 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStor
 		api.POST("/webhooks/:id/test", webhookCtrl.Test, adminOnly)
 		api.DELETE("/webhooks/:id", webhookCtrl.Delete, adminOnly)
 		api.GET("/realtime", realtimeCtrl.Stream, middlewares.OptionalAuth(authService))
-		api.POST("/files", fileCtrl.Upload)
-		api.POST("/files/token", fileCtrl.CreateToken)
+		api.POST("/files", fileCtrl.Upload, middlewares.RequireAuth(authService))
+		api.POST("/files/token", fileCtrl.CreateToken, middlewares.RequireAuth(authService))
 		api.GET("/files/:filename", fileCtrl.Serve)
 		api.GET("/system/:table", systemCtrl.List, adminOnly)
 		api.POST("/system/:table", systemCtrl.Create, adminOnly)

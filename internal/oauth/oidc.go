@@ -111,18 +111,22 @@ func (o *OIDCProvider) ExchangeUser(ctx context.Context, code string) (*External
 
 	claimsMap := make(map[string]any)
 
-	// 1. Parse id_token claims (verified if OIDC discovery verifier is configured,
-	//    or unverified JWT payload fallback for manual OAuth2/IAM setups).
+	// 1. Parse id_token claims.
+	//    When OIDC discovery verifier is configured, signature/audience/expiry verification is mandatory (fail-closed).
+	//    Unverified JWT payload decoding is only permitted for manual OAuth2/IAM setups without an OIDC verifier.
 	if rawIDToken, ok := token.Extra("id_token").(string); ok && rawIDToken != "" {
 		if o.verifier != nil {
-			if idToken, err := o.verifier.Verify(ctx, rawIDToken); err == nil {
-				_ = idToken.Claims(&claimsMap)
-				if _, hasSub := claimsMap["sub"]; !hasSub && idToken.Subject != "" {
-					claimsMap["sub"] = idToken.Subject
-				}
+			idToken, verifyErr := o.verifier.Verify(ctx, rawIDToken)
+			if verifyErr != nil {
+				return nil, fmt.Errorf("oidc id_token verification failed: %w", verifyErr)
 			}
-		}
-		if len(claimsMap) == 0 {
+			if claimErr := idToken.Claims(&claimsMap); claimErr != nil {
+				return nil, fmt.Errorf("oidc id_token claims decode failed: %w", claimErr)
+			}
+			if _, hasSub := claimsMap["sub"]; !hasSub && idToken.Subject != "" {
+				claimsMap["sub"] = idToken.Subject
+			}
+		} else {
 			for k, v := range decodeJWTPayload(rawIDToken) {
 				claimsMap[k] = v
 			}

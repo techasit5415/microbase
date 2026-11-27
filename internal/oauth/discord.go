@@ -59,14 +59,18 @@ func (d *DiscordProvider) ExchangeUser(ctx context.Context, code string) (*Exter
 	}
 
 	var profile struct {
-		ID    string `json:"id"`
-		Email string `json:"email"`
+		ID       string `json:"id"`
+		Email    string `json:"email"`
+		Verified bool   `json:"verified"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&profile); err != nil {
 		return nil, fmt.Errorf("decode discord profile: %w", err)
 	}
 	if profile.ID == "" || profile.Email == "" {
 		return nil, fmt.Errorf("discord profile missing id or email")
+	}
+	if !profile.Verified {
+		return nil, fmt.Errorf("discord account email is not verified")
 	}
 
 	return &ExternalUser{

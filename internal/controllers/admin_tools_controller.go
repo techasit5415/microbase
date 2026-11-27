@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"path"
 	"strings"
 	"time"
 
@@ -115,8 +117,13 @@ func (h *AdminToolsController) Batch(c echo.Context) error {
 		if method == "" {
 			method = http.MethodGet
 		}
-		urlPath := sub.URL
-		if !strings.HasPrefix(urlPath, "/api/") || strings.HasPrefix(urlPath, "/api/batch") {
+		urlPath := strings.TrimSpace(sub.URL)
+		parsedSubURL, parseErr := url.Parse(urlPath)
+		cleanPath := ""
+		if parseErr == nil {
+			cleanPath = path.Clean("/" + parsedSubURL.Path)
+		}
+		if parseErr != nil || parsedSubURL.Scheme != "" || parsedSubURL.Host != "" || !strings.HasPrefix(cleanPath, "/api/") || cleanPath == "/api/batch" || strings.HasPrefix(cleanPath, "/api/batch/") {
 			results = append(results, map[string]any{"status": 400, "body": map[string]any{"error": "invalid batch target url"}})
 			continue
 		}
@@ -126,7 +133,14 @@ func (h *AdminToolsController) Batch(c echo.Context) error {
 			bodyBytes, _ = json.Marshal(sub.Body)
 		}
 		httpReq := httptest.NewRequest(method, urlPath, bytes.NewReader(bodyBytes))
+		httpReq.RemoteAddr = c.Request().RemoteAddr
 		httpReq.Header.Set("Content-Type", "application/json")
+		if xff := c.Request().Header.Get("X-Forwarded-For"); xff != "" {
+			httpReq.Header.Set("X-Forwarded-For", xff)
+		}
+		if xri := c.Request().Header.Get("X-Real-IP"); xri != "" {
+			httpReq.Header.Set("X-Real-IP", xri)
+		}
 		if authHeader != "" {
 			httpReq.Header.Set("Authorization", authHeader)
 		}

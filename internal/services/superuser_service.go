@@ -85,6 +85,11 @@ func (s *SuperuserService) Setup(ctx context.Context, req SuperuserSetupRequest)
 	}
 	providedOTP := strings.TrimSpace(req.OTP)
 	if len(providedOTP) != len(expectedOTP) || subtle.ConstantTimeCompare([]byte(providedOTP), []byte(expectedOTP)) != 1 {
+		const maxSetupOTPAttempts = 5
+		if attempts, incrErr := s.cache.Incr(ctx, setupOTPKey+":fail", setupOTPTTL); incrErr == nil && attempts >= maxSetupOTPAttempts {
+			_ = s.cache.Delete(ctx, setupOTPKey)
+			_ = s.cache.Delete(ctx, setupOTPKey+":fail")
+		}
 		return nil, ErrInvalidSetupOTP
 	}
 
@@ -94,6 +99,7 @@ func (s *SuperuserService) Setup(ctx context.Context, req SuperuserSetupRequest)
 	}
 
 	_ = s.cache.Delete(ctx, setupOTPKey)
+	_ = s.cache.Delete(ctx, setupOTPKey+":fail")
 
 	token, err := s.auth.GenerateToken(*u)
 	if err != nil {

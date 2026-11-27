@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -186,12 +187,44 @@ func (s *OAuthService) AuthMethods(ctx context.Context) (*AuthMethodsResponse, e
 	return res, nil
 }
 
+// isAllowedRedirectURL validates redirect_to against configured AppURL and CORS_ORIGINS to prevent open redirects.
+func isAllowedRedirectURL(raw string) bool {
+	parsed, err := url.Parse(raw)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return false
+	}
+	targetOrigin := strings.ToLower(parsed.Scheme + "://" + parsed.Host)
+
+	allowed := make([]string, 0, 4)
+	if appURL := strings.TrimSpace(GetCachedAppSettings().AppURL); appURL != "" {
+		if u, err := url.Parse(appURL); err == nil && u.Scheme != "" && u.Host != "" {
+			allowed = append(allowed, strings.ToLower(u.Scheme+"://"+u.Host))
+		}
+	}
+	if origins := strings.TrimSpace(os.Getenv("CORS_ORIGINS")); origins != "" {
+		for _, o := range strings.Split(origins, ",") {
+			o = strings.TrimSpace(o)
+			if o == "" || o == "*" {
+				continue
+			}
+			if u, err := url.Parse(o); err == nil && u.Scheme != "" && u.Host != "" {
+				allowed = append(allowed, strings.ToLower(u.Scheme+"://"+u.Host))
+			}
+		}
+	}
+	for _, a := range allowed {
+		if targetOrigin == a {
+			return true
+		}
+	}
+	return false
+}
+
 // StartAuth stores CSRF state (and optional external app redirect_to) in CacheStore.
 func (s *OAuthService) StartAuth(ctx context.Context, providerName, callbackURL, redirectTo string) (string, error) {
 	if redirectTo != "" {
-		parsed, err := url.Parse(redirectTo)
-		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-			return "", fmt.Errorf("%w: invalid redirect_to URL", ErrInvalidInput)
+		if !isAllowedRedirectURL(redirectTo) {
+			return "", fmt.Errorf("%w: redirect_to origin is not in allowed origins", ErrInvalidInput)
 		}
 	}
 

@@ -55,7 +55,7 @@ type WebhookService struct {
 func NewWebhookService(pool *pgxpool.Pool) *WebhookService {
 	return &WebhookService{
 		pool:   pool,
-		client: &http.Client{Timeout: 8 * time.Second},
+		client: NewSafeHTTPClient(8 * time.Second),
 	}
 }
 

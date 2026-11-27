@@ -3,11 +3,34 @@ package controllers
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 	"github.com/techasit5415/microbase/internal/config"
+	"github.com/techasit5415/microbase/internal/middlewares"
+	"github.com/techasit5415/microbase/internal/models"
 	"github.com/techasit5415/microbase/internal/services"
 )
+
+func isCollectionExposedInOpenAPI(col models.Collection, claims *services.AuthClaims) bool {
+	if claims != nil && claims.Role == "superuser" {
+		return true
+	}
+	if len(col.APIRules) == 0 {
+		return false
+	}
+	for _, action := range []string{"list", "view", "create", "update", "delete"} {
+		rule, ok := col.APIRules[action]
+		if !ok {
+			continue
+		}
+		lower := strings.ToLower(strings.TrimSpace(rule))
+		if lower != "locked" && lower != "superuser" {
+			return true
+		}
+	}
+	return false
+}
 
 // OpenAPIController dynamically generates an OpenAPI 3.0 spec from registered collections.
 type OpenAPIController struct {
@@ -33,7 +56,11 @@ func (h *OpenAPIController) Spec(c echo.Context) error {
 		"/api/files":         map[string]any{"post": map[string]any{"summary": "Upload file", "tags": []string{"Storage"}}},
 	}
 
+	claims := middlewares.GetAuthClaims(c)
 	for _, col := range cols {
+		if !isCollectionExposedInOpenAPI(col, claims) {
+			continue
+		}
 		listPath := fmt.Sprintf("/api/collections/%s/records", col.Name)
 		itemPath := fmt.Sprintf("/api/collections/%s/records/{id}", col.Name)
 		paths[listPath] = map[string]any{

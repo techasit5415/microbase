@@ -54,6 +54,9 @@ func (h *FileController) CreateToken(c echo.Context) error {
 }
 
 func (h *FileController) Upload(c echo.Context) error {
+	if h.auth != nil && middlewares.GetAuthClaims(c) == nil {
+		return response.Error(c, http.StatusUnauthorized, "UNAUTHORIZED", "authentication required to upload files")
+	}
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
 		return response.Error(c, http.StatusBadRequest, "MISSING_FILE", "form field 'file' is required")
@@ -100,16 +103,23 @@ func (h *FileController) Upload(c echo.Context) error {
 
 // Serve handles GET /api/files/:filename with optional ?token=... validation and ?thumb=WxH[f|t|b] on-the-fly resizing + caching.
 func (h *FileController) Serve(c echo.Context) error {
+	c.Response().Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
+	c.Response().Header().Set("X-Content-Type-Options", "nosniff")
+	c.Response().Header().Set("Content-Disposition", "attachment")
 	safeName := filepath.Base(c.Param("filename"))
 	if safeName == "." || safeName == "/" || safeName == "" {
 		return response.Error(c, http.StatusBadRequest, "INVALID_FILENAME", "invalid filename")
 	}
 
 	// If a short-lived file ?token=... is provided, validate it strictly.
-	if fileTok := strings.TrimSpace(c.QueryParam("token")); fileTok != "" && h.auth != nil {
+	// If ?protected=1 is requested, require either a valid file token or an authenticated session.
+	fileTok := strings.TrimSpace(c.QueryParam("token"))
+	if fileTok != "" && h.auth != nil {
 		if _, err := h.auth.ValidateFileToken(fileTok); err != nil {
 			return response.Error(c, http.StatusForbidden, "INVALID_FILE_TOKEN", "invalid or expired file token")
 		}
+	} else if c.QueryParam("protected") == "1" && h.auth != nil && middlewares.GetAuthClaims(c) == nil {
+		return response.Error(c, http.StatusUnauthorized, "UNAUTHORIZED", "authentication or valid file token required")
 	}
 
 	thumbSpec := strings.TrimSpace(c.QueryParam("thumb"))
@@ -153,6 +163,13 @@ func (h *FileController) Serve(c echo.Context) error {
 	return c.Stream(http.StatusOK, contentType, rc)
 }
 
+// allowedThumbDims limits on-the-fly thumbnail generation to safe preset dimensions to prevent CPU/disk exhaustion.
+var allowedThumbDims = map[int]bool{
+	0: true, 32: true, 48: true, 50: true, 64: true, 80: true, 100: true,
+	120: true, 128: true, 150: true, 200: true, 256: true, 300: true,
+	400: true, 480: true, 512: true, 600: true, 640: true, 800: true, 1024: true,
+}
+
 // parseThumbSpec parses PocketBase-style thumb specs: WxH (center crop), WxHf (fit), WxHt (top crop), WxHb (bottom crop), 0xH, Wx0.
 func parseThumbSpec(spec string) (int, int, string, bool) {
 	s := strings.ToLower(strings.TrimSpace(spec))
@@ -167,7 +184,7 @@ func parseThumbSpec(spec string) (int, int, string, bool) {
 	}
 	w, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
 	h, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
-	if err1 != nil || err2 != nil || w < 0 || h < 0 || (w == 0 && h == 0) || w > 2048 || h > 2048 {
+	if err1 != nil || err2 != nil || w < 0 || h < 0 || (w == 0 && h == 0) || !allowedThumbDims[w] || !allowedThumbDims[h] {
 		return 0, 0, "", false
 	}
 	return w, h, mode, true
