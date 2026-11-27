@@ -12,21 +12,37 @@
 
 ## Environment Configuration (`.env`)
 
-Create a `.env` file in the working directory next to the `microbase` binary:
+Create a `.env` file in the working directory next to the `microbase` binary (or copy `.env.example` included in every release). Any variable can also be overridden via CLI flags (see [CLI, Migrations & JS Hooks](cli-hooks-migrations.md)).
 
 ```env
-PORT=3000
 DATABASE_URL=postgres://microbase:microbase@localhost:5432/microbase?sslmode=disable
 JWT_SECRET=replace-with-a-long-random-secret-at-least-32-chars
+HOST=0.0.0.0
+PORT=3000
+CORS_ORIGINS=
+DISABLE_ADMIN_UI=false
+DEV=false
 REDIS_URL=
+DATA_DIR=./storage
+HOOKS_DIR=./mb_hooks
+MIGRATIONS_DIR=./mb_migrations
 ```
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `PORT` | No | `3000` | HTTP listen port. |
-| `DATABASE_URL` | Yes | — | PostgreSQL connection URI. Microbase automatically runs schema migrations and enables `pgvector` on startup. |
-| `JWT_SECRET` | Yes | — | Signing key for JWT access tokens (generate with `openssl rand -hex 32`). Never leave empty in production. |
+| `DATABASE_URL` | Yes | — | PostgreSQL connection URI. Microbase automatically runs core schema setup and enables `pgvector` on startup. |
+| `JWT_SECRET` | Recommended | *(random)* | Signing key for JWT access tokens (generate with `openssl rand -base64 32`). Never leave empty in production or tokens will invalidate on restart. |
+| `HOST` | No | `0.0.0.0` | HTTP listen host (CLI: `--host` or `--http host:port`). |
+| `PORT` | No | `3000` | HTTP listen port (CLI: `--port` or `--http host:port`). |
+| `CORS_ORIGINS` | No | `*` | Comma-separated list of allowed CORS origins (CLI: `--origins`). Leave empty to allow all origins. |
+| `DISABLE_ADMIN_UI` | No | `false` | Set `true` (or pass `--no-ui`) to disable the embedded Admin UI (`/_/`) for headless API-only deployments. |
+| `DEV` | No | `false` | Set `true` (or pass `--dev`) for verbose debug logging. |
 | `REDIS_URL` | No | `""` | Optional initial Redis URI (`redis://localhost:6379/0`). Leave empty for in-memory cache; can be hot-swapped live in **Settings → Database & Cache**. |
+| `DATA_DIR` | No | `./storage` | Local file storage directory (CLI: `--dir`). |
+| `HOOKS_DIR` | No | `./mb_hooks` | Directory for embedded JS hooks (`*.js`, CLI: `--hooksDir`). |
+| `MIGRATIONS_DIR` | No | `./mb_migrations` | Directory for file-based `.sql` / `.json` migrations (CLI: `--migrationsDir`). |
+
+> **Upgrading an existing server**: Run `./microbase update` (or `./microbase update --check`) — your existing `.env` file and database are preserved untouched.
 
 ---
 
