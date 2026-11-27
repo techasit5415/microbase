@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **PostgreSQL 15+** with the `pgvector` extension installed (included in `docker-compose.yml` via `pgvector/pgvector:pg16`).
+- **PostgreSQL 15+** with the `pgvector` extension installed (included in `docker-compose.yml` via `pgvector/pgvector:pg17`).
 - **Go 1.24+** (for building the server binary from source).
 - **Node.js 22+** (only needed when rebuilding the embedded SvelteKit Admin UI).
 - **Optional**: `pg_dump` and `psql` CLI tools on `PATH` for UI-triggered Backups & Restore.
@@ -19,6 +19,7 @@ Microbase uses **PostgreSQL 15+** (with `pgvector` recommended for vector/AI fie
 **Ubuntu / Debian Linux:**
 ```bash
 sudo apt update
+# Match the pgvector package to your PostgreSQL major version (e.g. 15, 16, or 17)
 sudo apt install -y postgresql postgresql-contrib postgresql-16-pgvector
 sudo systemctl enable --now postgresql
 ```

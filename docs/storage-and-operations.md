@@ -87,8 +87,49 @@ Manage PostgreSQL SQL snapshots in **Settings → Backups** (`/_/settings/backup
 - `POST /api/backups` — Create a timestamped `.sql` dump via `pg_dump`.
 - `POST /api/backups/upload` — Upload an existing `.sql` backup file.
 - `GET /api/backups/:name` — Download backup file (requires `Authorization: Bearer <superuser_token>`).
-- `POST /api/backups/:name/restore` — Restore snapshot into PostgreSQL via `psql`.
+- `POST /api/backups/:name/restore` — Reset the `public` schema and restore the snapshot via `psql -v ON_ERROR_STOP=1`.
 - `DELETE /api/backups/:name` — Remove backup file.
+
+> **Prerequisites**: `pg_dump` and `psql` must be available on `PATH`. If the backup was created from a database with `pgvector` enabled, the target PostgreSQL instance must also have `pgvector` installed.
+
+### Troubleshooting: `ERROR: extension "vector" is not available`
+
+When restoring a `.sql` backup created on a server with `pgvector` into a target PostgreSQL server that does not have `pgvector` installed, `psql` stops with:
+
+```text
+psql restore failed: exit status 3 (... ERROR: extension "vector" is not available HINT: The extension must first be installed on the system where PostgreSQL is running.)
+```
+
+**Option 1 — Install `pgvector` on the target PostgreSQL server (Recommended):**
+
+- **Docker / Docker Compose**: Switch the PostgreSQL image from `postgres:<ver>` to `pgvector/pgvector:pg<ver>` (match your existing PostgreSQL major version, e.g. `pg16` or `pg17`):
+  ```yaml
+  services:
+    postgres:
+      image: pgvector/pgvector:pg17
+  ```
+  Then recreate the container (`docker compose up -d`) and run Restore again.
+
+- **Ubuntu / Debian (VM, LXC, or bare-metal)**: Check your installed PostgreSQL major version (`psql --version` or `pg_lsclusters`) and install the matching package:
+  ```bash
+  sudo apt update
+  sudo apt install -y postgresql-16-pgvector   # replace 16 with your PostgreSQL major version (e.g. 15, 16, 17)
+  ```
+  *(Restart PostgreSQL with `sudo systemctl restart postgresql` if the extension is not immediately detected, then retry Restore.)*
+
+- **macOS (Homebrew)**:
+  ```bash
+  brew install pgvector
+  ```
+
+- **Windows**: Run PostgreSQL via Docker (`pgvector/pgvector:pg17`) or install the `pgvector` binaries matching your PostgreSQL major version into PostgreSQL's `lib/` and `share/extension/` directories.
+
+**Option 2 — Remove `vector` extension lines from the `.sql` file (Only if no `vector` columns are used):**
+
+If your collections do **not** use any `vector` field types and `pgvector` was only enabled by default during backup:
+1. Open the `.sql` backup file and remove the `CREATE EXTENSION IF NOT EXISTS vector ...;` and `COMMENT ON EXTENSION vector ...;` lines.
+2. Re-upload the edited `.sql` file in **Settings → Backups** and click **Restore**.
+*(If any table contains a `vector(...)` column, restore will fail at `CREATE TABLE` — use Option 1 instead.)*
 
 ---
 
