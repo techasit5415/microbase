@@ -43,12 +43,8 @@ func Connect(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 }
 
 func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
-	if _, err := pool.Exec(ctx, `CREATE EXTENSION IF NOT EXISTS vector`); err != nil {
-		slog.Warn("pgvector extension not available", "error", err)
-	} else {
-		slog.Info("pgvector extension enabled")
-	}
-
+	// pgvector is enabled lazily on demand when a collection with a "vector" field is created/updated,
+	// so databases that do not use vector fields stay portable across PostgreSQL servers without pgvector.
 	migrations := []string{
 		`CREATE TABLE IF NOT EXISTS _collections (
 			id         BIGSERIAL PRIMARY KEY,
@@ -60,7 +56,7 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		`DO $$
 		BEGIN
 			IF to_regclass('public._users') IS NOT NULL AND to_regclass('public.users') IS NULL THEN
-				ALTER TABLE "users" RENAME TO "users";
+				ALTER TABLE "_users" RENAME TO "users";
 			END IF;
 		END $$;`,
 		`CREATE TABLE IF NOT EXISTS "users" (

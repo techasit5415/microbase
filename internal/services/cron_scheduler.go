@@ -7,6 +7,11 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -186,29 +191,151 @@ func ExecuteCustomCron(ctx context.Context, pool *pgxpool.Pool, job CronJob) (st
 	return statusMsg, runErr
 }
 
-// StartCronScheduler launches a background goroutine that ticks every minute and runs matching custom crons.
-func StartCronScheduler(pool *pgxpool.Pool) {
+// CronSchedulerOption configures optional built-in system cron behaviors.
+type CronSchedulerOption func(*cronSchedulerConfig)
+
+type cronSchedulerConfig struct {
+	backupDir   string
+	databaseURL string
+}
+
+// WithAutoBackup enables the built-in __mbAutoBackup__ scheduled job (0 2 * * *).
+func WithAutoBackup(backupDir, databaseURL string) CronSchedulerOption {
+	return func(c *cronSchedulerConfig) {
+		c.backupDir = backupDir
+		c.databaseURL = databaseURL
+	}
+}
+
+// RunLogsPrune deletes _logs older than 7 days (built-in __mbLogsPrune__ job).
+func RunLogsPrune(ctx context.Context, pool *pgxpool.Pool) (int64, error) {
+	tag, err := pool.Exec(ctx, `DELETE FROM _logs WHERE created_at < NOW() - INTERVAL '7 days'`)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
+// CreateSQLBackup creates a timestamped PostgreSQL .sql snapshot via pg_dump.
+func CreateSQLBackup(ctx context.Context, databaseURL, backupDir string) (string, int64, error) {
+	if databaseURL == "" {
+		return "", 0, fmt.Errorf("DATABASE_URL is not configured")
+	}
+	if err := os.MkdirAll(backupDir, 0o755); err != nil {
+		return "", 0, fmt.Errorf("failed to create backup dir: %w", err)
+	}
+	pgDumpBin, err := FindPostgresTool("pg_dump")
+	if err != nil {
+		return "", 0, err
+	}
+	name := fmt.Sprintf("microbase_%s.sql", time.Now().Format("20060102_150405"))
+	outPath := filepath.Join(backupDir, name)
+	cmd := exec.CommandContext(ctx, pgDumpBin, "--schema=public", "--clean", "--if-exists", "--no-owner", "--no-privileges", databaseURL, "-f", outPath)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		_ = os.Remove(outPath)
+		return "", 0, fmt.Errorf("pg_dump failed: %v (%s)", err, strings.TrimSpace(string(out)))
+	}
+	info, _ := os.Stat(outPath)
+	size := int64(0)
+	if info != nil {
+		size = info.Size()
+	}
+	return name, size, nil
+}
+
+func postgresToolPatterns(goos, name string) []string {
+	if goos == "windows" {
+		exe := name + ".exe"
+		return []string{
+			`C:\Program Files\PostgreSQL\*\bin\` + exe,
+			`C:\Program Files (x86)\PostgreSQL\*\bin\` + exe,
+		}
+	}
+	return []string{
+		"/opt/homebrew/opt/postgresql@*/bin/" + name,
+		"/usr/local/opt/postgresql@*/bin/" + name,
+		"/usr/lib/postgresql/*/bin/" + name,
+	}
+}
+
+// FindPostgresTool locates pg_dump or psql on PATH, with automatic fallback to standard
+// Windows ("C:\Program Files\PostgreSQL\*\bin"), macOS Homebrew, and Linux locations.
+func FindPostgresTool(name string) (string, error) {
+	if p, err := exec.LookPath(name); err == nil {
+		return p, nil
+	}
+	var matches []string
+	for _, pat := range postgresToolPatterns(runtime.GOOS, name) {
+		if found, err := filepath.Glob(pat); err == nil {
+			matches = append(matches, found...)
+		}
+	}
+	if len(matches) > 0 {
+		sort.Sort(sort.Reverse(sort.StringSlice(matches)))
+		return matches[0], nil
+	}
+	return "", fmt.Errorf("%q executable not found in PATH (install PostgreSQL client tools or add PostgreSQL bin folder to PATH)", name)
+}
+
+// StartCronScheduler launches a background goroutine that ticks every minute and runs matching built-in & custom crons.
+func StartCronScheduler(pool *pgxpool.Pool, opts ...CronSchedulerOption) {
 	if pool == nil {
 		return
+	}
+	cfg := cronSchedulerConfig{}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&cfg)
+		}
 	}
 	go func() {
 		// Align to next minute boundary.
 		now := time.Now()
 		next := now.Truncate(time.Minute).Add(time.Minute)
 		time.Sleep(time.Until(next))
-		runDueCrons(pool, next)
+		runDueCrons(pool, next, cfg)
 
 		ticker := time.NewTicker(time.Minute)
 		defer ticker.Stop()
 
 		for tick := range ticker.C {
-			runDueCrons(pool, tick)
+			runDueCrons(pool, tick, cfg)
 		}
 	}()
 	slog.Info("cron scheduler started")
 }
 
-func runDueCrons(pool *pgxpool.Pool, now time.Time) {
+func runDueCrons(pool *pgxpool.Pool, now time.Time, cfgs ...cronSchedulerConfig) {
+	var cfg cronSchedulerConfig
+	if len(cfgs) > 0 {
+		cfg = cfgs[0]
+	}
+	// Built-in system crons matching ListCrons schedules.
+	if CronMatches("0 3 * * *", now) {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			pruned, err := RunLogsPrune(ctx, pool)
+			if err != nil {
+				slog.Warn("system cron failed", "id", "__mbLogsPrune__", "error", err)
+			} else {
+				slog.Info("system cron executed", "id", "__mbLogsPrune__", "pruned_rows", pruned)
+			}
+		}()
+	}
+	if cfg.databaseURL != "" && cfg.backupDir != "" && CronMatches("0 2 * * *", now) {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+			name, size, err := CreateSQLBackup(ctx, cfg.databaseURL, cfg.backupDir)
+			if err != nil {
+				slog.Warn("system cron failed", "id", "__mbAutoBackup__", "error", err)
+			} else {
+				slog.Info("system cron executed", "id", "__mbAutoBackup__", "file", name, "size", size)
+			}
+		}()
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	rows, err := pool.Query(ctx, `SELECT id, expression, kind, target, method, payload, description, enabled FROM _crons WHERE enabled = TRUE`)

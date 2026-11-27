@@ -12,6 +12,7 @@
 	import { toast } from '#lib/stores/toast.svelte.ts';
 	import { uiPrefs } from '#lib/stores/uiPrefs.svelte.ts';
 	import CollectionDrawer from '#lib/components/collections/CollectionDrawer.svelte';
+	import CollectionsOverviewModal from '#lib/components/collections/CollectionsOverviewModal.svelte';
 	import CollectionSidebar from '#lib/components/collections/CollectionSidebar.svelte';
 	import PaginationBar from '#lib/components/records/PaginationBar.svelte';
 	import ApiPreviewDrawer from '#lib/components/records/ApiPreviewDrawer.svelte';
@@ -89,13 +90,18 @@
 
 	let showColDrawer = $state(false);
 	let editingCol = $state<Collection | null>(null);
+	let editingColTab = $state<'fields' | 'query' | 'rules' | 'options' | undefined>(undefined);
+	let showOverview = $state(false);
 	let showCreateRec = $state(false);
 	let editingRec = $state<RecordRow | null>(null);
 	let showApiPreview = $state(false);
 
 	async function refreshCollections() {
 		try {
-			userCollections = (await listCollections()).map((c) => ({ ...c, type: 'base' as const }));
+			userCollections = (await listCollections()).map((c) => ({
+				...c,
+				type: c.name === 'users' ? 'auth' : (c.type || 'base')
+			}));
 		} catch (err) {
 			userCollections = [];
 			toast.error(err, 'Failed to load collections');
@@ -142,11 +148,13 @@
 
 	function openCreateCollection() {
 		editingCol = null;
+		editingColTab = undefined;
 		showColDrawer = true;
 	}
 
-	function openEditCollection() {
-		editingCol = activeCol;
+	function openEditCollection(col: Collection = activeCol, tab?: 'fields' | 'rules') {
+		editingCol = col;
+		editingColTab = tab;
 		showColDrawer = true;
 	}
 
@@ -226,6 +234,7 @@
 	onSelect={handleSelectCollection}
 	onDelete={handleDeleteCollection}
 	onOpenCreate={openCreateCollection}
+	onOpenOverview={() => (showOverview = true)}
 />
 
 <main class="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
@@ -240,7 +249,7 @@
 			refreshRecords();
 		}}
 		onRefresh={() => refreshRecords()}
-		onOpenEditCollection={openEditCollection}
+		onOpenEditCollection={() => openEditCollection(activeCol)}
 		onOpenApiPreview={() => (showApiPreview = true)}
 		onOpenCreateRecord={() => {
 			if ((activeCol.type !== 'system' && activeCol.type !== 'view') || activeCol.name === '_superusers' || activeCol.name === '_authOrigins' || activeCol.name === '_oauth_accounts') {
@@ -299,6 +308,7 @@
 <CollectionDrawer
 	open={showColDrawer}
 	editing={editingCol}
+	initialTab={editingColTab}
 	availableCollections={mainCollections.map((c) => c.name)}
 	onClose={() => (showColDrawer = false)}
 	onSaved={(col, isEdit) => {
@@ -313,6 +323,14 @@
 			handleSelectCollection(typed.name);
 		}
 	}}
+/>
+
+<CollectionsOverviewModal
+	open={showOverview}
+	collections={mainCollections}
+	{systemTables}
+	onClose={() => (showOverview = false)}
+	onEditCollection={(col, tab) => openEditCollection(col, tab)}
 />
 
 <RecordFormDialog

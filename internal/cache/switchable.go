@@ -57,6 +57,9 @@ func (s *SwitchableStore) Set(ctx context.Context, key, val string, ttl time.Dur
 func (s *SwitchableStore) Delete(ctx context.Context, key string) error {
 	return s.current().Delete(ctx, key)
 }
+func (s *SwitchableStore) Flush(ctx context.Context) error {
+	return s.current().Flush(ctx)
+}
 func (s *SwitchableStore) Incr(ctx context.Context, key string, ttl time.Duration) (int64, error) {
 	return s.current().Incr(ctx, key, ttl)
 }

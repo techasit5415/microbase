@@ -87,20 +87,18 @@ Manage PostgreSQL SQL snapshots in **Settings → Backups** (`/_/settings/backup
 - `POST /api/backups` — Create a timestamped `.sql` dump via `pg_dump`.
 - `POST /api/backups/upload` — Upload an existing `.sql` backup file.
 - `GET /api/backups/:name` — Download backup file (requires `Authorization: Bearer <superuser_token>`).
-- `POST /api/backups/:name/restore` — Reset the `public` schema and restore the snapshot via `psql -v ON_ERROR_STOP=1`.
+- `POST /api/backups/:name/restore` — Takes a temporary safety snapshot, resets the `public` schema, restores via `psql -v ON_ERROR_STOP=1`, and flushes schema cache + reloads in-memory settings on success. If `psql` fails, the original database is automatically rolled back.
 - `DELETE /api/backups/:name` — Remove backup file.
 
-> **Prerequisites**: `pg_dump` and `psql` must be available on `PATH`. If the backup was created from a database with `pgvector` enabled, the target PostgreSQL instance must also have `pgvector` installed.
+> **Prerequisites & `pgvector` Portability**:
+> - `pg_dump` and `psql` must be available on `PATH` (or installed in standard PostgreSQL directories — auto-discovered on Windows, macOS, and Linux).
+> - Microbase enables `pgvector` **lazily** (only when a collection defines a `vector` field), so backups from databases without vector fields do not include `CREATE EXTENSION vector`.
+> - When restoring an older `.sql` backup that contains an unused `CREATE EXTENSION vector` statement onto a PostgreSQL server without `pgvector`, Microbase automatically strips the unused extension lines so restore succeeds.
+> - If the backup actually contains `vector(...)` columns and the target PostgreSQL server lacks `pgvector`, restore aborts during pre-flight validation **without modifying the existing database**.
 
 ### Troubleshooting: `ERROR: extension "vector" is not available`
 
-When restoring a `.sql` backup created on a server with `pgvector` into a target PostgreSQL server that does not have `pgvector` installed, `psql` stops with:
-
-```text
-psql restore failed: exit status 3 (... ERROR: extension "vector" is not available HINT: The extension must first be installed on the system where PostgreSQL is running.)
-```
-
-**Option 1 — Install `pgvector` on the target PostgreSQL server (Recommended):**
+If your backup contains real `vector(...)` columns (or you are running an older Microbase release) and the target PostgreSQL server does not have `pgvector` installed, install `pgvector` on the target server:
 
 - **Docker / Docker Compose**: Switch the PostgreSQL image from `postgres:<ver>` to `pgvector/pgvector:pg<ver>` (match your existing PostgreSQL major version, e.g. `pg16` or `pg17`):
   ```yaml

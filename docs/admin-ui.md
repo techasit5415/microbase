@@ -48,6 +48,11 @@ Visiting `/_/settings` automatically redirects to `/_/settings/application`.
 - Mark any field as **Presentable** so related tables show that field instead of raw IDs.
 - Configure `List`, `View`, `Create`, `Update`, and `Delete` API Rules directly in the **API Rules** tab.
 
+### Collections Overview Modal
+- Click the **Collections overview** grid icon next to the sidebar search bar to inspect all collections at a glance (toggle **System collections** to include internal tables):
+  - **Fields and relations**: Interactive ERD Canvas showing fields and foreign-key relation lines across collections.
+  - **Rules**: Cross-collection matrix for `List/Search`, `View`, `Create`, `Update`, and `Delete` rules with `Public` / `Superusers only` badges, syntax-highlighted expressions, and one-click jump directly into that collection's **API Rules** editor.
+
 ---
 
 ## Logs (`/_/logs`)

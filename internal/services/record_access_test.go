@@ -35,6 +35,7 @@ func TestRelationAndVectorAccess(t *testing.T) {
 		t.Fatal("test database unavailable")
 	}
 	defer pool.Close()
+	_, _ = pool.Exec(ctx, `CREATE EXTENSION IF NOT EXISTS vector`)
 	_, err = pool.Exec(ctx, `CREATE TEMP TABLE regression_records (id TEXT PRIMARY KEY, owner TEXT, secret TEXT, embedding vector(2)); INSERT INTO regression_records VALUES ('first','1','hidden','[1,0]'),('second','2','hidden','[0,1]')`)
 	if err != nil {
 		t.Fatal(err)

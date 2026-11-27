@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **PostgreSQL 15+** with the `pgvector` extension installed (included in `docker-compose.yml` via `pgvector/pgvector:pg17`).
+- **PostgreSQL 15+** (`pgvector` is optional and enabled lazily only when you create a collection with a `vector` field; pre-installed in `docker-compose.yml` via `pgvector/pgvector:pg17`).
 - **Go 1.24+** (for building the server binary from source).
 - **Node.js 22+** (only needed when rebuilding the embedded SvelteKit Admin UI).
 - **Optional**: `pg_dump` and `psql` CLI tools on `PATH` for UI-triggered Backups & Restore.
@@ -121,7 +121,7 @@ MIGRATIONS_DIR=./mb_migrations
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `DATABASE_URL` | Yes | — | PostgreSQL connection URI. Microbase automatically runs core schema setup and enables `pgvector` on startup. |
+| `DATABASE_URL` | Yes | — | PostgreSQL connection URI. Microbase automatically runs core schema setup on startup (and enables `pgvector` lazily only when a `vector` field is created). |
 | `JWT_SECRET` | Recommended | *(random)* | Signing key for JWT access tokens (generate with `openssl rand -base64 32`). Never leave empty in production or tokens will invalidate on restart. |
 | `HOST` | No | `0.0.0.0` | HTTP listen host (CLI: `--host` or `--http host:port`). |
 | `PORT` | No | `3000` | HTTP listen port (CLI: `--port` or `--http host:port`). |
@@ -183,7 +183,7 @@ cd ..
 
 # 2. Compile a static Go binary with embedded UI (atomic swap avoids "text file busy")
 CGO_ENABLED=0 go build -trimpath \
-  -ldflags="-s -w -X github.com/techasit5415/microbase/internal/config.Version=v0.12.5" \
+  -ldflags="-s -w -X github.com/techasit5415/microbase/internal/config.Version=v0.12.6" \
   -o microbase.new ./cmd/server && mv -f microbase.new microbase
 
 # 3. Start Microbase

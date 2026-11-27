@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { ChevronUp, Folder, Pin, Plus, Search, Users } from '@lucide/svelte';
+	import { ChevronUp, Folder, LayoutGrid, Pin, Plus, Search, Users } from '@lucide/svelte';
 	import type { Collection } from '#lib/api/types.ts';
 	import { appSettings } from '#lib/stores/appSettings.svelte.ts';
 	import CollectionItem from './CollectionItem.svelte';
@@ -12,6 +12,7 @@
 		onSelect: (name: string) => void;
 		onDelete: (name: string) => void;
 		onOpenCreate: () => void;
+		onOpenOverview?: () => void;
 	}
 
 	const STORAGE_KEY = 'microbase_sidebar_width';
@@ -20,7 +21,7 @@
 	const MIN_WIDTH = 180;
 	const MAX_WIDTH = 480;
 
-	let { collections, systemTables, activeName, onSelect, onDelete, onOpenCreate }: Props = $props();
+	let { collections, systemTables, activeName, onSelect, onDelete, onOpenCreate, onOpenOverview }: Props = $props();
 	let filter = $state('');
 	let showSystem = $state(false);
 	let pinnedNames = $state<string[]>([]);
@@ -108,8 +109,8 @@
 	style="width: {sidebarWidth}px;"
 	class="relative flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-border bg-card {resizing ? 'select-none' : ''}"
 >
-	<div class="shrink-0 border-b border-border p-3">
-		<div class="relative">
+	<div class="flex shrink-0 items-center gap-1.5 border-b border-border p-3">
+		<div class="relative min-w-0 flex-1">
 			<Search class="pointer-events-none absolute top-2.5 left-2.5 h-3.5 w-3.5 text-muted-foreground" />
 			<input
 				type="text"
@@ -118,6 +119,16 @@
 				class="w-full rounded-md border border-transparent bg-transparent py-1.5 pr-2.5 pl-8 text-xs outline-none placeholder:text-muted-foreground focus:border-border focus:bg-background"
 			/>
 		</div>
+		{#if onOpenOverview}
+			<button
+				type="button"
+				onclick={onOpenOverview}
+				title="Collections overview (Fields, Relations & API Rules)"
+				class="shrink-0 cursor-pointer rounded-md p-1.5 text-muted-foreground transition hover:bg-accent hover:text-foreground"
+			>
+				<LayoutGrid class="h-4 w-4" />
+			</button>
+		{/if}
 	</div>
 
 	<div class="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2.5">

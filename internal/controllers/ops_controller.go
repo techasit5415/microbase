@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -11,7 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -35,18 +36,27 @@ type MailConfig struct {
 
 // OpsController handles PocketBase-style SMTP Mail, Backups, and Cron jobs.
 type OpsController struct {
-	pool       *pgxpool.Pool
-	backupDir  string
-	databaseURL string
+	pool            *pgxpool.Pool
+	backupDir       string
+	databaseURL     string // active pool DSN used for pg_dump / psql
+	configuredDBURL string // latest DSN saved to .env (may differ until restart)
+	onRestore       func(ctx context.Context)
 }
 
 func NewOpsController(pool *pgxpool.Pool, backupDir string) *OpsController {
 	_ = os.MkdirAll(backupDir, 0o755)
+	dsn := os.Getenv("DATABASE_URL")
 	return &OpsController{
-		pool:        pool,
-		backupDir:   backupDir,
-		databaseURL: os.Getenv("DATABASE_URL"),
+		pool:            pool,
+		backupDir:       backupDir,
+		databaseURL:     dsn,
+		configuredDBURL: dsn,
 	}
+}
+
+// SetOnRestore registers a hook executed after a successful database restore (e.g. flushing schema cache).
+func (h *OpsController) SetOnRestore(fn func(ctx context.Context)) {
+	h.onRestore = fn
 }
 
 func (h *OpsController) loadMailConfig(ctx context.Context) MailConfig {
@@ -160,24 +170,12 @@ func (h *OpsController) ListBackups(c echo.Context) error {
 
 // CreateBackup handles POST /api/backups using pg_dump.
 func (h *OpsController) CreateBackup(c echo.Context) error {
-	name := fmt.Sprintf("microbase_%s.sql", time.Now().Format("20060102_150405"))
-	outPath := filepath.Join(h.backupDir, name)
-	dbURL := h.databaseURL
-	if dbURL == "" {
+	if h.databaseURL == "" {
 		return response.Error(c, http.StatusBadRequest, "NO_DATABASE", "DATABASE_URL is not configured")
 	}
-	pgDumpBin, findErr := findPostgresTool("pg_dump")
-	if findErr != nil {
-		return response.Error(c, http.StatusInternalServerError, "BACKUP_FAILED", findErr.Error())
-	}
-	cmd := exec.CommandContext(c.Request().Context(), pgDumpBin, "--clean", "--if-exists", "--no-owner", "--no-privileges", dbURL, "-f", outPath)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return response.Error(c, http.StatusInternalServerError, "BACKUP_FAILED", fmt.Sprintf("pg_dump failed: %v (%s)", err, strings.TrimSpace(string(out))))
-	}
-	info, _ := os.Stat(outPath)
-	size := int64(0)
-	if info != nil {
-		size = info.Size()
+	name, size, err := services.CreateSQLBackup(c.Request().Context(), h.databaseURL, h.backupDir)
+	if err != nil {
+		return response.Error(c, http.StatusInternalServerError, "BACKUP_FAILED", err.Error())
 	}
 	return response.Created(c, map[string]any{"key": name, "size": size})
 }
@@ -323,11 +321,11 @@ func (h *OpsController) RunCron(c echo.Context) error {
 	id := c.Param("id")
 	switch id {
 	case "__mbLogsPrune__":
-		tag, err := h.pool.Exec(c.Request().Context(), `DELETE FROM _logs WHERE created_at < NOW() - INTERVAL '7 days'`)
+		pruned, err := services.RunLogsPrune(c.Request().Context(), h.pool)
 		if err != nil {
 			return response.Error(c, http.StatusInternalServerError, "CRON_FAILED", err.Error())
 		}
-		return response.OK(c, map[string]any{"id": id, "result": fmt.Sprintf("pruned %d rows", tag.RowsAffected())})
+		return response.OK(c, map[string]any{"id": id, "result": fmt.Sprintf("pruned %d rows", pruned)})
 	case "__mbAutoBackup__":
 		return h.CreateBackup(c)
 	default:
@@ -372,6 +370,82 @@ func (h *OpsController) UploadBackup(c echo.Context) error {
 	return response.Created(c, map[string]any{"key": safe, "size": len(data)})
 }
 
+var (
+	createVectorExtRe  = regexp.MustCompile(`(?i)\bCREATE\s+EXTENSION\b[^;]*\b"?vector"?\b`)
+	commentVectorExtRe = regexp.MustCompile(`(?i)\bCOMMENT\s+ON\s+EXTENSION\s+"?vector"?\b`)
+	vectorColumnTypeRe = regexp.MustCompile(`(?i)(?:\b(?:public\.)?vector\s*\(\s*\d+\s*\)|::(?:public\.)?vector\b)`)
+)
+
+// inspectBackupVectorUsage checks whether a .sql backup references the pgvector extension
+// and whether any table/query actually uses a vector(N) column type.
+func inspectBackupVectorUsage(path string) (hasExt bool, usesVectorCol bool) {
+	f, err := os.Open(path)
+	if err != nil {
+		return false, false
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" || strings.HasPrefix(line, "--") {
+			continue
+		}
+		if createVectorExtRe.MatchString(line) || commentVectorExtRe.MatchString(line) {
+			hasExt = true
+		}
+		if vectorColumnTypeRe.MatchString(line) {
+			usesVectorCol = true
+		}
+	}
+	return hasExt, usesVectorCol
+}
+
+// stripVectorExtensionToTemp writes a copy of the .sql backup without CREATE/COMMENT EXTENSION vector
+// statements so backups that do not use any vector(...) columns can be restored on PostgreSQL servers
+// without pgvector installed.
+func stripVectorExtensionToTemp(srcPath string) (string, error) {
+	in, err := os.Open(srcPath)
+	if err != nil {
+		return "", err
+	}
+	defer in.Close()
+
+	out, err := os.CreateTemp("", "microbase_restore_novec_*.sql")
+	if err != nil {
+		return "", err
+	}
+	outPath := out.Name()
+	bw := bufio.NewWriter(out)
+	sc := bufio.NewScanner(in)
+	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	for sc.Scan() {
+		line := sc.Text()
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "--") && (createVectorExtRe.MatchString(trimmed) || commentVectorExtRe.MatchString(trimmed)) {
+			_, _ = bw.WriteString("-- [microbase restore] skipped unused pgvector statement\n")
+			continue
+		}
+		_, _ = bw.WriteString(line)
+		_ = bw.WriteByte('\n')
+	}
+	if err := sc.Err(); err != nil {
+		_ = out.Close()
+		_ = os.Remove(outPath)
+		return "", err
+	}
+	if err := bw.Flush(); err != nil {
+		_ = out.Close()
+		_ = os.Remove(outPath)
+		return "", err
+	}
+	if err := out.Close(); err != nil {
+		_ = os.Remove(outPath)
+		return "", err
+	}
+	return outPath, nil
+}
+
 // RestoreBackup handles POST /api/backups/:name/restore using psql.
 func (h *OpsController) RestoreBackup(c echo.Context) error {
 	safe := filepath.Base(c.Param("name"))
@@ -382,21 +456,81 @@ func (h *OpsController) RestoreBackup(c echo.Context) error {
 	if h.databaseURL == "" {
 		return response.Error(c, http.StatusBadRequest, "NO_DATABASE", "DATABASE_URL is not configured")
 	}
-	psqlBin, findErr := findPostgresTool("psql")
+	psqlBin, findErr := services.FindPostgresTool("psql")
 	if findErr != nil {
 		return response.Error(c, http.StatusInternalServerError, "RESTORE_FAILED", findErr.Error())
 	}
+
+	ctx := c.Request().Context()
+	restorePath := full
+
+	// Pre-flight pgvector check:
+	// - If the backup uses real vector(N) columns and target Postgres lacks pgvector -> abort before touching schema.
+	// - If the backup only has an unused CREATE/COMMENT EXTENSION vector -> strip it automatically so restore succeeds.
+	if hasExt, usesVectorCol := inspectBackupVectorUsage(full); hasExt || usesVectorCol {
+		var available bool
+		_ = h.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'vector')`).Scan(&available)
+		if !available {
+			if usesVectorCol {
+				return response.Error(c, http.StatusBadRequest, "RESTORE_FAILED",
+					`backup contains vector(...) columns requiring PostgreSQL extension "vector" (pgvector), which is not installed on the target server (original database was not modified)`)
+			}
+			filtered, stripErr := stripVectorExtensionToTemp(full)
+			if stripErr != nil {
+				return response.Error(c, http.StatusInternalServerError, "RESTORE_FAILED", fmt.Sprintf("failed to strip unused pgvector statements: %v", stripErr))
+			}
+			defer os.Remove(filtered)
+			restorePath = filtered
+		}
+	}
+
+	// Take a temporary safety snapshot before resetting the public schema so a failed restore
+	// automatically rolls back instead of leaving an empty database.
+	var safetyPath string
+	if pgDumpBin, err := services.FindPostgresTool("pg_dump"); err == nil {
+		if tmp, err := os.CreateTemp("", "microbase_pre_restore_*.sql"); err == nil {
+			safetyPath = tmp.Name()
+			_ = tmp.Close()
+			defer os.Remove(safetyPath)
+			dumpCmd := exec.CommandContext(ctx, pgDumpBin, "--schema=public", "--clean", "--if-exists", "--no-owner", "--no-privileges", h.databaseURL, "-f", safetyPath)
+			if dumpErr := dumpCmd.Run(); dumpErr != nil {
+				_ = os.Remove(safetyPath)
+				safetyPath = ""
+			}
+		}
+	}
+
 	// Reset public schema before restore so pre-created tables (e.g. users BIGINT vs TEXT, _collections UNIQUE)
 	// never collide with the backup dump, even for dumps created without --clean.
-	if _, resetErr := h.pool.Exec(c.Request().Context(), `DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO PUBLIC;`); resetErr != nil {
+	if _, resetErr := h.pool.Exec(ctx, `DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO PUBLIC;`); resetErr != nil {
 		return response.Error(c, http.StatusInternalServerError, "RESTORE_FAILED", fmt.Sprintf("failed to reset schema before restore: %v", resetErr))
 	}
-	_, _ = h.pool.Exec(c.Request().Context(), `CREATE EXTENSION IF NOT EXISTS vector;`)
 
-	cmd := exec.CommandContext(c.Request().Context(), psqlBin, "-v", "ON_ERROR_STOP=1", h.databaseURL, "-f", full)
+	cmd := exec.CommandContext(ctx, psqlBin, "-v", "ON_ERROR_STOP=1", h.databaseURL, "-f", restorePath)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return response.Error(c, http.StatusInternalServerError, "RESTORE_FAILED", fmt.Sprintf("psql restore failed: %v (%s)", err, strings.TrimSpace(string(out))))
+		rollbackNote := ""
+		if safetyPath != "" {
+			rbCtx, rbCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer rbCancel()
+			_, _ = h.pool.Exec(rbCtx, `DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO PUBLIC;`)
+			rbCmd := exec.CommandContext(rbCtx, psqlBin, "-v", "ON_ERROR_STOP=1", h.databaseURL, "-f", safetyPath)
+			if rbOut, rbErr := rbCmd.CombinedOutput(); rbErr != nil {
+				rollbackNote = fmt.Sprintf("; automatic rollback also failed: %v (%s)", rbErr, strings.TrimSpace(string(rbOut)))
+			} else {
+				rollbackNote = "; original database was automatically restored"
+			}
+		}
+		return response.Error(c, http.StatusInternalServerError, "RESTORE_FAILED", fmt.Sprintf("psql restore failed: %v (%s)%s", err, strings.TrimSpace(string(out)), rollbackNote))
 	}
+
+	// Refresh in-memory settings and flush schema cache so restored data is served immediately.
+	services.LoadAppSettingsFromDB(ctx, h.pool)
+	middlewares.LoadRateLimitConfigFromDB(ctx, h.pool)
+	middlewares.LoadLogSettingsFromDB(ctx, h.pool)
+	if h.onRestore != nil {
+		h.onRestore(ctx)
+	}
+
 	return response.OK(c, map[string]any{"restored": safe})
 }
 
@@ -578,7 +712,7 @@ func (h *OpsController) GetDatabase(c echo.Context) error {
 	if claims == nil || claims.Role != "superuser" {
 		return response.Error(c, http.StatusForbidden, "FORBIDDEN", "only superusers can view database settings")
 	}
-	host, port, user, pass, dbName, ssl := parseDBURL(h.databaseURL)
+	host, port, user, pass, dbName, ssl := parseDBURL(h.configuredDBURL)
 	var pgVersion string
 	_ = h.pool.QueryRow(c.Request().Context(), `SELECT version()`).Scan(&pgVersion)
 	return response.OK(c, map[string]any{
@@ -602,7 +736,7 @@ func (h *OpsController) TestDatabase(c echo.Context) error {
 	if err := c.Bind(&req); err != nil || strings.TrimSpace(req.Host) == "" || strings.TrimSpace(req.Database) == "" {
 		return response.Error(c, http.StatusBadRequest, "INVALID_INPUT", "host and database name are required")
 	}
-	_, _, _, prevPass, _, _ := parseDBURL(h.databaseURL)
+	_, _, _, prevPass, _, _ := parseDBURL(h.configuredDBURL)
 	dsn := buildDBURL(req, prevPass)
 
 	ctx, cancel := context.WithTimeout(c.Request().Context(), 5*time.Second)
@@ -630,7 +764,7 @@ func (h *OpsController) UpdateDatabase(c echo.Context) error {
 	if err := c.Bind(&req); err != nil || strings.TrimSpace(req.Host) == "" || strings.TrimSpace(req.Database) == "" {
 		return response.Error(c, http.StatusBadRequest, "INVALID_INPUT", "host and database name are required")
 	}
-	_, _, _, prevPass, _, _ := parseDBURL(h.databaseURL)
+	_, _, _, prevPass, _, _ := parseDBURL(h.configuredDBURL)
 	dsn := buildDBURL(req, prevPass)
 
 	ctx, cancel := context.WithTimeout(c.Request().Context(), 5*time.Second)
@@ -662,7 +796,9 @@ func (h *OpsController) UpdateDatabase(c echo.Context) error {
 	if err := os.WriteFile(envPath, []byte(strings.TrimSpace(strings.Join(lines, "\n"))+"\n"), 0o600); err != nil {
 		return response.Error(c, http.StatusInternalServerError, "ENV_WRITE_FAILED", err.Error())
 	}
-	h.databaseURL = dsn
+	// Keep h.databaseURL pointing to the active pool DSN until restart so pg_dump/psql
+	// always target the same database as h.pool.
+	h.configuredDBURL = dsn
 
 	return response.OK(c, map[string]any{
 		"saved":            true,
@@ -695,37 +831,4 @@ func (h *OpsController) UpdateAppSettings(c echo.Context) error {
 		return response.Error(c, http.StatusInternalServerError, "DB_ERROR", err.Error())
 	}
 	return response.OK(c, saved)
-}
-
-// findPostgresTool locates pg_dump or psql on PATH, with automatic fallback to standard
-// Windows ("C:\Program Files\PostgreSQL\*\bin"), macOS Homebrew, and Linux locations.
-func findPostgresTool(name string) (string, error) {
-	if p, err := exec.LookPath(name); err == nil {
-		return p, nil
-	}
-	var patterns []string
-	if runtime.GOOS == "windows" {
-		exe := name + ".exe"
-		patterns = []string{
-			`C:\Program Files\PostgreSQL\*in\` + exe,
-			`C:\Program Files (x86)\PostgreSQL\*in\` + exe,
-		}
-	} else {
-		patterns = []string{
-			"/opt/homebrew/opt/postgresql@*/bin/" + name,
-			"/usr/local/opt/postgresql@*/bin/" + name,
-			"/usr/lib/postgresql/*/bin/" + name,
-		}
-	}
-	var matches []string
-	for _, pat := range patterns {
-		if found, err := filepath.Glob(pat); err == nil {
-			matches = append(matches, found...)
-		}
-	}
-	if len(matches) > 0 {
-		sort.Sort(sort.Reverse(sort.StringSlice(matches)))
-		return matches[0], nil
-	}
-	return "", fmt.Errorf("%q executable not found in PATH (install PostgreSQL client tools or add PostgreSQL bin folder to PATH)", name)
 }

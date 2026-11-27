@@ -33,12 +33,13 @@
 	interface Props {
 		open: boolean;
 		editing?: Collection | null;
+		initialTab?: 'fields' | 'query' | 'rules' | 'options';
 		availableCollections?: string[];
 		onClose: () => void;
 		onSaved: (col: Collection, isEdit: boolean) => void;
 	}
 
-	let { open, editing = null, availableCollections = [], onClose, onSaved }: Props = $props();
+	let { open, editing = null, initialTab, availableCollections = [], onClose, onSaved }: Props = $props();
 
 	let colType = $state<'base' | 'view' | 'auth'>('base');
 	let idType = $state<'text' | 'serial'>('text');
@@ -177,7 +178,7 @@
 						: editing.type === 'view'
 							? 'view'
 							: 'base';
-				activeTab = colType === 'view' ? 'query' : 'fields';
+				activeTab = initialTab ?? (colType === 'view' ? 'query' : 'fields');
 				viewQuery = editing.view_query ?? '';
 				idType = editing.id_type === 'text' ? 'text' : 'serial';
 				idAutogen = editing.id_autogenerate_pattern || '[a-z0-9]{15}';

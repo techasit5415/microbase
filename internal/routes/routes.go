@@ -55,7 +55,11 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStor
 		services.LoadAppSettingsFromDB(context.Background(), pool)
 		middlewares.LoadRateLimitConfigFromDB(context.Background(), pool)
 		middlewares.LoadLogSettingsFromDB(context.Background(), pool)
-		services.StartCronScheduler(pool)
+		autoBackupDSN := ""
+		if cfg != nil {
+			autoBackupDSN = cfg.DatabaseURL
+		}
+		services.StartCronScheduler(pool, services.WithAutoBackup("./backups", autoBackupDSN))
 		hub := realtime.NewHub()
 		webhookService := services.NewWebhookService(pool)
 		colService := services.NewCollectionService(pool, cacheStore)
@@ -104,6 +108,11 @@ func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStor
 		settingsCtrl := controllers.NewSettingsController(pool, cacheStore, fileStorage)
 		toolsCtrl := controllers.NewAdminToolsController(pool)
 		opsCtrl := controllers.NewOpsController(pool, "./backups")
+		opsCtrl.SetOnRestore(func(ctx context.Context) {
+			if cacheStore != nil {
+				_ = cacheStore.Flush(ctx)
+			}
+		})
 
 		api := e.Group("/api", middlewares.RateLimit(cacheStore, 100, time.Minute), middlewares.OptionalAuth(authService))
 

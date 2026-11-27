@@ -40,6 +40,15 @@ func normalizeCollectionType(t string) string {
 	}
 }
 
+func hasVectorField(fields []models.FieldDef) bool {
+	for _, f := range fields {
+		if f.Type == "vector" {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *CollectionService) Create(ctx context.Context, req models.CreateCollectionRequest) (*models.Collection, error) {
 	req.Type = normalizeCollectionType(req.Type)
 	if req.IDType != "text" {
@@ -94,6 +103,12 @@ func (s *CollectionService) Create(ctx context.Context, req models.CreateCollect
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback(ctx)
+
+	if hasVectorField(req.Fields) {
+		if _, err := tx.Exec(ctx, `CREATE EXTENSION IF NOT EXISTS vector`); err != nil {
+			return nil, fmt.Errorf("enable pgvector extension (required for vector fields): %w", err)
+		}
+	}
 
 	if _, err := tx.Exec(ctx, ddl); err != nil {
 		var pgErr *pgconn.PgError
@@ -297,6 +312,12 @@ func (s *CollectionService) Update(ctx context.Context, name string, newFields [
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback(ctx)
+
+	if hasVectorField(cleanedFields) {
+		if _, err := tx.Exec(ctx, `CREATE EXTENSION IF NOT EXISTS vector`); err != nil {
+			return nil, fmt.Errorf("enable pgvector extension (required for vector fields): %w", err)
+		}
+	}
 
 	for _, stmt := range alterStmts {
 		if _, err := tx.Exec(ctx, stmt); err != nil {

@@ -56,6 +56,13 @@ func (m *MemoryStore) Delete(_ context.Context, key string) error {
 	return nil
 }
 
+func (m *MemoryStore) Flush(_ context.Context) error {
+	m.mu.Lock()
+	m.items = make(map[string]memoryItem)
+	m.mu.Unlock()
+	return nil
+}
+
 func (m *MemoryStore) Incr(_ context.Context, key string, ttl time.Duration) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

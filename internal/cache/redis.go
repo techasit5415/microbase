@@ -43,6 +43,10 @@ func (r *RedisStore) Delete(ctx context.Context, key string) error {
 	return r.client.Del(ctx, key).Err()
 }
 
+func (r *RedisStore) Flush(ctx context.Context) error {
+	return r.client.FlushDB(ctx).Err()
+}
+
 func (r *RedisStore) Incr(ctx context.Context, key string, ttl time.Duration) (int64, error) {
 	count, err := r.client.Incr(ctx, key).Result()
 	if err != nil {
