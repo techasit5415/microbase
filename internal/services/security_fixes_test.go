@@ -1,9 +1,14 @@
 package services
 
 import (
+	"context"
 	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/labstack/echo/v4"
 	"github.com/techasit5415/microbase/internal/models"
 )
 
@@ -86,5 +91,50 @@ func TestSSRFBlocksPrivateAndMetadataIPs(t *testing.T) {
 	}
 	if isBlockedSSRFIP(net.ParseIP("93.184.216.34")) {
 		t.Fatalf("expected public IP 93.184.216.34 to be allowed")
+	}
+}
+
+func TestRealClientIPIgnoresSpoofedHeadersWhenTrustedProxyDisabled(t *testing.T) {
+	orig := GetCachedAppSettings()
+	defer SetCachedAppSettings(orig)
+
+	cfg := DefaultAppSettings()
+	cfg.TrustedProxy.Enabled = false
+	SetCachedAppSettings(cfg)
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/login", nil)
+	req.RemoteAddr = "203.0.113.5:54321"
+	req.Header.Set("X-Forwarded-For", "127.0.0.1")
+	req.Header.Set("X-Real-IP", "127.0.0.1")
+	c := e.NewContext(req, httptest.NewRecorder())
+
+	if got := RealClientIP(c); got != "203.0.113.5" {
+		t.Fatalf("expected direct peer IP 203.0.113.5 when TrustedProxy disabled, got %q", got)
+	}
+
+	cfg.TrustedProxy.Enabled = true
+	cfg.TrustedProxy.Headers = []string{"X-Forwarded-For"}
+	SetCachedAppSettings(cfg)
+	if got := RealClientIP(c); got != "127.0.0.1" {
+		t.Fatalf("expected forwarded IP 127.0.0.1 when TrustedProxy enabled, got %q", got)
+	}
+}
+
+func TestBuildPGToolCommandUsesEnvNotArgs(t *testing.T) {
+	cmd := BuildPGToolCommand(context.Background(), "pg_dump", "postgres://mbuser:s3cr3tPass@db.internal:5433/mydb?sslmode=require", "-f", "out.sql")
+	for _, arg := range cmd.Args {
+		if strings.Contains(arg, "s3cr3tPass") {
+			t.Fatalf("password leaked into CLI args: %v", cmd.Args)
+		}
+	}
+	foundPass := false
+	for _, env := range cmd.Env {
+		if env == "PGPASSWORD=s3cr3tPass" {
+			foundPass = true
+		}
+	}
+	if !foundPass {
+		t.Fatalf("expected PGPASSWORD in cmd.Env")
 	}
 }

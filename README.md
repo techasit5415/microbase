@@ -14,7 +14,7 @@
   - Interactive **ERD Schema Canvas** with field-to-table SVG relation lines, **SQL Console**, **Persistent Logs (`_logs`)**, **Live Rate Limiting Toggle**, **Backups & Restore (`pg_dump`)**, **Crons**, and **Webhooks**.
 - **Security & Auth**:
   - Argon2id password hashing, JWT auth, Refresh, Email Verification, Password Reset, Email Change, 6-digit OTP (5-attempt lockout + rate limiting), MFA, Superuser Impersonation, and OAuth2/OIDC (Google, Discord, Custom IAM) with `redirect_to` origin allowlisting.
-  - **Row-Level API Rules & Hardening**: Secure-by-default rules compiled into parameterized PostgreSQL SQL, sensitive column/system-table filter protection, authenticated file uploads, and outbound SSRF protection (`ALLOW_PRIVATE_WEBHOOKS=true` opt-in for private LANs).
+  - **Row-Level API Rules & Hardening**: Secure-by-default rules compiled into parameterized PostgreSQL SQL, instant JWT session revocation on password change/reset or account deletion, direct-IP rate limiting (ignores spoofed `X-Forwarded-For` unless Trusted Proxy is enabled), sensitive column/system-table filter protection, authenticated file uploads, outbound SSRF protection (`ALLOW_PRIVATE_WEBHOOKS=true` opt-in for private LANs), SSE per-IP limits, and global security headers.
 
 ---
 
@@ -39,7 +39,7 @@ cp .env.example .env
 # 3. Build Frontend & Single Go Binary
 cd ui && npm install && npm run build && cd ..
 CGO_ENABLED=0 go build -trimpath \
-  -ldflags="-s -w -X github.com/techasit5415/microbase/internal/config.Version=v0.12.10" \
+  -ldflags="-s -w -X github.com/techasit5415/microbase/internal/config.Version=v0.12.11" \
   -o microbase ./cmd/server
 
 # 4. Run Microbase

@@ -464,7 +464,7 @@ func (s *OAuthService) syncExtraFields(ctx context.Context, userID string, extra
 		return
 	}
 	for col, val := range extra {
-		if !models.IsValidIdentifier(col) || col == "id" || col == "email" || col == "password_hash" || col == "role" {
+		if !models.IsValidIdentifier(col) || col == "id" || col == "email" || col == "password" || col == "password_hash" || col == "role" || col == "token_key" || col == "verified" {
 			continue
 		}
 		_, _ = s.pool.Exec(ctx, fmt.Sprintf(`UPDATE users SET "%s" = $2, updated_at = NOW() WHERE id::text = $1`, col), userID, val)

@@ -110,7 +110,8 @@ func LoadAppSettingsFromDB(ctx context.Context, pool *pgxpool.Pool) AppSettings 
 	return def
 }
 
-// RealClientIP extracts the client IP respecting TrustedProxy headers when enabled.
+// RealClientIP extracts the client IP respecting TrustedProxy headers only when TrustedProxy.Enabled is true.
+// When TrustedProxy is disabled, it ignores X-Forwarded-For / X-Real-IP and uses the direct peer RemoteAddr.
 func RealClientIP(c echo.Context) string {
 	s := GetCachedAppSettings()
 	if s.TrustedProxy.Enabled {
@@ -120,12 +121,20 @@ func RealClientIP(c echo.Context) string {
 				continue
 			}
 			if val := strings.TrimSpace(c.Request().Header.Get(hdr)); val != "" {
-				first := strings.TrimSpace(strings.Split(val, ",")[0])
+				parts := strings.Split(val, ",")
+				first := strings.TrimSpace(parts[0])
 				if first != "" {
 					return first
 				}
 			}
 		}
+	}
+	remote := strings.TrimSpace(c.Request().RemoteAddr)
+	if host, _, err := net.SplitHostPort(remote); err == nil && host != "" {
+		return host
+	}
+	if remote != "" {
+		return remote
 	}
 	return c.RealIP()
 }

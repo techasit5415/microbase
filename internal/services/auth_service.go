@@ -2,6 +2,9 @@ package services
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -31,7 +34,17 @@ type AuthClaims struct {
 	Role       string `json:"role"`
 	RecordID   string `json:"record_id,omitempty"`
 	Collection string `json:"collection,omitempty"`
+	TokenKey   string `json:"tk,omitempty"`
 	jwt.RegisteredClaims
+}
+
+func hashSessionSecret(secret string) string {
+	s := strings.TrimSpace(secret)
+	if s == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:8])
 }
 
 // AuthService manages user registration, login, and JWT issuance/verification.
@@ -160,17 +173,34 @@ func (s *AuthService) GetUserByID(ctx context.Context, id string) (*models.User,
 	return &user, nil
 }
 
-// GenerateToken signs an HS256 JWT for the given user.
+// GenerateToken signs an HS256 JWT for the given user, binding it to the user's current token_key / password_hash for instant revocation.
 func (s *AuthService) GenerateToken(user models.User) (string, error) {
 	if len(s.jwtSecret) == 0 {
 		return "", ErrMissingJWTSecret
 	}
 
+	var tkHash string
+	if s.pool != nil && strings.TrimSpace(user.ID) != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		var secret string
+		if user.Role == "superuser" {
+			if err := s.pool.QueryRow(ctx, `SELECT COALESCE(password_hash, '') FROM _superusers WHERE id::text = $1`, user.ID).Scan(&secret); err == nil {
+				tkHash = hashSessionSecret(secret)
+			}
+		} else {
+			if err := s.pool.QueryRow(ctx, `SELECT COALESCE(token_key, '') FROM users WHERE id::text = $1`, user.ID).Scan(&secret); err == nil {
+				tkHash = hashSessionSecret(secret)
+			}
+		}
+	}
+
 	now := time.Now()
 	claims := AuthClaims{
-		UserID: user.ID,
-		Email:  user.Email,
-		Role:   user.Role,
+		UserID:   user.ID,
+		Email:    user.Email,
+		Role:     user.Role,
+		TokenKey: tkHash,
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(tokenTTL)),
@@ -179,6 +209,44 @@ func (s *AuthService) GenerateToken(user models.User) (string, error) {
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(s.jwtSecret)
+}
+
+// VerifySession ensures the token's account still exists and its token_key / password_hash has not been rotated.
+func (s *AuthService) VerifySession(ctx context.Context, claims *AuthClaims) error {
+	if s.pool == nil || claims == nil {
+		return nil
+	}
+	var currentSecret string
+	switch {
+	case claims.Role == "superuser":
+		if strings.TrimSpace(claims.UserID) == "" {
+			return ErrInvalidToken
+		}
+		if err := s.pool.QueryRow(ctx, `SELECT COALESCE(password_hash, '') FROM _superusers WHERE id::text = $1`, claims.UserID).Scan(&currentSecret); err != nil {
+			return ErrInvalidToken
+		}
+	case claims.Collection != "":
+		if !models.IsValidIdentifier(claims.Collection) || strings.TrimSpace(claims.RecordID) == "" {
+			return ErrInvalidToken
+		}
+		if err := s.pool.QueryRow(ctx, fmt.Sprintf(`SELECT COALESCE(token_key, '') FROM "%s" WHERE id::text = $1`, claims.Collection), claims.RecordID).Scan(&currentSecret); err != nil {
+			return ErrInvalidToken
+		}
+	default:
+		if strings.TrimSpace(claims.UserID) == "" {
+			return ErrInvalidToken
+		}
+		if err := s.pool.QueryRow(ctx, `SELECT COALESCE(token_key, '') FROM users WHERE id::text = $1`, claims.UserID).Scan(&currentSecret); err != nil {
+			return ErrInvalidToken
+		}
+	}
+	if claims.TokenKey != "" {
+		expected := hashSessionSecret(currentSecret)
+		if expected == "" || subtle.ConstantTimeCompare([]byte(claims.TokenKey), []byte(expected)) != 1 {
+			return ErrInvalidToken
+		}
+	}
+	return nil
 }
 
 // ParseToken validates a JWT string and returns its AuthClaims.
@@ -388,6 +456,10 @@ func (s *AuthService) UpdateUser(ctx context.Context, id string, email, role, ne
 		setClauses = append(setClauses, fmt.Sprintf("password_hash = $%d", argIdx))
 		args = append(args, hash)
 		argIdx++
+		// Rotate token_key so all previously issued JWTs for this user are revoked immediately.
+		setClauses = append(setClauses, fmt.Sprintf("token_key = $%d", argIdx))
+		args = append(args, GenerateFromPattern("[a-zA-Z0-9]{50}"))
+		argIdx++
 	}
 
 	fieldByName := make(map[string]models.FieldDef)
@@ -476,12 +548,22 @@ func (s *AuthService) GenerateCollectionToken(collection, recordID, email, role 
 	if role == "" {
 		role = "user"
 	}
+	var tkHash string
+	if s.pool != nil && models.IsValidIdentifier(collection) && strings.TrimSpace(recordID) != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		var secret string
+		if err := s.pool.QueryRow(ctx, fmt.Sprintf(`SELECT COALESCE(token_key, '') FROM "%s" WHERE id::text = $1`, collection), recordID).Scan(&secret); err == nil {
+			tkHash = hashSessionSecret(secret)
+		}
+	}
 	now := time.Now()
 	claims := AuthClaims{
 		RecordID:   recordID,
 		Collection: collection,
 		Email:      email,
 		Role:       role,
+		TokenKey:   tkHash,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   recordID,
 			IssuedAt:  jwt.NewNumericDate(now),

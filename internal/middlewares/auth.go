@@ -38,6 +38,9 @@ func RequireAuth(authSvc *services.AuthService) echo.MiddlewareFunc {
 			if err != nil {
 				return response.Error(c, http.StatusUnauthorized, "UNAUTHORIZED", "invalid or expired token")
 			}
+			if err := authSvc.VerifySession(c.Request().Context(), claims); err != nil {
+				return response.Error(c, http.StatusUnauthorized, "UNAUTHORIZED", "session revoked or account no longer exists")
+			}
 
 			c.Set(contextUserKey, claims)
 			return next(c)
@@ -61,6 +64,9 @@ func RequireSuperuser(authSvc *services.AuthService) echo.MiddlewareFunc {
 			if claims.Role != "superuser" {
 				return response.Error(c, http.StatusForbidden, "FORBIDDEN", "only superusers can access this endpoint")
 			}
+			if err := authSvc.VerifySession(c.Request().Context(), claims); err != nil {
+				return response.Error(c, http.StatusUnauthorized, "UNAUTHORIZED", "superuser session revoked or account deleted")
+			}
 			if !services.IsSuperuserIPAllowed(services.RealClientIP(c)) {
 				return response.Error(c, http.StatusForbidden, "IP_NOT_ALLOWED", "superuser access is restricted to allowed IP addresses")
 			}
@@ -83,7 +89,9 @@ func OptionalAuth(authSvc *services.AuthService) echo.MiddlewareFunc {
 		return func(c echo.Context) error {
 			if tokenStr := extractBearerToken(c); tokenStr != "" {
 				if claims, err := authSvc.ParseToken(tokenStr); err == nil {
-					c.Set(contextUserKey, claims)
+					if authSvc.VerifySession(c.Request().Context(), claims) == nil {
+						c.Set(contextUserKey, claims)
+					}
 				}
 			}
 			return next(c)

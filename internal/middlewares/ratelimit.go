@@ -13,6 +13,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/techasit5415/microbase/internal/cache"
 	"github.com/techasit5415/microbase/internal/response"
+	"github.com/techasit5415/microbase/internal/services"
 )
 
 // RateLimitRule defines a per-prefix rate limit policy configurable from Settings.
@@ -174,7 +175,7 @@ func RateLimit(store cache.CacheStore, defaultLimit int, defaultWindow time.Dura
 				return next(c)
 			}
 
-			ip := c.RealIP()
+			ip := services.RealClientIP(c)
 			key := fmt.Sprintf("rl:%s:%s", matchedLabel, ip)
 			count, err := store.Incr(c.Request().Context(), key, window)
 			if err == nil && int(count) > limit {

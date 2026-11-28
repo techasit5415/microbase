@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -216,12 +217,45 @@ func RunLogsPrune(ctx context.Context, pool *pgxpool.Pool) (int64, error) {
 	return tag.RowsAffected(), nil
 }
 
+// BuildPGToolCommand builds a pg_dump/psql exec.Cmd passing PostgreSQL credentials via PG* environment
+// variables instead of CLI arguments so database passwords are never exposed in process listings.
+func BuildPGToolCommand(ctx context.Context, binPath, databaseURL string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, binPath, args...)
+	env := os.Environ()
+	if u, err := url.Parse(strings.TrimSpace(databaseURL)); err == nil {
+		if host := u.Hostname(); host != "" {
+			env = append(env, "PGHOST="+host)
+		}
+		port := u.Port()
+		if port == "" {
+			port = "5432"
+		}
+		env = append(env, "PGPORT="+port)
+		if u.User != nil {
+			if user := u.User.Username(); user != "" {
+				env = append(env, "PGUSER="+user)
+			}
+			if pass, ok := u.User.Password(); ok && pass != "" {
+				env = append(env, "PGPASSWORD="+pass)
+			}
+		}
+		if dbName := strings.TrimLeft(u.Path, "/"); dbName != "" {
+			env = append(env, "PGDATABASE="+dbName)
+		}
+		if sslmode := u.Query().Get("sslmode"); sslmode != "" {
+			env = append(env, "PGSSLMODE="+sslmode)
+		}
+	}
+	cmd.Env = env
+	return cmd
+}
+
 // CreateSQLBackup creates a timestamped PostgreSQL .sql snapshot via pg_dump.
 func CreateSQLBackup(ctx context.Context, databaseURL, backupDir string) (string, int64, error) {
 	if databaseURL == "" {
 		return "", 0, fmt.Errorf("DATABASE_URL is not configured")
 	}
-	if err := os.MkdirAll(backupDir, 0o755); err != nil {
+	if err := os.MkdirAll(backupDir, 0o700); err != nil {
 		return "", 0, fmt.Errorf("failed to create backup dir: %w", err)
 	}
 	pgDumpBin, err := FindPostgresTool("pg_dump")
@@ -230,11 +264,12 @@ func CreateSQLBackup(ctx context.Context, databaseURL, backupDir string) (string
 	}
 	name := fmt.Sprintf("microbase_%s.sql", time.Now().Format("20060102_150405"))
 	outPath := filepath.Join(backupDir, name)
-	cmd := exec.CommandContext(ctx, pgDumpBin, "--schema=public", "--clean", "--if-exists", "--no-owner", "--no-privileges", databaseURL, "-f", outPath)
+	cmd := BuildPGToolCommand(ctx, pgDumpBin, databaseURL, "--schema=public", "--clean", "--if-exists", "--no-owner", "--no-privileges", "-f", outPath)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		_ = os.Remove(outPath)
 		return "", 0, fmt.Errorf("pg_dump failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
+	_ = os.Chmod(outPath, 0o600)
 	info, _ := os.Stat(outPath)
 	size := int64(0)
 	if info != nil {

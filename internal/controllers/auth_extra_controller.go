@@ -186,7 +186,8 @@ func (h *AuthExtraController) ConfirmPasswordReset(c echo.Context) error {
 	if err != nil {
 		return response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 	}
-	_, err = h.pool.Exec(c.Request().Context(), `UPDATE users SET password_hash = $2, updated_at = NOW() WHERE email = $1`, email, hash)
+	newTokenKey := services.GenerateFromPattern("[a-zA-Z0-9]{50}")
+	_, err = h.pool.Exec(c.Request().Context(), `UPDATE users SET password_hash = $2, token_key = $3, updated_at = NOW() WHERE email = $1`, email, hash, newTokenKey)
 	if err != nil {
 		return response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 	}

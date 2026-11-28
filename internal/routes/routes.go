@@ -27,6 +27,15 @@ import (
 // Register attaches global middlewares, embedded UI, and API routes to Echo.
 func Register(e *echo.Echo, pool *pgxpool.Pool, cacheStore *cache.SwitchableStore, cfg *config.Config) {
 	e.Use(middleware.Recover())
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			h := c.Response().Header()
+			h.Set("X-Content-Type-Options", "nosniff")
+			h.Set("X-Frame-Options", "DENY")
+			h.Set("Referrer-Policy", "no-referrer")
+			return next(c)
+		}
+	})
 	if cfg != nil && strings.TrimSpace(cfg.Origins) != "" {
 		allowed := make([]string, 0)
 		for _, o := range strings.Split(cfg.Origins, ",") {

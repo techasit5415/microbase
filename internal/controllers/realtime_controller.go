@@ -33,14 +33,17 @@ func (h *RealtimeController) Stream(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "streaming unsupported")
 	}
 
+	collection := c.QueryParam("collection")
+	events, unsubscribe, err := h.hub.SubscribeWithIP(collection, services.RealClientIP(c))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusTooManyRequests, err.Error())
+	}
+	defer unsubscribe()
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
-
-	collection := c.QueryParam("collection")
-	events, unsubscribe := h.hub.Subscribe(collection)
-	defer unsubscribe()
 
 	// Send initial connection event.
 	fmt.Fprintf(w, "event: connected\ndata: {\"collection\":%q}\n\n", collection)

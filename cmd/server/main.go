@@ -276,8 +276,17 @@ func runServe(args []string) {
 		}
 	}
 
+	if strings.TrimSpace(cfg.JWTSecret) == "" {
+		slog.Warn("JWT_SECRET is not set; authentication endpoints will fail until JWT_SECRET is configured")
+	} else if len(cfg.JWTSecret) < 32 {
+		slog.Warn("JWT_SECRET is shorter than 32 characters; use a strong random secret (e.g. openssl rand -hex 32) in production")
+	}
+
 	e := echo.New()
 	e.HideBanner = true
+	e.IPExtractor = echo.ExtractIPDirect()
+	e.Server.ReadHeaderTimeout = 10 * time.Second
+	e.Server.IdleTimeout = 120 * time.Second
 	routes.Register(e, pool, cacheStore, cfg)
 
 	listenHost := cfg.Host

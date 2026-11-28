@@ -368,7 +368,7 @@ func (h *OpsController) UploadBackup(c echo.Context) error {
 	if err != nil {
 		return response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 	}
-	if err := os.WriteFile(filepath.Join(h.backupDir, safe), data, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(h.backupDir, safe), data, 0o600); err != nil {
 		return response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 	}
 	return response.Created(c, map[string]any{"key": safe, "size": len(data)})
@@ -426,32 +426,9 @@ func validateSQLBackupForRestore(path string) error {
 	return nil
 }
 
-// buildPGToolCommand builds a pg_dump/psql exec.Cmd passing PostgreSQL credentials via environment variables
-// instead of CLI arguments so passwords are never exposed in process listings (ps aux / /proc/cmdline).
+// buildPGToolCommand delegates to services.BuildPGToolCommand to pass PostgreSQL credentials via PG* env vars.
 func buildPGToolCommand(ctx context.Context, binPath, databaseURL string, args ...string) *exec.Cmd {
-	host, port, user, pass, dbName, sslmode := parseDBURL(databaseURL)
-	cmd := exec.CommandContext(ctx, binPath, args...)
-	env := os.Environ()
-	if host != "" {
-		env = append(env, "PGHOST="+host)
-	}
-	if port != "" {
-		env = append(env, "PGPORT="+port)
-	}
-	if user != "" {
-		env = append(env, "PGUSER="+user)
-	}
-	if pass != "" {
-		env = append(env, "PGPASSWORD="+pass)
-	}
-	if dbName != "" {
-		env = append(env, "PGDATABASE="+dbName)
-	}
-	if sslmode != "" {
-		env = append(env, "PGSSLMODE="+sslmode)
-	}
-	cmd.Env = env
-	return cmd
+	return services.BuildPGToolCommand(ctx, binPath, databaseURL, args...)
 }
 
 // inspectBackupVectorUsage checks whether a .sql backup references the pgvector extension

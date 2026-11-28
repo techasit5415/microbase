@@ -32,7 +32,7 @@ Superusers have full administrative access and automatically bypass all collecti
 | `POST /api/auth/auth-with-otp` | Public | Exchanges `{ otp_id, password }` for a JWT (invalidated after 5 failed attempts, rate-limited 10 req/min). |
 | `POST /api/users/:id/impersonate` | Superuser | Mints a Bearer JWT impersonating user `:id` for API testing. |
 
-*(When SMTP Mail is disabled in Settings, verification/reset/OTP tokens are printed to the server log for easy local development. Bearer JWTs must be sent via the `Authorization: Bearer <token>` header; `?token=` query parameter is only accepted on `/api/realtime` SSE. On `users` and custom `auth` collections, `email` is hidden from non-owners/non-superusers unless `email_visibility = true`; non-privileged users cannot set `role` or `verified`, and changing `email` via `PATCH /api/users/:id` automatically resets `verified = false`.)*
+*(When SMTP Mail is disabled in Settings, verification/reset/OTP tokens are printed to the server log for easy local development. Bearer JWTs must be sent via the `Authorization: Bearer <token>` header; `?token=` query parameter is only accepted on `/api/realtime` SSE. Sessions are bound to each account's `token_key` (or `_superusers.password_hash`), so changing/resetting a password or deleting an account immediately revokes all previously issued JWTs. On `users` and custom `auth` collections, `email` is hidden from non-owners/non-superusers unless `email_visibility = true`; non-privileged users cannot set `role` or `verified`, and changing `email` via `PATCH /api/users/:id` automatically resets `verified = false`.)*
 
 ### Login Fingerprints (`_authOrigins`)
 

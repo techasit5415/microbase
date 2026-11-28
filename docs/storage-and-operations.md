@@ -62,6 +62,8 @@ Configure per-path-prefix rate limits at **Settings → Application** (`/_/setti
 - Toggle `enabled: false` live (for example, during load testing or bulk imports) without restarting the server.
 - Changes persist to `_settings` (`rate_limit_rules`) and are reloaded automatically on startup.
 - `/api/settings/ratelimits` is always exempt from rate limiting so superusers can never lock themselves out.
+- **Anti-Spoofing IP Extraction**: Rate limiting and `SuperuserIPs` allowlists always use the direct peer socket IP (`RemoteAddr`) unless **Trusted Proxy** is explicitly enabled in Application Settings.
+- **Memory & SSE Bounds**: In-memory cache automatically evicts expired keys every minute (100,000-key ceiling), and `/api/realtime` enforces a ceiling of 20 concurrent SSE connections per IP (1,000 global, returning `429 Too Many Requests`).
 
 ---
 
@@ -86,8 +88,8 @@ Configure SMTP in **Settings → Mail settings** (`/_/settings/mail`, `PUT /api/
 ## Backups & Restore (`pg_dump` / `psql`)
 
 Manage PostgreSQL SQL snapshots in **Settings → Backups** (`/_/settings/backups`):
-- `POST /api/backups` — Create a timestamped `.sql` dump via `pg_dump`.
-- `POST /api/backups/upload` — Upload an existing `.sql` backup file.
+- `POST /api/backups` — Create a timestamped `.sql` dump via `pg_dump` (credentials passed via `PG*` env vars, saved with `0600` permissions).
+- `POST /api/backups/upload` — Upload an existing `.sql` backup file (saved with `0600` permissions).
 - `GET /api/backups/:name` — Download backup file (requires `Authorization: Bearer <superuser_token>`).
 - `POST /api/backups/:name/restore` — Validates the `.sql` dump (rejecting `psql` backslash meta-commands such as `\!`, `\i`, `\copy`, `\o`, `\connect` and SQL `COPY ... PROGRAM` statements), takes a temporary safety snapshot, resets the `public` schema, restores via `psql -X -v ON_ERROR_STOP=1` (passing credentials via `PG*` environment variables instead of CLI arguments), and flushes schema cache + reloads in-memory settings on success. If `psql` fails, the original database is automatically rolled back.
 - `DELETE /api/backups/:name` — Remove backup file.
